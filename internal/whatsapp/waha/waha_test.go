@@ -2,6 +2,7 @@ package waha_test
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -172,5 +173,57 @@ func TestParseLIDWithSenderAlt(t *testing.T) {
 	}
 	if in.Phone != "5573999372664" || in.ChatID != "557399372664@c.us" || in.Text != "Quero anunciar minha pizzaria" {
 		t.Errorf("in = %+v", in)
+	}
+}
+
+func TestHumanEndpoints(t *testing.T) {
+	type call struct {
+		Path string
+		Body map[string]any
+	}
+	var calls []call
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Api-Key") != "key" {
+			t.Errorf("sem X-Api-Key em %s", r.URL.Path)
+		}
+		var b map[string]any
+		json.NewDecoder(r.Body).Decode(&b)
+		calls = append(calls, call{r.URL.Path, b})
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+	c := waha.New(srv.URL, "key", "default")
+	if err := c.MarkSeen(ctx, "5511@c.us"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SetPresence(ctx, "5511@c.us", whatsapp.PresenceRecording); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SendVoice(ctx, "5511@c.us", []byte("MP3"), "audio/mpeg"); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 3 {
+		t.Fatalf("chamadas = %d", len(calls))
+	}
+	if calls[0].Path != "/api/sendSeen" || calls[0].Body["chatId"] != "5511@c.us" || calls[0].Body["session"] != "default" {
+		t.Errorf("sendSeen = %+v", calls[0])
+	}
+	if calls[1].Path != "/api/default/presence" || calls[1].Body["presence"] != "recording" || calls[1].Body["chatId"] != "5511@c.us" {
+		t.Errorf("presence = %+v", calls[1])
+	}
+	file, _ := calls[2].Body["file"].(map[string]any)
+	if calls[2].Path != "/api/sendVoice" || calls[2].Body["convert"] != true ||
+		file["mimetype"] != "audio/mpeg" || file["data"] != base64.StdEncoding.EncodeToString([]byte("MP3")) {
+		t.Errorf("sendVoice = %+v", calls[2])
+	}
+}
+
+func TestHumanEndpointError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	if err := waha.New(srv.URL, "key", "").SendVoice(ctx, "x@c.us", []byte("a"), "audio/mpeg"); err == nil {
+		t.Fatal("esperava erro")
 	}
 }

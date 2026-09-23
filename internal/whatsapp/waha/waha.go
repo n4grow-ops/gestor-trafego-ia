@@ -5,6 +5,7 @@ package waha
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -147,18 +148,38 @@ func jidUser(id string) (string, bool) {
 }
 
 func (c *Client) SendText(ctx context.Context, chatID, text string) error {
-	body, err := json.Marshal(map[string]string{"session": c.Session, "chatId": chatID, "text": text})
+	return c.post(ctx, "/api/sendText", map[string]any{"session": c.Session, "chatId": chatID, "text": text})
+}
+
+func (c *Client) MarkSeen(ctx context.Context, chatID string) error {
+	return c.post(ctx, "/api/sendSeen", map[string]any{"session": c.Session, "chatId": chatID})
+}
+
+func (c *Client) SetPresence(ctx context.Context, chatID string, p whatsapp.Presence) error {
+	return c.post(ctx, "/api/"+url.PathEscape(c.Session)+"/presence", map[string]any{"chatId": chatID, "presence": string(p)})
+}
+
+// SendVoice manda o áudio em base64 e pede ao WAHA a conversão para OGG/Opus (mensagem de voz).
+func (c *Client) SendVoice(ctx context.Context, chatID string, audio []byte, mime string) error {
+	return c.post(ctx, "/api/sendVoice", map[string]any{
+		"session": c.Session, "chatId": chatID, "convert": true,
+		"file": map[string]string{"mimetype": mime, "data": base64.StdEncoding.EncodeToString(audio)},
+	})
+}
+
+func (c *Client) post(ctx context.Context, path string, payload any) error {
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("waha: %w", err)
 	}
-	res, err := c.do(ctx, http.MethodPost, "/api/sendText", bytes.NewReader(body))
+	res, err := c.do(ctx, http.MethodPost, path, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
 	defer res.Body.Close()
 	io.Copy(io.Discard, io.LimitReader(res.Body, 1<<20))
 	if res.StatusCode < 200 || res.StatusCode > 299 {
-		return fmt.Errorf("waha /api/sendText: status %d", res.StatusCode)
+		return fmt.Errorf("waha %s: status %d", path, res.StatusCode)
 	}
 	return nil
 }

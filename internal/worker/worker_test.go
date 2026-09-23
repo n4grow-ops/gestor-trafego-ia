@@ -38,7 +38,10 @@ func (f *fakeWA) SendText(_ context.Context, _ string, text string) error {
 func (f *fakeWA) DownloadMedia(context.Context, whatsapp.Inbound) ([]byte, string, error) {
 	return nil, "", nil
 }
-func (f *fakeWA) ChatIDForPhone(p string) string { return p + "@c.us" }
+func (f *fakeWA) ChatIDForPhone(p string) string                               { return p + "@c.us" }
+func (f *fakeWA) MarkSeen(context.Context, string) error                       { return nil }
+func (f *fakeWA) SetPresence(context.Context, string, whatsapp.Presence) error { return nil }
+func (f *fakeWA) SendVoice(context.Context, string, []byte, string) error      { return nil }
 
 func setup(t *testing.T, wa *fakeWA) (*worker.Worker, *store.Store, *pgxpool.Pool) {
 	t.Helper()

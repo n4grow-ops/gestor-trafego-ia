@@ -42,7 +42,9 @@ type fakeWA struct {
 	media    []byte
 	mime     string
 	mediaErr error
-	fail     bool // simula o WhatsApp fora do ar
+	fail     bool     // simula o WhatsApp fora do ar
+	events   []string // visto, presenças, voz e textos, na ordem
+	voices   []sent
 }
 
 func (f *fakeWA) Name() string { return "openwa" }
@@ -56,7 +58,37 @@ func (f *fakeWA) SendText(_ context.Context, chatID, text string) error {
 		return errors.New("whatsapp fora do ar")
 	}
 	f.sent = append(f.sent, sent{chatID, text})
+	f.events = append(f.events, "text:"+text)
 	return nil
+}
+func (f *fakeWA) MarkSeen(context.Context, string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.events = append(f.events, "seen")
+	return nil
+}
+func (f *fakeWA) SetPresence(_ context.Context, _ string, p whatsapp.Presence) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.events = append(f.events, string(p))
+	return nil
+}
+func (f *fakeWA) SendVoice(_ context.Context, chatID string, audio []byte, _ string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.fail {
+		return errors.New("whatsapp fora do ar")
+	}
+	f.events = append(f.events, "voice")
+	f.voices = append(f.voices, sent{chatID, string(audio)})
+	return nil
+}
+
+// log devolve visto, presenças, voz e textos na ordem em que aconteceram.
+func (f *fakeWA) log() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.events...)
 }
 func (f *fakeWA) DownloadMedia(context.Context, whatsapp.Inbound) ([]byte, string, error) {
 	return f.media, f.mime, f.mediaErr

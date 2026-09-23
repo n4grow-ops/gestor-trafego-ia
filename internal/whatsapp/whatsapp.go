@@ -1,4 +1,4 @@
-// Package whatsapp define o contrato do canal. O adaptador desta etapa é o open-wa;
+// Package whatsapp define o contrato do canal. O adaptador desta etapa é o WAHA;
 // a Cloud API oficial entra depois implementando a mesma interface.
 package whatsapp
 
@@ -28,11 +28,26 @@ type Inbound struct {
 	Raw        json.RawMessage
 }
 
+// Presence é o que o cliente vê no topo da conversa.
+type Presence string
+
+const (
+	PresenceTyping    Presence = "typing"
+	PresenceRecording Presence = "recording"
+	PresencePaused    Presence = "paused"
+)
+
 type Provider interface {
 	Name() string
 	// ParseWebhook devolve ok=false para o que não é mensagem de cliente (grupo, status, enviadas por nós).
 	ParseWebhook(body []byte) (in Inbound, ok bool, err error)
 	SendText(ctx context.Context, chatID, text string) error
+	// MarkSeen marca as mensagens do chat como lidas (visto azul).
+	MarkSeen(ctx context.Context, chatID string) error
+	// SetPresence mostra "digitando…"/"gravando áudio…" ou limpa (paused).
+	SetPresence(ctx context.Context, chatID string, p Presence) error
+	// SendVoice envia mensagem de voz; o provedor converte o áudio para o formato do WhatsApp.
+	SendVoice(ctx context.Context, chatID string, audio []byte, mime string) error
 	DownloadMedia(ctx context.Context, in Inbound) (data []byte, mimeType string, err error)
 	// ChatIDForPhone monta o destino para um telefone canônico (usado para avisar o operador).
 	ChatIDForPhone(phone string) string
