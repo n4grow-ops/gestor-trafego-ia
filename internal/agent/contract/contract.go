@@ -20,11 +20,16 @@ const (
 	IntentQuestion       Intent = "question"
 	IntentHuman          Intent = "human"
 	IntentOther          Intent = "other"
+	IntentNewProject     Intent = "new_project"
+	IntentSwitchProject  Intent = "switch_project"
+	IntentListProjects   Intent = "list_projects"
+	IntentProjectStatus  Intent = "project_status"
 )
 
 func (i Intent) Valid() bool {
 	switch i {
-	case IntentCreateCampaign, IntentProvideInfo, IntentApprove, IntentReject, IntentQuestion, IntentHuman, IntentOther:
+	case IntentCreateCampaign, IntentProvideInfo, IntentApprove, IntentReject, IntentQuestion, IntentHuman, IntentOther,
+		IntentNewProject, IntentSwitchProject, IntentListProjects, IntentProjectStatus:
 		return true
 	}
 	return false
@@ -98,9 +103,11 @@ func (f Fields) Missing() []string {
 
 // AttendantTurn é a saída do Atendente a cada mensagem do cliente.
 type AttendantTurn struct {
-	Intent Intent `json:"intent"`
-	Fields Fields `json:"fields"`
-	Reply  string `json:"reply"`
+	Intent  Intent  `json:"intent"`
+	Fields  Fields  `json:"fields"`
+	Profile Profile `json:"profile"`
+	Project string  `json:"project,omitempty"` // nome do projeto citado
+	Reply   string  `json:"reply"`
 }
 
 func (t AttendantTurn) Validate() error {
@@ -112,6 +119,9 @@ func (t AttendantTurn) Validate() error {
 	}
 	if utf8.RuneCountInString(t.Reply) > 1000 {
 		return errors.New("reply com mais de 1000 caracteres")
+	}
+	if utf8.RuneCountInString(t.Project) > 60 {
+		return errors.New("project com mais de 60 caracteres")
 	}
 	return nil
 }
@@ -133,6 +143,7 @@ type Briefing struct {
 	Media          []string    `json:"media,omitempty"`
 	Constraints    Constraints `json:"constraints"`
 	Adjustment     string      `json:"adjustment,omitempty"`
+	Business       Profile     `json:"business,omitempty"` // memória do negócio
 }
 
 func NewBriefing(orgID int64, f Fields, c Constraints) (Briefing, error) {
