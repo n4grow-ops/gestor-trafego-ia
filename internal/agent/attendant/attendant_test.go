@@ -108,3 +108,31 @@ func TestReplyPropagatesProviderError(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestReplyGivesBusinessMemoryAndProjects(t *testing.T) {
+	fake := &llm.Fake{Responses: []string{`{"intent":"switch_project","project":"Delivery","fields":{},"profile":{"city":"Salvador"},"reply":"Voltando ao Delivery."}`}}
+	a := attendant.Agent{LLM: fake, Model: "flash"}
+	turn, _, err := a.Reply(ctx, attendant.Input{
+		State: "idle", Message: "volta pro delivery",
+		Profile:     contract.Profile{BusinessName: contract.Str("Pizzaria Boa"), City: contract.Str("Salvador")},
+		ProjectName: "Pizzaria", Projects: []string{"Pizzaria", "Delivery"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if turn.Intent != contract.IntentSwitchProject || turn.Project != "Delivery" || *turn.Profile.City != "Salvador" {
+		t.Errorf("turn = %+v", turn)
+	}
+	user := fake.Requests[0].Messages[1].Content
+	for _, want := range []string{`"business_name":"Pizzaria Boa"`, "Projeto ativo: Pizzaria", "Projetos do cliente: Pizzaria, Delivery"} {
+		if !strings.Contains(user, want) {
+			t.Errorf("prompt sem %q:\n%s", want, user)
+		}
+	}
+	system := fake.Requests[0].Messages[0].Content
+	for _, want := range []string{"new_project", "switch_project", "list_projects", "project_status", "profile", "onboarding"} {
+		if !strings.Contains(system, want) {
+			t.Errorf("prompt de sistema sem %q", want)
+		}
+	}
+}

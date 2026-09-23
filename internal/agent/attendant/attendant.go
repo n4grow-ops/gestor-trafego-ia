@@ -27,8 +27,12 @@ type Input struct {
 	State   string
 	Fields  contract.Fields
 	Missing []string
-	History []Turn // mais antigas primeiro, sem a mensagem atual
-	Message string
+	// Memória do negócio, projeto ativo e nomes dos projetos do cliente.
+	Profile     contract.Profile
+	ProjectName string
+	Projects    []string
+	History     []Turn // mais antigas primeiro, sem a mensagem atual
+	Message     string
 }
 
 type Agent struct {
@@ -78,8 +82,17 @@ func userPrompt(in Input) string {
 	if len(in.Missing) > 0 {
 		missing = strings.Join(in.Missing, ", ")
 	}
-	fmt.Fprintf(&b, "Empresa: %s (nicho: %s)\nEstado da conversa: %s\nDados já coletados: %s\nDados faltando: %s\n",
-		in.OrgName, in.Niche, in.State, fields, missing)
+	profile, _ := json.Marshal(in.Profile)
+	active, projects := "nenhum", "nenhum"
+	if in.ProjectName != "" {
+		active = in.ProjectName
+	}
+	if len(in.Projects) > 0 {
+		projects = strings.Join(in.Projects, ", ")
+	}
+	fmt.Fprintf(&b, "Empresa: %s (nicho: %s)\nMemória do negócio: %s\nProjeto ativo: %s\nProjetos do cliente: %s\n",
+		in.OrgName, in.Niche, profile, active, projects)
+	fmt.Fprintf(&b, "Estado da conversa: %s\nDados já coletados: %s\nDados faltando: %s\n", in.State, fields, missing)
 	if len(in.History) > 0 {
 		b.WriteString("Histórico recente:\n")
 		for _, t := range in.History {

@@ -90,3 +90,19 @@ func TestProposePropagatesProviderError(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestProposeSendsBusinessMemory(t *testing.T) {
+	fake := &llm.Fake{Responses: []string{validProposal}}
+	m := manager.Agent{LLM: fake, Model: "forte"}
+	b := briefing()
+	b.Business = contract.Profile{BusinessName: contract.Str("Pizzaria Boa"), Audience: contract.Str("famílias do bairro")}
+	if _, _, err := m.Propose(ctx, b); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(fake.Requests[0].Messages[1].Content, "famílias do bairro") {
+		t.Error("memória do negócio não chegou ao Gestor")
+	}
+	if !strings.Contains(fake.Requests[0].Messages[0].Content, "business") {
+		t.Error("prompt do Gestor não explica o campo business")
+	}
+}
