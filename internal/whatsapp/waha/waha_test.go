@@ -163,3 +163,14 @@ func TestNameAndChatID(t *testing.T) {
 		t.Errorf("name=%s", c.Name())
 	}
 }
+
+// Formato real observado em 2026-09-23 (GOWS): remetente só com LID; o telefone vem em _data.Info.SenderAlt.
+func TestParseLIDWithSenderAlt(t *testing.T) {
+	in, ok := parse(t, event("message", `{"id":"false_162170146963623@lid_3EB0","from":"162170146963623@lid","fromMe":false,"participant":null,"body":"Quero anunciar minha pizzaria","hasMedia":false,"_data":{"Info":{"Chat":"162170146963623@lid","Sender":"162170146963623:7@lid","SenderAlt":"557399372664:7@s.whatsapp.net"}}}`))
+	if !ok {
+		t.Fatal("mensagem com SenderAlt não pode ser ignorada")
+	}
+	if in.Phone != "5573999372664" || in.ChatID != "557399372664@c.us" || in.Text != "Quero anunciar minha pizzaria" {
+		t.Errorf("in = %+v", in)
+	}
+}

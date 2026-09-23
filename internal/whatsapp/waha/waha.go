@@ -56,6 +56,12 @@ type message struct {
 		URL      string `json:"url"`
 		Mimetype string `json:"mimetype"`
 	} `json:"media"`
+	// Dados do motor GOWS: com remetente em LID, o telefone vem em SenderAlt.
+	Data struct {
+		Info struct {
+			SenderAlt string `json:"SenderAlt"`
+		} `json:"Info"`
+	} `json:"_data"`
 }
 
 func (c *Client) ParseWebhook(body []byte) (whatsapp.Inbound, bool, error) {
@@ -73,12 +79,19 @@ func (c *Client) ParseWebhook(body []byte) (whatsapp.Inbound, bool, error) {
 	if m.ID == "" || m.FromMe || !directChat(m.From) {
 		return whatsapp.Inbound{}, false, nil
 	}
-	phone, ok := phoneFrom(m.From, m.Participant, m.Author)
+	phone, ok := phoneFrom(m.From, m.Participant, m.Author, m.Data.Info.SenderAlt)
 	if !ok {
 		// Remetente só com LID (sem telefone): não há como casar com o cadastro.
 		return whatsapp.Inbound{}, false, nil
 	}
-	in := whatsapp.Inbound{ExternalID: m.ID, ChatID: m.From, Phone: phone, Raw: ev.Payload}
+	chatID := m.From
+	if strings.HasSuffix(chatID, "@lid") {
+		// Responde no chat do telefone, com o número como o WhatsApp registrou.
+		if user, ok := jidUser(m.Data.Info.SenderAlt); ok {
+			chatID = user + "@c.us"
+		}
+	}
+	in := whatsapp.Inbound{ExternalID: m.ID, ChatID: chatID, Phone: phone, Raw: ev.Payload}
 	mime := ""
 	if m.Media != nil {
 		mime = m.Media.Mimetype
@@ -109,19 +122,28 @@ func directChat(jid string) bool {
 
 func phoneFrom(ids ...string) (string, bool) {
 	for _, id := range ids {
-		user, ok := strings.CutSuffix(id, "@c.us")
-		if !ok {
-			user, ok = strings.CutSuffix(id, "@s.whatsapp.net")
-		}
+		user, ok := jidUser(id)
 		if !ok {
 			continue
 		}
-		user, _, _ = strings.Cut(user, ":") // remove sufixo de dispositivo
 		if p, err := whatsapp.NormalizePhone(user); err == nil {
 			return p, true
 		}
 	}
 	return "", false
+}
+
+// jidUser extrai os dígitos de um JID de telefone (@c.us ou @s.whatsapp.net), sem o sufixo de dispositivo.
+func jidUser(id string) (string, bool) {
+	user, ok := strings.CutSuffix(id, "@c.us")
+	if !ok {
+		user, ok = strings.CutSuffix(id, "@s.whatsapp.net")
+	}
+	if !ok {
+		return "", false
+	}
+	user, _, _ = strings.Cut(user, ":")
+	return user, user != ""
 }
 
 func (c *Client) SendText(ctx context.Context, chatID, text string) error {
