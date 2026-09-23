@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -19,6 +20,7 @@ type JobSpec struct {
 	Kind        string
 	Payload     any
 	MaxAttempts int
+	Delay       time.Duration // espera antes de o job poder rodar
 }
 
 // Event é um webhook recebido, guardado cru para o worker processar.
@@ -96,7 +98,8 @@ func enqueue(ctx context.Context, q querier, j JobSpec) error {
 	if max <= 0 {
 		max = maxAttempts
 	}
-	_, err = q.Exec(ctx, `INSERT INTO outbox_jobs (kind, payload, max_attempts) VALUES ($1, $2, $3)`, j.Kind, string(raw), max)
+	_, err = q.Exec(ctx, `INSERT INTO outbox_jobs (kind, payload, max_attempts, run_after)
+		VALUES ($1, $2, $3, now() + $4 * interval '1 millisecond')`, j.Kind, string(raw), max, j.Delay.Milliseconds())
 	return err
 }
 

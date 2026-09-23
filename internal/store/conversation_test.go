@@ -55,6 +55,9 @@ func TestRecentMessagesOldestFirst(t *testing.T) {
 	msgs, err := st.RecentMessages(ctx, c.ID, 2)
 	must(t, err)
 	want := []store.Message{{Direction: "out", Kind: "text", Body: "m2"}, {Direction: "in", Kind: "audio", Body: "m3"}}
+	if len(msgs) == 2 {
+		msgs[0].ID, msgs[1].ID = 0, 0 // ids vêm do banco
+	}
 	if len(msgs) != 2 || msgs[0] != want[0] || msgs[1] != want[1] {
 		t.Errorf("msgs = %+v", msgs)
 	}

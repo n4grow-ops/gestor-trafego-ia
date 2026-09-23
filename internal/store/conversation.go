@@ -20,6 +20,7 @@ type Conversation struct {
 }
 
 type Message struct {
+	ID        int64
 	Direction string // in ou out
 	Kind      string
 	Body      string
@@ -90,17 +91,57 @@ func (s *Store) AddMessage(ctx context.Context, convID int64, direction, kind, b
 
 // RecentMessages devolve as últimas limit mensagens, da mais antiga para a mais nova.
 func (s *Store) RecentMessages(ctx context.Context, convID int64, limit int) ([]Message, error) {
-	rows, err := s.pool.Query(ctx, `SELECT direction, kind, body FROM (
+	rows, err := s.pool.Query(ctx, `SELECT id, direction, kind, body FROM (
 		SELECT id, direction, kind, body FROM messages WHERE conversation_id = $1 ORDER BY id DESC LIMIT $2
 	) t ORDER BY id`, convID, limit)
 	if err != nil {
 		return nil, err
 	}
+	return collectMessages(rows)
+}
+
+func collectMessages(rows pgx.Rows) ([]Message, error) {
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Message, error) {
 		var m Message
-		err := r.Scan(&m.Direction, &m.Kind, &m.Body)
+		err := r.Scan(&m.ID, &m.Direction, &m.Kind, &m.Body)
 		return m, err
 	})
+}
+
+// AddInbound grava a mensagem do cliente e devolve o id (âncora do debounce).
+func (s *Store) AddInbound(ctx context.Context, convID int64, kind, body string) (int64, error) {
+	var id int64
+	err := s.pool.QueryRow(ctx, `INSERT INTO messages (conversation_id, direction, kind, body)
+		VALUES ($1, 'in', $2, $3) RETURNING id`, convID, kind, body).Scan(&id)
+	return id, err
+}
+
+// LatestInboundID é o id da mensagem de entrada mais nova da conversa (0 se não houver).
+func (s *Store) LatestInboundID(ctx context.Context, convID int64) (int64, error) {
+	var id int64
+	err := s.pool.QueryRow(ctx, `SELECT coalesce(max(id), 0) FROM messages WHERE conversation_id = $1 AND direction = 'in'`, convID).Scan(&id)
+	return id, err
+}
+
+// PendingInbound devolve as mensagens de entrada ainda sem resposta até upTo, as limit mais novas,
+// da mais antiga para a mais nova.
+func (s *Store) PendingInbound(ctx context.Context, convID, upTo int64, limit int) ([]Message, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id, direction, kind, body FROM (
+		SELECT m.id, m.direction, m.kind, m.body FROM messages m
+		JOIN conversations c ON c.id = m.conversation_id
+		WHERE m.conversation_id = $1 AND m.direction = 'in' AND m.id > c.replied_through AND m.id <= $2
+		ORDER BY m.id DESC LIMIT $3
+	) t ORDER BY id`, convID, upTo, limit)
+	if err != nil {
+		return nil, err
+	}
+	return collectMessages(rows)
+}
+
+// MarkReplied avança a marca de respondido; nunca volta para trás.
+func (s *Store) MarkReplied(ctx context.Context, convID, upTo int64) error {
+	_, err := s.pool.Exec(ctx, `UPDATE conversations SET replied_through = greatest(replied_through, $2) WHERE id = $1`, convID, upTo)
+	return err
 }
 
 // ResetConversation devolve a conversa da identidade ao estado inicial (usado ao encerrar atendimento humano).
