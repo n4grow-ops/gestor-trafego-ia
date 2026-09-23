@@ -114,6 +114,7 @@ func (e *Engine) propose(ctx context.Context, p ProposeJob) error {
 		return e.escalate(ctx, ident, conv, err.Error(), msgProposalFailed)
 	}
 	b.Adjustment = p.Adjustment
+	b.Business = ident.Profile
 
 	prop, usage, err := e.Manager.Propose(ctx, b)
 	e.recordUsage(ctx, ident.OrgID, "manager", usage)

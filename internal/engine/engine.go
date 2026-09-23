@@ -58,6 +58,11 @@ type Engine struct {
 	OperatorPhone   string
 	Now             func() time.Time
 	Log             *slog.Logger
+
+	// Cadastro automático de número novo, com limites de custo.
+	AutoSignup       bool
+	SignupMaxBudget  float64
+	SignupDailyLimit int
 }
 
 func (e *Engine) now() time.Time {
@@ -70,12 +75,23 @@ func (e *Engine) now() time.Time {
 // HandleInbound processa uma mensagem recebida do cliente.
 func (e *Engine) HandleInbound(ctx context.Context, in whatsapp.Inbound) error {
 	ident, err := e.Store.FindIdentity(ctx, e.WA.Name(), in.Phone)
+	newClient := false
 	if errors.Is(err, store.ErrNotFound) {
-		e.Log.Info("telefone não cadastrado", "provider", e.WA.Name())
-		return e.WA.SendText(ctx, in.ChatID, msgUnknown)
+		if !e.AutoSignup {
+			e.Log.Info("telefone não cadastrado", "provider", e.WA.Name())
+			return e.WA.SendText(ctx, in.ChatID, msgUnknown)
+		}
+		if ident, err = e.Store.AutoSignup(ctx, e.WA.Name(), in.Phone, e.SignupMaxBudget, e.SignupDailyLimit); err != nil {
+			return err
+		}
+		newClient = true
+		e.audit(ctx, ident.OrgID, "system", "auto_signup", map[string]any{"identity_id": ident.ID})
 	}
 	if err != nil {
 		return err
+	}
+	if ident.Status == "blocked" {
+		return nil
 	}
 	conv, err := e.Store.GetOrCreateConversation(ctx, ident.ID, in.ChatID)
 	if err != nil {
@@ -89,6 +105,27 @@ func (e *Engine) HandleInbound(ctx context.Context, in whatsapp.Inbound) error {
 	defer unlock()
 	if conv, err = e.Store.GetConversation(ctx, conv.ID); err != nil {
 		return err
+	}
+	if newClient {
+		conv.State = store.StateOnboarding
+		if err := e.Store.UpdateConversation(ctx, conv.ID, conv.State, conv.Fields); err != nil {
+			return err
+		}
+	}
+	// Limite diário antes de qualquer custo (transcrição ou IA): avisa uma vez e depois silencia.
+	received, err := e.Store.CountInboundSince(ctx, ident.OrgID, startOfDay(e.now()))
+	if err != nil {
+		return err
+	}
+	if received >= ident.DailyMessageLimit {
+		if err := e.Store.AddMessage(ctx, conv.ID, "in", string(in.Kind), in.Text); err != nil {
+			return err
+		}
+		if received == ident.DailyMessageLimit {
+			e.audit(ctx, ident.OrgID, "system", "daily_limit_reached", map[string]any{"limit": ident.DailyMessageLimit})
+			return e.send(ctx, conv, msgDailyLimit)
+		}
+		return nil
 	}
 	text, err := e.inboundText(ctx, ident, &conv, in)
 	if errors.Is(err, errMediaFailed) {
@@ -153,9 +190,21 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 	if err != nil {
 		return err
 	}
+	projects, names, err := e.projectNames(ctx, ident.OrgID)
+	if err != nil {
+		return err
+	}
+	activeName := ""
+	for _, p := range projects {
+		if conv.ActiveProjectID != nil && p.ID == *conv.ActiveProjectID {
+			activeName = p.Name
+		}
+	}
+	current := withDefaults(ident.Profile, conv.Fields)
 	turn, usage, err := e.Attendant.Reply(ctx, attendant.Input{
 		OrgName: ident.OrgName, Niche: ident.Niche, State: conv.State,
-		Fields: conv.Fields, Missing: conv.Fields.Missing(), History: history, Message: text,
+		Fields: current, Missing: current.Missing(), History: history, Message: text,
+		Profile: ident.Profile, ProjectName: activeName, Projects: names,
 	})
 	e.recordUsage(ctx, ident.OrgID, "attendant", usage)
 	if err != nil {
@@ -164,7 +213,35 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 		return e.send(ctx, conv, msgRetryLater)
 	}
 
+	// Memória do negócio: o Go mescla e grava; texto vazio não apaga.
+	if turn.Profile.HasData() {
+		ident.Profile = ident.Profile.Merge(turn.Profile)
+		if err := e.Store.UpdateOrgProfile(ctx, ident.OrgID, ident.Profile); err != nil {
+			return err
+		}
+	}
+	if conv.State == store.StateOnboarding {
+		if !ident.Profile.Complete() {
+			return e.send(ctx, conv, turn.Reply)
+		}
+		conv.State = store.StateIdle
+		if err := e.Store.UpdateConversation(ctx, conv.ID, conv.State, conv.Fields); err != nil {
+			return err
+		}
+		if turn.Intent != contract.IntentCreateCampaign && turn.Intent != contract.IntentNewProject && !turn.Fields.HasData() {
+			return e.send(ctx, conv, turn.Reply)
+		}
+	}
+
 	switch turn.Intent {
+	case contract.IntentListProjects:
+		return e.send(ctx, conv, listText(projects))
+	case contract.IntentProjectStatus:
+		return e.projectStatus(ctx, ident, conv, turn.Project, projects)
+	case contract.IntentNewProject:
+		return e.startProject(ctx, ident, conv, turn, projects)
+	case contract.IntentSwitchProject:
+		return e.switchProject(ctx, ident, conv, turn, projects)
 	case contract.IntentHuman:
 		return e.escalate(ctx, ident, conv, "cliente pediu atendimento humano", msgHuman)
 	case contract.IntentReject:
@@ -181,7 +258,13 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 		return e.send(ctx, conv, reply)
 	}
 
-	merged := conv.Fields.Merge(turn.Fields)
+	merged := current.Merge(turn.Fields)
+	campaignTalk := turn.Intent == contract.IntentCreateCampaign || turn.Intent == contract.IntentProvideInfo || turn.Fields.HasData()
+	if campaignTalk {
+		if err := e.ensureProject(ctx, ident, &conv, turn.Project, projects); err != nil {
+			return err
+		}
+	}
 	if merged.DailyBudgetBRL != nil && *merged.DailyBudgetBRL > ident.MaxDailyBudgetBRL {
 		merged.DailyBudgetBRL = conv.Fields.DailyBudgetBRL
 		state := conv.State
@@ -193,8 +276,6 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 		}
 		return e.send(ctx, conv, fmt.Sprintf(msgOverBudget, campaign.BRL(ident.MaxDailyBudgetBRL)))
 	}
-
-	campaignTalk := turn.Intent == contract.IntentCreateCampaign || turn.Intent == contract.IntentProvideInfo || turn.Fields.HasData()
 
 	if conv.State == store.StateAwaitingApproval {
 		if !campaignTalk {

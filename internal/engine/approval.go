@@ -30,6 +30,11 @@ func (e *Engine) approve(ctx context.Context, ident store.Identity, conv store.C
 	switch {
 	case err == nil:
 		e.audit(ctx, ident.OrgID, member(ident), "approval_granted", map[string]any{"draft_id": d.ID, "proposal_hash": d.ProposalHash})
+		if conv.ActiveProjectID != nil {
+			if err := e.Store.SetProjectStage(ctx, *conv.ActiveProjectID, store.StageApproved); err != nil {
+				return err
+			}
+		}
 		if err := e.Store.UpdateConversation(ctx, conv.ID, store.StateIdle, contract.Fields{}); err != nil {
 			return err
 		}

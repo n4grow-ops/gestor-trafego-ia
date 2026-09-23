@@ -18,4 +18,13 @@ const (
 	msgProposalFailed = "Não consegui montar uma proposta segura com esses dados. Vou chamar uma pessoa da nossa equipe para te ajudar."
 	msgOperator       = "Atendimento humano: %s (%s), telefone %s. Motivo: %s"
 	msgAudioFailed    = "Não consegui ouvir seu áudio agora. Pode me mandar por escrito?"
+
+	msgDailyLimit             = "Você chegou ao limite de mensagens de hoje. Amanhã a gente continua de onde parou!"
+	msgProjectStarted         = "%s o projeto *%s*. Para montar a proposta, falta: %s."
+	msgProjectReady           = "Projeto *%s* com todos os dados. Vou pedir a proposta ao especialista; ela chega em instantes."
+	msgProjectResumedComplete = "Retomei o projeto *%s*. Já tenho todos os dados. Quer que eu gere a proposta?"
+	msgProjectAlreadyActive   = "Já estamos trabalhando no projeto *%s*."
+	msgProjectNotFound        = "Não encontrei o projeto \"%s\"."
+	msgProjectAmbiguous       = "Encontrei mais de um projeto parecido: %s. Qual deles?"
+	msgNoProjects             = "Você ainda não tem projetos. É só me contar o que quer anunciar."
 )
