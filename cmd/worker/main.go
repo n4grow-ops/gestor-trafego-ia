@@ -16,7 +16,7 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/llm"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp"
-	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp/openwa"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp/waha"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/worker"
 )
 
@@ -31,7 +31,7 @@ func main() {
 func run(log *slog.Logger) error {
 	cfg := config.Load(os.Getenv)
 	if err := cfg.Require("DATABASE_URL", "OPENROUTER_API_KEY", "ATTENDANT_MODEL", "MANAGER_MODEL",
-		"TRANSCRIBE_MODEL", "OPENWA_URL", "OPENWA_API_KEY"); err != nil {
+		"TRANSCRIBE_MODEL", "WAHA_URL", "WAHA_API_KEY"); err != nil {
 		return err
 	}
 	// Sem normalizar: o aviso precisa ir ao número exatamente como está no WhatsApp do operador.
@@ -50,7 +50,7 @@ func run(log *slog.Logger) error {
 	}
 
 	st := store.New(pool)
-	wa := openwa.New(cfg.OpenWAURL, cfg.OpenWAAPIKey)
+	wa := waha.New(cfg.WAHAURL, cfg.WAHAAPIKey, cfg.WAHASession)
 	router := llm.NewOpenRouter(cfg.OpenRouterBaseURL, cfg.OpenRouterAPIKey)
 	eng := &engine.Engine{
 		Store:           st,

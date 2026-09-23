@@ -45,7 +45,7 @@ func TestOrgCreateAndMemberAddNormalizesPhone(t *testing.T) {
 	if !strings.Contains(out, "5511988887777") {
 		t.Errorf("saída = %q", out)
 	}
-	ident, err := st.FindIdentity(ctx, "openwa", "5511988887777")
+	ident, err := st.FindIdentity(ctx, "waha", "5511988887777")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestResolveHuman(t *testing.T) {
 	if _, err := run(t, st, "member-add", "--org", org, "--name", "Ana", "--role", "owner", "--phone", "5511988887777"); err != nil {
 		t.Fatal(err)
 	}
-	ident, _ := st.FindIdentity(ctx, "openwa", "5511988887777")
+	ident, _ := st.FindIdentity(ctx, "waha", "5511988887777")
 	c, _ := st.GetOrCreateConversation(ctx, ident.ID, "x@c.us")
 	st.UpdateConversation(ctx, c.ID, store.StateNeedsHuman, contract.Fields{Offer: contract.Str("Pizza")})
 

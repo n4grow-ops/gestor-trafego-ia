@@ -15,8 +15,8 @@ import (
 
 const usage = `uso:
   admin org-create --name NOME --max-budget 100 [--niche NICHO] [--objectives OUTCOME_ENGAGEMENT,OUTCOME_LEADS]
-  admin member-add --org ID --name NOME --role owner|approver|viewer --phone 5511999998888 [--provider openwa]
-  admin resolve-human --phone 5511999998888 [--provider openwa]`
+  admin member-add --org ID --name NOME --role owner|approver|viewer --phone 5511999998888 [--provider waha]
+  admin resolve-human --phone 5511999998888 [--provider waha]`
 
 func Run(ctx context.Context, st *store.Store, args []string, out io.Writer) error {
 	if len(args) == 0 {
@@ -71,7 +71,7 @@ func memberAdd(ctx context.Context, st *store.Store, args []string, out io.Write
 	name := fs.String("name", "", "nome do membro")
 	role := fs.String("role", "", "owner, approver ou viewer")
 	phone := fs.String("phone", "", "telefone de WhatsApp")
-	provider := fs.String("provider", "openwa", "provedor de WhatsApp")
+	provider := fs.String("provider", "waha", "provedor de WhatsApp")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -107,7 +107,7 @@ func resolveHuman(ctx context.Context, st *store.Store, args []string, out io.Wr
 	fs := flag.NewFlagSet("resolve-human", flag.ContinueOnError)
 	fs.SetOutput(out)
 	phone := fs.String("phone", "", "telefone do cliente")
-	provider := fs.String("provider", "openwa", "provedor de WhatsApp")
+	provider := fs.String("provider", "waha", "provedor de WhatsApp")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}

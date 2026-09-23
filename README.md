@@ -12,7 +12,7 @@ Nenhuma IA executa ação. O código Go valida limites, gera o rascunho e só ac
 
 | Comando | Papel |
 |---|---|
-| `cmd/api` | webhook do open-wa (`POST /webhooks/openwa?token=...`) e `GET /healthz`; roda migrations |
+| `cmd/api` | webhook do WAHA (`POST /webhooks/whatsapp?token=...`) e `GET /healthz`; roda migrations |
 | `cmd/worker` | processa inbox e outbox; chama Atendente, Gestor e transcrição |
 | `cmd/admin` | `org-create`, `member-add`, `resolve-human` |
 

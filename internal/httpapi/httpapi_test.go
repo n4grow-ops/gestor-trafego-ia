@@ -15,17 +15,17 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/httpapi"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/testdb"
-	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp/openwa"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp/waha"
 )
 
-const msg = `{"event":"onMessage","data":{"id":"m1","from":"5511988887777@c.us","type":"chat","body":"oi"}}`
+const msg = `{"id":"evt","timestamp":1,"session":"default","engine":"GOWS","event":"message","payload":{"id":"m1","from":"5511988887777@c.us","body":"oi"},"environment":{}}`
 
 var discard = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 func newWebhook(t *testing.T, secret string) (*httpapi.Webhook, *pgxpool.Pool) {
 	t.Helper()
 	pool := testdb.New(t)
-	return &httpapi.Webhook{Store: store.New(pool), WA: openwa.New("http://nao-usado", "k"), Secret: secret, Log: discard}, pool
+	return &httpapi.Webhook{Store: store.New(pool), WA: waha.New("http://nao-usado", "k", "default"), Secret: secret, Log: discard}, pool
 }
 
 func post(h http.Handler, target, body string) *httptest.ResponseRecorder {
@@ -45,7 +45,7 @@ func inboxCount(t *testing.T, pool *pgxpool.Pool) int {
 
 func TestWebhookRejectsWrongToken(t *testing.T) {
 	wh, pool := newWebhook(t, "segredo")
-	for _, target := range []string{"/webhooks/openwa", "/webhooks/openwa?token=errado", "/webhooks/openwa?token=segred"} {
+	for _, target := range []string{"/webhooks/whatsapp", "/webhooks/whatsapp?token=errado", "/webhooks/whatsapp?token=segred"} {
 		if rec := post(wh, target, msg); rec.Code != http.StatusUnauthorized {
 			t.Errorf("%s: code = %d", target, rec.Code)
 		}
@@ -57,7 +57,7 @@ func TestWebhookRejectsWrongToken(t *testing.T) {
 
 func TestWebhookDisabledWithoutSecret(t *testing.T) {
 	wh, pool := newWebhook(t, "")
-	if rec := post(wh, "/webhooks/openwa?token=", msg); rec.Code != http.StatusServiceUnavailable {
+	if rec := post(wh, "/webhooks/whatsapp?token=", msg); rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("code = %d", rec.Code)
 	}
 	if inboxCount(t, pool) != 0 {
@@ -67,11 +67,11 @@ func TestWebhookDisabledWithoutSecret(t *testing.T) {
 
 func TestWebhookQueuesAndDeduplicates(t *testing.T) {
 	wh, pool := newWebhook(t, "segredo")
-	rec := post(wh, "/webhooks/openwa?token=segredo", msg)
+	rec := post(wh, "/webhooks/whatsapp?token=segredo", msg)
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "queued") {
 		t.Fatalf("1º: %d %s", rec.Code, rec.Body)
 	}
-	rec = post(wh, "/webhooks/openwa?token=segredo", msg)
+	rec = post(wh, "/webhooks/whatsapp?token=segredo", msg)
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "duplicate") {
 		t.Fatalf("2º: %d %s", rec.Code, rec.Body)
 	}
@@ -82,7 +82,7 @@ func TestWebhookQueuesAndDeduplicates(t *testing.T) {
 
 func TestWebhookIgnoresOtherEvents(t *testing.T) {
 	wh, pool := newWebhook(t, "segredo")
-	rec := post(wh, "/webhooks/openwa?token=segredo", `{"event":"onAck","data":{}}`)
+	rec := post(wh, "/webhooks/whatsapp?token=segredo", `{"event":"message.ack","payload":{}}`)
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "ignored") || inboxCount(t, pool) != 0 {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
 	}
@@ -90,7 +90,7 @@ func TestWebhookIgnoresOtherEvents(t *testing.T) {
 
 func TestWebhookRejectsInvalidJSON(t *testing.T) {
 	wh, _ := newWebhook(t, "segredo")
-	if rec := post(wh, "/webhooks/openwa?token=segredo", "{nope"); rec.Code != http.StatusBadRequest {
+	if rec := post(wh, "/webhooks/whatsapp?token=segredo", "{nope"); rec.Code != http.StatusBadRequest {
 		t.Fatalf("code = %d", rec.Code)
 	}
 }
@@ -117,12 +117,12 @@ func TestMuxRoutesWebhookOnlyOnPost(t *testing.T) {
 	wh, _ := newWebhook(t, "segredo")
 	mux := httpapi.NewMux(pinger{}, wh)
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/webhooks/openwa?token=segredo", strings.NewReader(msg)))
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/webhooks/whatsapp?token=segredo", strings.NewReader(msg)))
 	if rec.Code != 200 {
 		t.Errorf("POST: %d", rec.Code)
 	}
 	rec = httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/webhooks/openwa?token=segredo", nil))
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/webhooks/whatsapp?token=segredo", nil))
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("GET: %d", rec.Code)
 	}

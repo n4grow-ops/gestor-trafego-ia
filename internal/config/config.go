@@ -15,8 +15,9 @@ type Config struct {
 	AttendantModel    string
 	ManagerModel      string
 	TranscribeModel   string
-	OpenWAURL         string
-	OpenWAAPIKey      string
+	WAHAURL           string
+	WAHAAPIKey        string
+	WAHASession       string
 	OperatorPhone     string
 }
 
@@ -30,8 +31,9 @@ func Load(getenv func(string) string) Config {
 		AttendantModel:    getenv("ATTENDANT_MODEL"),
 		ManagerModel:      getenv("MANAGER_MODEL"),
 		TranscribeModel:   getenv("TRANSCRIBE_MODEL"),
-		OpenWAURL:         strings.TrimRight(getenv("OPENWA_URL"), "/"),
-		OpenWAAPIKey:      getenv("OPENWA_API_KEY"),
+		WAHAURL:           strings.TrimRight(getenv("WAHA_URL"), "/"),
+		WAHAAPIKey:        getenv("WAHA_API_KEY"),
+		WAHASession:       orDefault(getenv("WAHA_SESSION"), "default"),
 		OperatorPhone:     getenv("OPERATOR_PHONE"),
 	}
 }
@@ -45,8 +47,8 @@ func (c Config) Require(names ...string) error {
 		"ATTENDANT_MODEL":    c.AttendantModel,
 		"MANAGER_MODEL":      c.ManagerModel,
 		"TRANSCRIBE_MODEL":   c.TranscribeModel,
-		"OPENWA_URL":         c.OpenWAURL,
-		"OPENWA_API_KEY":     c.OpenWAAPIKey,
+		"WAHA_URL":           c.WAHAURL,
+		"WAHA_API_KEY":       c.WAHAAPIKey,
 	}
 	var missing []string
 	for _, n := range names {

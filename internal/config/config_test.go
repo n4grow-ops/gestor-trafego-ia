@@ -20,10 +20,13 @@ func TestLoadDefaults(t *testing.T) {
 	}
 }
 
-func TestLoadTrimsOpenWAURL(t *testing.T) {
-	c := config.Load(env(map[string]string{"OPENWA_URL": "http://openwa:8002/"}))
-	if c.OpenWAURL != "http://openwa:8002" {
-		t.Errorf("OpenWAURL = %q", c.OpenWAURL)
+func TestLoadTrimsWAHAURL(t *testing.T) {
+	c := config.Load(env(map[string]string{"WAHA_URL": "http://waha:3000/"}))
+	if c.WAHAURL != "http://waha:3000" {
+		t.Errorf("WAHAURL = %q", c.WAHAURL)
+	}
+	if c.WAHASession != "default" {
+		t.Errorf("WAHASession = %q", c.WAHASession)
 	}
 }
 

@@ -15,7 +15,7 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/db"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/httpapi"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
-	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp/openwa"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp/waha"
 )
 
 func main() {
@@ -45,7 +45,7 @@ func run(log *slog.Logger) error {
 
 	webhook := &httpapi.Webhook{
 		Store:  store.New(pool),
-		WA:     openwa.New(cfg.OpenWAURL, cfg.OpenWAAPIKey), // só o parse é usado aqui
+		WA:     waha.New(cfg.WAHAURL, cfg.WAHAAPIKey, cfg.WAHASession), // só o parse é usado aqui
 		Secret: cfg.WebhookSecret,
 		Log:    log,
 	}

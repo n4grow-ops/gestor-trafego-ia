@@ -29,7 +29,7 @@ func NewMux(db Pinger, webhook http.Handler) *http.ServeMux {
 		}
 		io.WriteString(w, "ok")
 	})
-	mux.Handle("POST /webhooks/openwa", webhook)
+	mux.Handle("POST /webhooks/whatsapp", webhook)
 	return mux
 }
 
