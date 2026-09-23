@@ -187,3 +187,37 @@ func TestFakeReturnsResponsesInOrder(t *testing.T) {
 		t.Errorf("calls = %d", f.Calls())
 	}
 }
+
+func TestSpeakSendsTextAndReturnsAudio(t *testing.T) {
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/audio/speech" || r.Header.Get("Authorization") != "Bearer chave" {
+			t.Errorf("rota/cabeçalho: %s %s", r.URL.Path, r.Header.Get("Authorization"))
+		}
+		json.NewDecoder(r.Body).Decode(&got)
+		w.Header().Set("Content-Type", "audio/mpeg")
+		io.WriteString(w, "MP3DATA")
+	}))
+	defer srv.Close()
+	sp, err := client(srv.URL).Speak(ctx, "tts-model", "nova", "Oi, tudo bem?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(sp.Audio) != "MP3DATA" || sp.Mime != "audio/mpeg" || sp.Usage.Model != "tts-model" {
+		t.Errorf("Speak = %q %q %+v", sp.Audio, sp.Mime, sp.Usage)
+	}
+	if got["model"] != "tts-model" || got["voice"] != "nova" || got["input"] != "Oi, tudo bem?" || got["response_format"] != "mp3" {
+		t.Errorf("corpo = %v", got)
+	}
+}
+
+func TestSpeakHTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":{"message":"sem crédito"}}`, http.StatusPaymentRequired)
+	}))
+	defer srv.Close()
+	_, err := client(srv.URL).Speak(ctx, "m", "v", "oi")
+	if err == nil || errors.Is(err, llm.ErrTransient) {
+		t.Fatalf("402 deve falhar sem ser temporário: %v", err)
+	}
+}

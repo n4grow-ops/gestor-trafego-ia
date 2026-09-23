@@ -50,6 +50,18 @@ type Provider interface {
 	Transcribe(ctx context.Context, model string, audio []byte, format string) (Response, error)
 }
 
+// Speech é o áudio gerado por TTS.
+type Speech struct {
+	Audio []byte
+	Mime  string
+	Usage Usage
+}
+
+// Speaker transforma texto em voz.
+type Speaker interface {
+	Speak(ctx context.Context, model, voice, text string) (Speech, error)
+}
+
 // ErrTransient marca falhas que valem nova tentativa (limite, erro do provedor, rede).
 var ErrTransient = errors.New("llm: falha temporária")
 

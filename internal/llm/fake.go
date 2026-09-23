@@ -13,6 +13,9 @@ type Fake struct {
 	Responses  []string // conteúdo devolvido por Complete, na ordem das chamadas
 	Errors     []error  // se Errors[i] != nil, a chamada i falha com ele
 	Transcript string   // devolvido por Transcribe
+	Speech     []byte   // devolvido por Speak
+	SpeechErr  error    // se definido, Speak falha
+	Spoken     []string // textos pedidos ao Speak
 	Requests   []Request
 	calls      int
 }
@@ -34,6 +37,16 @@ func (f *Fake) Complete(_ context.Context, req Request) (Response, error) {
 
 func (f *Fake) Transcribe(_ context.Context, model string, _ []byte, _ string) (Response, error) {
 	return Response{Content: f.Transcript, Usage: Usage{Model: model, InputTokens: 10, OutputTokens: 5}}, nil
+}
+
+func (f *Fake) Speak(_ context.Context, model, _ string, text string) (Speech, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Spoken = append(f.Spoken, text)
+	if f.SpeechErr != nil {
+		return Speech{}, f.SpeechErr
+	}
+	return Speech{Audio: f.Speech, Mime: "audio/mpeg", Usage: Usage{Model: model}}, nil
 }
 
 // Calls conta as chamadas a Complete.

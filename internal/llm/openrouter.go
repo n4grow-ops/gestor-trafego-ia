@@ -102,6 +102,42 @@ func (o *OpenRouter) Transcribe(ctx context.Context, model string, audio []byte,
 	return o.do(ctx, body)
 }
 
+// Speak gera voz pelo endpoint de TTS compatível com OpenAI (/audio/speech), em MP3.
+func (o *OpenRouter) Speak(ctx context.Context, model, voice, text string) (Speech, error) {
+	payload, err := json.Marshal(map[string]string{"model": model, "voice": voice, "input": text, "response_format": "mp3"})
+	if err != nil {
+		return Speech{}, fmt.Errorf("llm: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, o.BaseURL+"/audio/speech", bytes.NewReader(payload))
+	if err != nil {
+		return Speech{}, fmt.Errorf("llm: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+o.APIKey)
+	res, err := o.HTTP.Do(req)
+	if err != nil {
+		return Speech{}, fmt.Errorf("%w: tts: %v", ErrTransient, err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode < 200 || res.StatusCode > 299 {
+		msg, _ := io.ReadAll(io.LimitReader(res.Body, 1024))
+		err := fmt.Errorf("llm: tts status %d: %s", res.StatusCode, strings.TrimSpace(string(msg)))
+		if res.StatusCode == http.StatusTooManyRequests || res.StatusCode >= 500 {
+			err = fmt.Errorf("%w: %v", ErrTransient, err)
+		}
+		return Speech{}, err
+	}
+	audio, err := io.ReadAll(io.LimitReader(res.Body, 16<<20))
+	if err != nil {
+		return Speech{}, fmt.Errorf("llm: tts: %w", err)
+	}
+	mime := strings.TrimSpace(strings.Split(res.Header.Get("Content-Type"), ";")[0])
+	if !strings.HasPrefix(mime, "audio/") {
+		mime = "audio/mpeg"
+	}
+	return Speech{Audio: audio, Mime: mime, Usage: Usage{Model: model}}, nil
+}
+
 func (o *OpenRouter) do(ctx context.Context, body orRequest) (Response, error) {
 	payload, err := json.Marshal(body)
 	if err != nil {
