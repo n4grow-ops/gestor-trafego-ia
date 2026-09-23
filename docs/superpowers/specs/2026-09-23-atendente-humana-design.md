@@ -112,3 +112,23 @@ oficial.
 - Modelo e voz do TTS: escolher na lista de TTS do OpenRouter na implementação (voz feminina/neutra em
   pt-BR), validar ouvindo um áudio real antes de ligar em produção.
 - A chave `OPENROUTER_API_KEY` continua pendente de rotação (exposta antes no chat).
+
+## Ajustes após a revisão final (2026-09-23)
+
+- O worker não dorme: cada balão vira dois jobs. O primeiro mostra "digitando…" e agenda a entrega com
+  `run_after = agora + tempo de digitação`; a entrega manda o texto e agenda o próximo balão.
+- Voz: "gravando áudio…" dura o tempo do TTS (sem espera extra). TTS ou `sendVoice` falhou: o mesmo
+  texto vai em balões na hora, sem gerar voz de novo.
+- Resposta nova espera os balões da anterior (`HasPendingSends`, nova tentativa em 2 s): não intercala
+  e a IA enxerga a resposta anterior inteira no histórico.
+- O Gestor começa depois dos balões de "vou pedir a proposta" (atraso = pior caso da cadeia), para o
+  resumo com código chegar por último.
+- Mensagens acima do limite diário e áudio que falhou são gravadas com `kind = 'skipped'`: contam no
+  limite, mas não entram no lote nem impedem a resposta da última mensagem permitida.
+- Sem modo humano, a marca `replied_through` também avança, para ligar o modo depois sem reprocessar.
+- Aprovação vale a mensagem mais nova do lote que tiver código ("SIM 123456" + "obrigado" aprova).
+- Balão de conversa que esgota as tentativas só vai para o log; só o resumo com código escala.
+- Balões pendentes param quando a conversa passa para um humano.
+- Voz validada: `microsoft/mai-voice-2-flash` + `pt-BR-FranciscaNeural` (MP3). Gemini TTS só entrega PCM.
+- Conhecido e aceito: custo do TTS registrado como 0 (o endpoint não devolve custo); reenvio duplicado
+  só se o banco falhar entre o envio e o registro; `HUMANIZE=false` usa o prompt e as mensagens novas.

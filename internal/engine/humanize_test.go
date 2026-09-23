@@ -1,7 +1,6 @@
 package engine_test
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -22,21 +21,26 @@ func newHumanHarness(t *testing.T) (*harness, *llm.Fake) {
 	h.eng.Voice = tts
 	h.eng.TTSModel = "tts"
 	h.eng.TTSVoice = "nova"
-	h.eng.Sleep = func(context.Context, time.Duration) error { return nil }
 	h.eng.Rand = func() float64 { return 0.5 }
 	return h, tts
 }
 
-// drain roda os jobs pendentes (inclusive os agendados para depois) até a fila esvaziar.
+// drain roda os jobs até a fila esvaziar, com relógio simulado: quando nada está pronto,
+// adianta a fila até o próximo job, mantendo a ordem dos run_after.
 func (h *harness) drain() {
 	h.t.Helper()
-	for range 100 {
-		_, err := h.pool.Exec(ctx, `UPDATE outbox_jobs SET run_after = now() WHERE status = 'pending'`)
-		h.must(err)
+	for range 300 {
 		job, ok, err := h.st.ClaimJob(ctx)
 		h.must(err)
 		if !ok {
-			return
+			tag, err := h.pool.Exec(ctx, `UPDATE outbox_jobs
+				SET run_after = run_after - (SELECT min(run_after) FROM outbox_jobs WHERE status = 'pending') + now() - interval '1 millisecond'
+				WHERE status = 'pending'`)
+			h.must(err)
+			if tag.RowsAffected() == 0 {
+				return
+			}
+			continue
 		}
 		failed, err := h.st.FinishJob(ctx, job.ID, h.eng.HandleJob(ctx, job))
 		h.must(err)
@@ -111,15 +115,139 @@ func TestHumanReplyInBubblesWithTyping(t *testing.T) {
 	}
 }
 
-func TestTypingWaitsProportionalToText(t *testing.T) {
+// O worker não dorme: "digitando…" aparece e o balão sai num job agendado para depois.
+func TestTypingSchedulesBubbleInsteadOfSleeping(t *testing.T) {
 	h, _ := newHumanHarness(t)
-	var waits []time.Duration
-	h.eng.Sleep = func(_ context.Context, d time.Duration) error { waits = append(waits, d); return nil }
-	h.att.Responses = []string{`{"intent":"question","reply":"Oi!"}`}
+	h.att.Responses = []string{`{"intent":"question","reply":"Oi! Tudo certo por aí?"}`}
 	h.say("oi")
+	h.runKind("conversation.reply") // resposta + presença; a entrega do balão fica agendada
+	if got := joined(h.wa.log()); got != "seen | typing" {
+		t.Fatalf("eventos = %s", got)
+	}
+	var wait float64
+	h.must(h.pool.QueryRow(ctx, `SELECT extract(epoch FROM run_after - now()) FROM outbox_jobs
+		WHERE status = 'pending' AND kind = 'whatsapp.send'`).Scan(&wait))
+	if wait < 1.3 || wait > 7 {
+		t.Fatalf("balão agendado para %.1f s", wait)
+	}
+}
+
+// Resposta nova espera os balões da anterior: não intercala e enxerga tudo no histórico.
+func TestReplyWaitsForPendingBubbles(t *testing.T) {
+	h, _ := newHumanHarness(t)
+	h.att.Responses = []string{
+		`{"intent":"create_campaign","fields":{"offer":"Pizza"},"reply":"A1\n\nA2\n\nA3"}`,
+		`{"intent":"provide_info","fields":{"location":"Campinas"},"reply":"B1"}`,
+	}
+	h.say("quero anunciar pizza")
+	h.runKind("conversation.reply")
+	h.say("em Campinas")
 	h.drain()
-	if len(waits) != 1 || waits[0] < 1500*time.Millisecond || waits[0] > 7*time.Second {
-		t.Fatalf("esperas = %v", waits)
+	if got := strings.Join(h.wa.to(chatID), ","); got != "A1,A2,A3,B1" {
+		t.Fatalf("ordem dos balões = %s", got)
+	}
+	if user := h.att.Requests[1].Messages[1].Content; !strings.Contains(user, "Atendente: A3") {
+		t.Fatalf("segunda resposta não viu a primeira inteira:\n%s", user)
+	}
+}
+
+// A proposta com código só chega depois dos balões de "vou pedir ao especialista".
+func TestProposalArrivesAfterBubbles(t *testing.T) {
+	h, _ := newHumanHarness(t)
+	h.att.Responses = []string{turnOffer, `{"intent":"provide_info","fields":{"audience":"famílias","location":"Campinas","daily_budget_brl":50},"reply":"Perfeito!\n\nVou pedir a proposta ao especialista."}`}
+	h.mgr.Responses = []string{validProposal}
+	h.say("quero anunciar pizza")
+	h.drain()
+	h.say("famílias em Campinas, 50 por dia")
+	h.drain()
+	sent := h.wa.to(chatID)
+	if len(sent) < 3 || sent[len(sent)-2] != "Vou pedir a proposta ao especialista." || codeRe.FindString(sent[len(sent)-1]) == "" {
+		t.Fatalf("ordem = %q", sent)
+	}
+}
+
+// Limite diário no meio do debounce: a última mensagem permitida ainda é respondida,
+// e as que passaram do limite não entram no lote do dia seguinte.
+func TestDailyLimitKeepsLastAllowedMessage(t *testing.T) {
+	h, _ := newHumanHarness(t)
+	_, err := h.pool.Exec(ctx, `UPDATE organizations SET daily_message_limit = 1`)
+	h.must(err)
+	h.att.Responses = []string{`{"intent":"question","reply":"Oi!"}`, `{"intent":"question","reply":"Bom dia!"}`}
+	h.say("oi")
+	h.say("spam")
+	h.drain()
+	if h.att.Calls() != 1 || !strings.Contains(h.att.Requests[0].Messages[1].Content, "<cliente>oi</cliente>") {
+		t.Fatalf("mensagem permitida sem resposta: chamadas = %d", h.att.Calls())
+	}
+	if got := strings.Join(h.wa.to(chatID), ","); !strings.Contains(got, "Oi!") || !strings.Contains(got, "limite de mensagens") {
+		t.Fatalf("enviados = %s", got)
+	}
+	// dia seguinte: as mensagens de ontem saem da contagem do limite
+	_, err = h.pool.Exec(ctx, `UPDATE messages SET created_at = created_at - interval '2 days'`)
+	h.must(err)
+	h.say("bom dia")
+	h.drain()
+	if user := h.att.Requests[1].Messages[1].Content; !strings.Contains(user, "Mensagem atual do cliente:\n<cliente>bom dia</cliente>") {
+		t.Fatalf("lote do dia seguinte:\n%s", user)
+	}
+}
+
+// Ligar o HUMANIZE depois de um tempo desligado não reenvia mensagens já respondidas.
+func TestHumanizeOffStillMarksReplied(t *testing.T) {
+	h, _ := newHumanHarness(t)
+	h.eng.Humanize = false
+	h.att.Responses = []string{turnOffer, `{"intent":"provide_info","fields":{"location":"Campinas"},"reply":"Anotado!"}`}
+	h.say("quero anunciar pizza")
+	h.eng.Humanize = true
+	h.say("em Campinas")
+	h.drain()
+	if user := h.att.Requests[1].Messages[1].Content; !strings.Contains(user, "Mensagem atual do cliente:\n<cliente>em Campinas</cliente>") {
+		t.Fatalf("lote depois de ligar o modo humano:\n%s", user)
+	}
+}
+
+// Falha num balão de conversa não derruba a proposta que já foi entregue.
+func TestFailedChitChatKeepsProposal(t *testing.T) {
+	h, _ := newHumanHarness(t)
+	h.reachApprovalHuman(false)
+	h.att.Responses = append(h.att.Responses, `{"intent":"question","reply":"Qualquer dúvida é só falar!"}`)
+	h.say("legal")
+	h.wa.setFail(true)
+	h.drain()
+	h.wa.setFail(false)
+	if h.conv().State != store.StateAwaitingApproval || len(h.wa.to(operatorChat)) != 0 {
+		t.Fatalf("estado = %s operador = %q", h.conv().State, h.wa.to(operatorChat))
+	}
+}
+
+// WAHA recusou a voz: vai em texto na hora, sem pagar TTS de novo.
+func TestVoiceSendFailureFallsBackToText(t *testing.T) {
+	h, tts := newHumanHarness(t)
+	h.wa.voiceFail = true
+	h.att.Transcript = "oi"
+	h.att.Responses = []string{`{"intent":"question","reply":"Oi! Tudo certo?"}`}
+	h.sayAudio()
+	h.drain()
+	want := []string{"seen", "recording", "paused", "typing", "text:Oi! Tudo certo?", "paused"}
+	if got := h.wa.log(); joined(got) != joined(want) {
+		t.Fatalf("eventos = %s; want %s", joined(got), joined(want))
+	}
+	if len(tts.Spoken) != 1 {
+		t.Fatalf("TTS chamado %d vezes", len(tts.Spoken))
+	}
+}
+
+// Balões pendentes param quando a conversa passa para um humano.
+func TestBubblesStopAfterEscalation(t *testing.T) {
+	h, _ := newHumanHarness(t)
+	h.att.Responses = []string{`{"intent":"question","reply":"A1\n\nA2"}`}
+	h.say("oi")
+	h.runKind("conversation.reply")
+	_, err := h.pool.Exec(ctx, `UPDATE conversations SET state = 'needs_human'`)
+	h.must(err)
+	h.drain()
+	if h.wa.count() != 0 {
+		t.Fatalf("balões enviados depois da escalada: %q", h.wa.to(chatID))
 	}
 }
 
@@ -260,6 +388,18 @@ func TestNeedsHumanMarksReplied(t *testing.T) {
 	h.drain()
 	if user := h.att.Requests[1].Messages[1].Content; !strings.Contains(user, "Mensagem atual do cliente:\n<cliente>voltei</cliente>") {
 		t.Fatalf("lote depois do humano:\n%s", user)
+	}
+}
+
+// "SIM 123456" seguido de "obrigado" no mesmo lote ainda aprova.
+func TestApprovalFoundEarlierInBatch(t *testing.T) {
+	h, _ := newHumanHarness(t)
+	code := h.reachApprovalHuman(false)
+	h.say("SIM " + code)
+	h.say("obrigado")
+	h.drain()
+	if h.conv().State != store.StateIdle || !strings.Contains(h.wa.last().Text, "Campanha aprovada") {
+		t.Fatalf("estado = %s último = %q", h.conv().State, h.wa.last().Text)
 	}
 }
 

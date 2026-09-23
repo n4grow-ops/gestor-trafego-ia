@@ -65,6 +65,11 @@ func (e *Engine) OnJobFailed(ctx context.Context, job store.Job) error {
 			e.Log.Error("aviso ao operador não entregue", "job_id", job.ID)
 			return nil
 		}
+		if s.Human {
+			// Balão de conversa não entregue: só registra; a proposta (envio comum) segue valendo.
+			e.Log.Error("balão não entregue", "job_id", job.ID, "conversation_id", s.ConversationID)
+			return nil
+		}
 		// Resumo com código não entregue: a proposta perde a validade e um humano assume.
 		return e.escalateIf(ctx, s.ConversationID, store.StateAwaitingApproval, "não foi possível entregar a proposta pelo WhatsApp")
 	case JobReply:
@@ -73,12 +78,24 @@ func (e *Engine) OnJobFailed(ctx context.Context, job store.Job) error {
 		if err := json.Unmarshal(job.Payload, &r); err != nil {
 			return fmt.Errorf("engine: %w", err)
 		}
+		unlock, err := e.Store.LockConversation(ctx, r.ConversationID)
+		if err != nil {
+			return err
+		}
+		defer unlock()
 		conv, err := e.Store.GetConversation(ctx, r.ConversationID)
 		if err != nil {
 			return err
 		}
 		if err := e.Store.MarkReplied(ctx, conv.ID, r.MessageID); err != nil {
 			return err
+		}
+		ident, err := e.Store.GetIdentity(ctx, conv.IdentityID)
+		if err != nil {
+			return err
+		}
+		if ident.Status == "blocked" || conv.State == store.StateNeedsHuman {
+			return nil
 		}
 		return e.Store.Enqueue(ctx, sendJob(conv.ID, conv.ChatID, msgRetryLater))
 	}

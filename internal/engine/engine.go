@@ -53,6 +53,7 @@ type SendJob struct {
 	Human          bool     `json:"human,omitempty"` // com presença e tempo de digitação
 	Voice          bool     `json:"voice,omitempty"` // tenta mandar como mensagem de voz
 	Next           []string `json:"next,omitempty"`  // balões seguintes, enviados em jobs encadeados
+	Typed          bool     `json:"typed,omitempty"` // "digitando…" já apareceu: agora é entregar
 }
 
 // ReplyJob responde as mensagens seguidas de uma conversa depois do debounce.
@@ -83,8 +84,7 @@ type Engine struct {
 	Voice    llm.Speaker
 	TTSModel string
 	TTSVoice string
-	Sleep    func(context.Context, time.Duration) error // espera; trocada nos testes
-	Rand     func() float64                             // variação dos tempos; trocada nos testes
+	Rand     func() float64 // variação dos tempos; trocada nos testes
 }
 
 func (e *Engine) now() time.Time {
@@ -140,7 +140,7 @@ func (e *Engine) HandleInbound(ctx context.Context, in whatsapp.Inbound) error {
 		return err
 	}
 	if received >= ident.DailyMessageLimit {
-		if err := e.Store.AddMessage(ctx, conv.ID, "in", string(in.Kind), in.Text); err != nil {
+		if err := e.Store.AddMessage(ctx, conv.ID, "in", store.KindSkipped, in.Text); err != nil {
 			return err
 		}
 		if received == ident.DailyMessageLimit {
@@ -153,7 +153,7 @@ func (e *Engine) HandleInbound(ctx context.Context, in whatsapp.Inbound) error {
 	if errors.Is(err, errMediaFailed) {
 		e.Log.Error("falha na mídia", "conversation_id", conv.ID, "erro", err)
 		e.audit(ctx, ident.OrgID, "system", "media_failed", map[string]any{"conversation_id": conv.ID, "error": err.Error()})
-		if err := e.Store.AddMessage(ctx, conv.ID, "in", string(in.Kind), "[áudio não processado]"); err != nil {
+		if err := e.Store.AddMessage(ctx, conv.ID, "in", store.KindSkipped, "[áudio não processado]"); err != nil {
 			return err
 		}
 		if conv.State == store.StateNeedsHuman {
@@ -175,23 +175,31 @@ func (e *Engine) HandleInbound(ctx context.Context, in whatsapp.Inbound) error {
 		// Debounce: quem responde é o job da mensagem mais nova, depois de um tempo sem mensagens.
 		return e.Store.Enqueue(ctx, store.JobSpec{Kind: JobReply, Payload: ReplyJob{ConversationID: conv.ID, MessageID: id}, Delay: e.debounce()})
 	}
-	if err := e.Store.AddMessage(ctx, conv.ID, "in", string(in.Kind), text); err != nil {
+	// Sem modo humano responde na hora; a marca de respondido acompanha para o modo poder ser ligado depois.
+	id, err := e.Store.AddInbound(ctx, conv.ID, string(in.Kind), text)
+	if err != nil {
 		return err
 	}
-	return e.dispatch(ctx, ident, conv, text, text, nil)
+	if err := e.Store.MarkReplied(ctx, conv.ID, id); err != nil {
+		return err
+	}
+	return e.dispatch(ctx, ident, conv, text, []string{text}, nil)
 }
 
-// dispatch decide a resposta pelo estado da conversa. last é a última mensagem (aprovação);
-// batch são os ids do lote, fora do histórico (nil = só a última mensagem gravada).
-func (e *Engine) dispatch(ctx context.Context, ident store.Identity, conv store.Conversation, text, last string, batch []int64) error {
+// dispatch decide a resposta pelo estado da conversa. msgs são as mensagens do lote, em ordem
+// (a aprovação vale a mais nova que tiver código); batch são os ids do lote, fora do histórico
+// (nil = só a última mensagem gravada).
+func (e *Engine) dispatch(ctx context.Context, ident store.Identity, conv store.Conversation, text string, msgs []string, batch []int64) error {
 	switch conv.State {
 	case store.StateNeedsHuman:
 		return nil
 	case store.StateAwaitingProposal:
 		return e.send(ctx, conv, msgBusy)
 	case store.StateAwaitingApproval:
-		if code, ok := campaign.ParseApproval(last); ok {
-			return e.approve(ctx, ident, conv, code)
+		for i := len(msgs) - 1; i >= 0; i-- {
+			if code, ok := campaign.ParseApproval(msgs[i]); ok {
+				return e.approve(ctx, ident, conv, code)
+			}
 		}
 	}
 	return e.converse(ctx, ident, conv, text, batch)
@@ -341,9 +349,16 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 }
 
 // requestProposal pede a proposta ao Gestor; fixed indica que reply é mensagem fixa (nunca vira voz).
+// No modo humano o Gestor só começa depois dos balões da resposta, para o resumo chegar por último.
 func (e *Engine) requestProposal(ctx context.Context, ident store.Identity, conv store.Conversation, f contract.Fields, adjustment, reply string, fixed bool) error {
-	job := ProposeJob{ConversationID: conv.ID, Adjustment: adjustment}
-	if err := e.Store.SetStateAndEnqueue(ctx, conv.ID, store.StateAwaitingProposal, f, store.JobSpec{Kind: JobPropose, Payload: job}); err != nil {
+	job := store.JobSpec{Kind: JobPropose, Payload: ProposeJob{ConversationID: conv.ID, Adjustment: adjustment}}
+	if e.Humanize {
+		job.Delay = humanize.ChainDuration(reply) + time.Second
+		if !fixed && e.voiceFor(ctx, reply) {
+			job.Delay = humanize.MaxTyping + ttsTimeout
+		}
+	}
+	if err := e.Store.SetStateAndEnqueue(ctx, conv.ID, store.StateAwaitingProposal, f, job); err != nil {
 		return err
 	}
 	if fixed {
@@ -423,8 +438,12 @@ func (e *Engine) speak(ctx context.Context, ident store.Identity, conv store.Con
 	if !e.Humanize {
 		return e.send(ctx, conv, text)
 	}
-	voice := e.Voice != nil && voiceWanted(ctx) && humanize.ShouldVoice(text)
-	return e.Store.Enqueue(ctx, humanJob(ident.OrgID, conv, text, voice))
+	return e.Store.Enqueue(ctx, humanJob(ident.OrgID, conv, text, e.voiceFor(ctx, text)))
+}
+
+// voiceFor diz se a resposta da Atendente vai em voz.
+func (e *Engine) voiceFor(ctx context.Context, text string) bool {
+	return e.Voice != nil && voiceWanted(ctx) && humanize.ShouldVoice(text)
 }
 
 func (e *Engine) recordUsage(ctx context.Context, orgID int64, agent string, u llm.Usage) {

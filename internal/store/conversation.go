@@ -116,11 +116,24 @@ func (s *Store) AddInbound(ctx context.Context, convID int64, kind, body string)
 	return id, err
 }
 
-// LatestInboundID é o id da mensagem de entrada mais nova da conversa (0 se não houver).
+// KindSkipped marca entradas gravadas sem resposta da IA (acima do limite diário, mídia que falhou):
+// contam no limite, mas não entram no lote nem mudam qual mensagem é a mais nova.
+const KindSkipped = "skipped"
+
+// LatestInboundID é o id da mensagem de entrada mais nova da conversa, sem as ignoradas (0 se não houver).
 func (s *Store) LatestInboundID(ctx context.Context, convID int64) (int64, error) {
 	var id int64
-	err := s.pool.QueryRow(ctx, `SELECT coalesce(max(id), 0) FROM messages WHERE conversation_id = $1 AND direction = 'in'`, convID).Scan(&id)
+	err := s.pool.QueryRow(ctx, `SELECT coalesce(max(id), 0) FROM messages
+		WHERE conversation_id = $1 AND direction = 'in' AND kind <> 'skipped'`, convID).Scan(&id)
 	return id, err
+}
+
+// HasPendingSends diz se a conversa ainda tem envios na fila (balões de uma resposta anterior).
+func (s *Store) HasPendingSends(ctx context.Context, convID int64) (bool, error) {
+	var ok bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM outbox_jobs
+		WHERE status = 'pending' AND kind = 'whatsapp.send' AND (payload->>'conversation_id')::bigint = $1)`, convID).Scan(&ok)
+	return ok, err
 }
 
 // PendingInbound devolve as mensagens de entrada ainda sem resposta até upTo, as limit mais novas,
@@ -129,7 +142,8 @@ func (s *Store) PendingInbound(ctx context.Context, convID, upTo int64, limit in
 	rows, err := s.pool.Query(ctx, `SELECT id, direction, kind, body FROM (
 		SELECT m.id, m.direction, m.kind, m.body FROM messages m
 		JOIN conversations c ON c.id = m.conversation_id
-		WHERE m.conversation_id = $1 AND m.direction = 'in' AND m.id > c.replied_through AND m.id <= $2
+		WHERE m.conversation_id = $1 AND m.direction = 'in' AND m.kind <> 'skipped'
+		  AND m.id > c.replied_through AND m.id <= $2
 		ORDER BY m.id DESC LIMIT $3
 	) t ORDER BY id`, convID, upTo, limit)
 	if err != nil {

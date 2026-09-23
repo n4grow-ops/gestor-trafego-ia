@@ -11,7 +11,11 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp"
 )
 
-const ttsTimeout = 20 * time.Second
+const (
+	ttsTimeout = 20 * time.Second
+	// Espera de uma resposta nova enquanto ainda há balões da anterior na fila.
+	replyWait = 2 * time.Second
+)
 
 type voiceKey struct{}
 
@@ -37,6 +41,15 @@ func (e *Engine) reply(ctx context.Context, r ReplyJob) error {
 	if latest != r.MessageID {
 		return nil // chegou mensagem nova: o job dela responde tudo
 	}
+	// Balões da resposta anterior ainda na fila: espera saírem, para não intercalar
+	// e para a próxima resposta enxergá-los no histórico.
+	busy, err := e.Store.HasPendingSends(ctx, r.ConversationID)
+	if err != nil {
+		return err
+	}
+	if busy {
+		return e.Store.Enqueue(ctx, store.JobSpec{Kind: JobReply, Payload: r, Delay: replyWait})
+	}
 	msgs, err := e.Store.PendingInbound(ctx, r.ConversationID, r.MessageID, maxBatch)
 	if err != nil || len(msgs) == 0 {
 		return err
@@ -60,7 +73,7 @@ func (e *Engine) reply(ctx context.Context, r ReplyJob) error {
 		if last.Kind == string(whatsapp.KindAudio) {
 			ctx = withVoice(ctx)
 		}
-		if err := e.dispatch(ctx, ident, conv, strings.Join(texts, "\n"), last.Body, ids); err != nil {
+		if err := e.dispatch(ctx, ident, conv, strings.Join(texts, "\n"), texts, ids); err != nil {
 			return err
 		}
 	}
@@ -85,18 +98,25 @@ func splitJob(s SendJob) SendJob {
 	return s
 }
 
-// sendHuman envia um balão com presença; se houver mais, agenda o próximo depois de uma pausa.
+// sendHuman envia um balão em duas etapas, sem prender o worker: primeiro mostra "digitando…"
+// e agenda a entrega para depois do tempo de digitação; na entrega manda o texto e agenda o
+// próximo balão depois de uma pausa.
 func (e *Engine) sendHuman(ctx context.Context, s SendJob) error {
-	if s.Voice {
-		ok, err := e.sendVoice(ctx, s)
-		if err != nil || ok {
-			return err
-		}
-		s = splitJob(s) // sem voz: mesmo texto em balões
-	}
-	e.presence(ctx, s.ChatID, whatsapp.PresenceTyping)
-	if err := e.sleep(ctx, humanize.TypingDelay(s.Text, e.rand())); err != nil {
+	conv, err := e.Store.GetConversation(ctx, s.ConversationID)
+	if err != nil {
 		return err
+	}
+	if conv.State == store.StateNeedsHuman {
+		return nil // um humano assumiu: balões antigos não saem mais
+	}
+	if s.Voice {
+		return e.sendVoice(ctx, s)
+	}
+	if !s.Typed {
+		e.presence(ctx, s.ChatID, whatsapp.PresenceTyping)
+		s.Typed = true
+		return e.Store.Enqueue(ctx, store.JobSpec{Kind: JobSend, Payload: s, MaxAttempts: sendAttempts,
+			Delay: humanize.TypingDelay(s.Text, e.rand())})
 	}
 	if err := e.WA.SendText(ctx, s.ChatID, s.Text); err != nil {
 		return err
@@ -109,38 +129,36 @@ func (e *Engine) sendHuman(ctx context.Context, s SendJob) error {
 		return nil
 	}
 	next := s
-	next.Text, next.Next = s.Next[0], s.Next[1:]
+	next.Text, next.Next, next.Typed = s.Next[0], s.Next[1:], false
 	return e.Store.Enqueue(ctx, store.JobSpec{Kind: JobSend, Payload: next, MaxAttempts: sendAttempts, Delay: humanize.Gap(e.rand())})
 }
 
-// sendVoice devolve ok=false quando a voz não pôde ser gerada; o chamador manda em texto.
-func (e *Engine) sendVoice(ctx context.Context, s SendJob) (bool, error) {
+// sendVoice mostra "gravando áudio…" enquanto o TTS gera a voz (esse é o tempo de gravação) e envia.
+// Se a voz não puder ser gerada ou o WhatsApp recusar, o mesmo texto segue em balões, sem gerar de novo.
+func (e *Engine) sendVoice(ctx context.Context, s SendJob) error {
 	if e.Voice == nil {
-		return false, nil
+		return e.Store.Enqueue(ctx, textFallback(s))
 	}
 	e.presence(ctx, s.ChatID, whatsapp.PresenceRecording)
-	start := time.Now()
 	tctx, cancel := context.WithTimeout(ctx, ttsTimeout)
 	sp, err := e.Voice.Speak(tctx, e.TTSModel, e.TTSVoice, humanize.SpeechText(s.Text))
 	cancel()
 	if s.OrgID != 0 {
 		e.recordUsage(ctx, s.OrgID, "tts", sp.Usage)
 	}
-	if err != nil {
-		e.Log.Error("tts falhou, indo em texto", "conversation_id", s.ConversationID, "erro", err)
-		e.presence(ctx, s.ChatID, whatsapp.PresencePaused)
-		return false, nil
-	}
-	if wait := humanize.TypingDelay(s.Text, e.rand()) - time.Since(start); wait > 0 {
-		if err := e.sleep(ctx, wait); err != nil {
-			return false, err
-		}
-	}
-	if err := e.WA.SendVoice(ctx, s.ChatID, sp.Audio, sp.Mime); err != nil {
-		return false, err
+	if err == nil {
+		err = e.WA.SendVoice(ctx, s.ChatID, sp.Audio, sp.Mime)
 	}
 	e.presence(ctx, s.ChatID, whatsapp.PresencePaused)
-	return true, e.Store.AddMessage(ctx, s.ConversationID, "out", "voice", s.Text)
+	if err != nil {
+		e.Log.Error("voz falhou, indo em texto", "conversation_id", s.ConversationID, "erro", err)
+		return e.Store.Enqueue(ctx, textFallback(s))
+	}
+	return e.Store.AddMessage(ctx, s.ConversationID, "out", "voice", s.Text)
+}
+
+func textFallback(s SendJob) store.JobSpec {
+	return store.JobSpec{Kind: JobSend, Payload: splitJob(s), MaxAttempts: sendAttempts}
 }
 
 // presence e markSeen são cosméticos: falha só vai para o log.
@@ -153,18 +171,6 @@ func (e *Engine) presence(ctx context.Context, chatID string, p whatsapp.Presenc
 func (e *Engine) markSeen(ctx context.Context, chatID string) {
 	if err := e.WA.MarkSeen(ctx, chatID); err != nil {
 		e.Log.Warn("falha ao marcar visto", "erro", err)
-	}
-}
-
-func (e *Engine) sleep(ctx context.Context, d time.Duration) error {
-	if e.Sleep != nil {
-		return e.Sleep(ctx, d)
-	}
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-time.After(d):
-		return nil
 	}
 }
 

@@ -44,6 +44,19 @@ func Gap(r float64) time.Duration {
 	return 600*time.Millisecond + time.Duration(r*float64(800*time.Millisecond))
 }
 
+// ChainDuration é o tempo máximo que os balões de uma resposta levam para sair (pior caso).
+func ChainDuration(text string) time.Duration {
+	parts := Split(text)
+	var d time.Duration
+	for i, p := range parts {
+		d += TypingDelay(p, 1)
+		if i > 0 {
+			d += Gap(1)
+		}
+	}
+	return d
+}
+
 // ShouldVoice diz se o texto cabe numa mensagem de voz.
 func ShouldVoice(text string) bool {
 	n := utf8.RuneCountInString(strings.TrimSpace(text))

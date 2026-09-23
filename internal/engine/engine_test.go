@@ -37,14 +37,15 @@ type sent struct{ ChatID, Text string }
 
 // fakeWA grava o que seria enviado ao WhatsApp.
 type fakeWA struct {
-	mu       sync.Mutex
-	sent     []sent
-	media    []byte
-	mime     string
-	mediaErr error
-	fail     bool     // simula o WhatsApp fora do ar
-	events   []string // visto, presenças, voz e textos, na ordem
-	voices   []sent
+	mu        sync.Mutex
+	sent      []sent
+	media     []byte
+	mime      string
+	mediaErr  error
+	fail      bool     // simula o WhatsApp fora do ar
+	voiceFail bool     // simula o WAHA recusando mensagem de voz
+	events    []string // visto, presenças, voz e textos, na ordem
+	voices    []sent
 }
 
 func (f *fakeWA) Name() string { return "openwa" }
@@ -76,8 +77,8 @@ func (f *fakeWA) SetPresence(_ context.Context, _ string, p whatsapp.Presence) e
 func (f *fakeWA) SendVoice(_ context.Context, chatID string, audio []byte, _ string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.fail {
-		return errors.New("whatsapp fora do ar")
+	if f.fail || f.voiceFail {
+		return errors.New("whatsapp recusou a voz")
 	}
 	f.events = append(f.events, "voice")
 	f.voices = append(f.voices, sent{chatID, string(audio)})

@@ -56,7 +56,7 @@ func Load(getenv func(string) string) Config {
 		ReplyDebounce:     time.Duration(positiveInt(getenv("REPLY_DEBOUNCE_SECONDS"), 4)) * time.Second,
 		VoiceReplies:      getenv("VOICE_REPLIES") != "false",
 		TTSModel:          getenv("TTS_MODEL"),
-		TTSVoice:          orDefault(getenv("TTS_VOICE"), "nova"),
+		TTSVoice:          orDefault(getenv("TTS_VOICE"), "pt-BR-FranciscaNeural"),
 	}
 }
 
