@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -19,6 +20,11 @@ type Config struct {
 	WAHAAPIKey        string
 	WAHASession       string
 	OperatorPhone     string
+
+	// Cadastro automático de número novo.
+	AutoSignup       bool
+	SignupMaxBudget  float64
+	SignupDailyLimit int
 }
 
 func Load(getenv func(string) string) Config {
@@ -35,6 +41,9 @@ func Load(getenv func(string) string) Config {
 		WAHAAPIKey:        getenv("WAHA_API_KEY"),
 		WAHASession:       orDefault(getenv("WAHA_SESSION"), "default"),
 		OperatorPhone:     getenv("OPERATOR_PHONE"),
+		AutoSignup:        getenv("AUTO_SIGNUP") == "true",
+		SignupMaxBudget:   positiveFloat(getenv("AUTO_SIGNUP_MAX_BUDGET"), 50),
+		SignupDailyLimit:  positiveInt(getenv("AUTO_SIGNUP_DAILY_LIMIT"), 60),
 	}
 }
 
@@ -71,4 +80,20 @@ func orDefault(v, def string) string {
 		return def
 	}
 	return v
+}
+
+func positiveFloat(v string, def float64) float64 {
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil || f <= 0 {
+		return def
+	}
+	return f
+}
+
+func positiveInt(v string, def int) int {
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return def
+	}
+	return n
 }

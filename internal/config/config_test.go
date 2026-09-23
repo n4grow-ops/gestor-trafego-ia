@@ -51,3 +51,18 @@ func TestRequireOK(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestAutoSignupConfig(t *testing.T) {
+	c := config.Load(env(nil))
+	if c.AutoSignup || c.SignupMaxBudget != 50 || c.SignupDailyLimit != 60 {
+		t.Errorf("padrões = %+v", c)
+	}
+	c = config.Load(env(map[string]string{"AUTO_SIGNUP": "true", "AUTO_SIGNUP_MAX_BUDGET": "30", "AUTO_SIGNUP_DAILY_LIMIT": "20"}))
+	if !c.AutoSignup || c.SignupMaxBudget != 30 || c.SignupDailyLimit != 20 {
+		t.Errorf("configurado = %+v", c)
+	}
+	c = config.Load(env(map[string]string{"AUTO_SIGNUP_MAX_BUDGET": "abc", "AUTO_SIGNUP_DAILY_LIMIT": "-1"}))
+	if c.SignupMaxBudget != 50 || c.SignupDailyLimit != 60 {
+		t.Errorf("valores inválidos deveriam cair no padrão: %+v", c)
+	}
+}

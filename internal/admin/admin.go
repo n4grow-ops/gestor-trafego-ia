@@ -16,7 +16,9 @@ import (
 const usage = `uso:
   admin org-create --name NOME --max-budget 100 [--niche NICHO] [--objectives OUTCOME_ENGAGEMENT,OUTCOME_LEADS]
   admin member-add --org ID --name NOME --role owner|approver|viewer --phone 5511999998888 [--provider waha]
-  admin resolve-human --phone 5511999998888 [--provider waha]`
+  admin resolve-human --phone 5511999998888 [--provider waha]
+  admin org-block --org ID | admin org-unblock --org ID
+  admin org-limits --org ID --max-budget 100 --daily-limit 60`
 
 func Run(ctx context.Context, st *store.Store, args []string, out io.Writer) error {
 	if len(args) == 0 {
@@ -29,6 +31,12 @@ func Run(ctx context.Context, st *store.Store, args []string, out io.Writer) err
 		return memberAdd(ctx, st, args[1:], out)
 	case "resolve-human":
 		return resolveHuman(ctx, st, args[1:], out)
+	case "org-block":
+		return orgStatus(ctx, st, args[1:], out, "blocked")
+	case "org-unblock":
+		return orgStatus(ctx, st, args[1:], out, "active")
+	case "org-limits":
+		return orgLimits(ctx, st, args[1:], out)
 	default:
 		return fmt.Errorf("comando desconhecido %q\n%s", args[0], usage)
 	}
@@ -123,5 +131,41 @@ func resolveHuman(ctx context.Context, st *store.Store, args []string, out io.Wr
 		return fmt.Errorf("resolve-human: %w", err)
 	}
 	fmt.Fprintf(out, "conversa de %s reativada para o bot\n", p)
+	return nil
+}
+
+func orgStatus(ctx context.Context, st *store.Store, args []string, out io.Writer, status string) error {
+	fs := flag.NewFlagSet("org-status", flag.ContinueOnError)
+	fs.SetOutput(out)
+	org := fs.Int64("org", 0, "id da organização")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *org <= 0 {
+		return errors.New("--org é obrigatório")
+	}
+	if err := st.SetOrgStatus(ctx, *org, status); err != nil {
+		return fmt.Errorf("organização %d: %w", *org, err)
+	}
+	fmt.Fprintf(out, "organização %d: %s\n", *org, status)
+	return nil
+}
+
+func orgLimits(ctx context.Context, st *store.Store, args []string, out io.Writer) error {
+	fs := flag.NewFlagSet("org-limits", flag.ContinueOnError)
+	fs.SetOutput(out)
+	org := fs.Int64("org", 0, "id da organização")
+	maxBudget := fs.Float64("max-budget", 0, "teto de investimento diário em reais")
+	dailyLimit := fs.Int("daily-limit", 0, "mensagens recebidas por dia")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *org <= 0 || *maxBudget <= 0 || *dailyLimit <= 0 {
+		return errors.New("org-limits: --org, --max-budget e --daily-limit (maiores que zero) são obrigatórios")
+	}
+	if err := st.SetOrgLimits(ctx, *org, *maxBudget, *dailyLimit); err != nil {
+		return fmt.Errorf("organização %d: %w", *org, err)
+	}
+	fmt.Fprintf(out, "organização %d: teto R$ %.2f/dia, %d mensagens/dia\n", *org, *maxBudget, *dailyLimit)
 	return nil
 }

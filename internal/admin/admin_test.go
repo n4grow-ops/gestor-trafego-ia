@@ -109,3 +109,34 @@ func TestUnknownCommand(t *testing.T) {
 		t.Fatal("sem comando deveria falhar")
 	}
 }
+
+func TestBlockUnblockAndLimits(t *testing.T) {
+	st := store.New(testdb.New(t))
+	org := createOrg(t, st)
+	if _, err := run(t, st, "member-add", "--org", org, "--name", "Ana", "--role", "owner", "--phone", "5511988887777"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := run(t, st, "org-block", "--org", org); err != nil {
+		t.Fatal(err)
+	}
+	ident, _ := st.FindIdentity(ctx, "waha", "5511988887777")
+	if ident.Status != "blocked" {
+		t.Fatalf("status = %s", ident.Status)
+	}
+	if _, err := run(t, st, "org-unblock", "--org", org); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := run(t, st, "org-limits", "--org", org, "--max-budget", "200", "--daily-limit", "150"); err != nil {
+		t.Fatal(err)
+	}
+	ident, _ = st.FindIdentity(ctx, "waha", "5511988887777")
+	if ident.Status != "active" || ident.MaxDailyBudgetBRL != 200 || ident.DailyMessageLimit != 150 {
+		t.Errorf("ident = %+v", ident)
+	}
+	if _, err := run(t, st, "org-limits", "--org", org, "--max-budget", "0", "--daily-limit", "10"); err == nil {
+		t.Error("teto zero deveria falhar")
+	}
+	if _, err := run(t, st, "org-block", "--org", "999"); err == nil {
+		t.Error("organização inexistente deveria falhar")
+	}
+}

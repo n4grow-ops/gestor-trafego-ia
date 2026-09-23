@@ -61,6 +61,10 @@ func run(log *slog.Logger) error {
 		TranscribeModel: cfg.TranscribeModel,
 		OperatorPhone:   operator,
 		Log:             log,
+
+		AutoSignup:       cfg.AutoSignup,
+		SignupMaxBudget:  cfg.SignupMaxBudget,
+		SignupDailyLimit: cfg.SignupDailyLimit,
 	}
 	w := &worker.Worker{Store: st, WA: wa, Engine: eng, Log: log}
 	log.Info("worker iniciado", "atendente", cfg.AttendantModel, "gestor", cfg.ManagerModel)
