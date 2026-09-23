@@ -11,6 +11,8 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/api ./cmd/api \
 FROM mirror.gcr.io/library/alpine:3.22
 RUN apk add --no-cache ca-certificates tzdata && adduser -D -H app
 COPY --from=build /out/ /app/
+# Raiz da cadeia TLS do Supabase, para sslmode=verify-full.
+COPY deploy/supabase-root-2021.crt /app/certs/supabase-root-2021.crt
 USER app
 EXPOSE 8080
 CMD ["/app/api"]

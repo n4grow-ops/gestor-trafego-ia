@@ -58,3 +58,21 @@ WHATSAPP_SWAGGER_USERNAME / WHATSAPP_SWAGGER_PASSWORD
 - Atendimento humano: o operador recebe aviso no `OPERATOR_PHONE` (número exatamente como registrado no WhatsApp; se o aviso não chegar, teste com ou sem o nono dígito). Ao terminar: `/app/admin resolve-human --phone 55DDDNUMERO`.
 - Custo por agente: `SELECT agent, model, sum(cost_usd) FROM llm_usage GROUP BY 1, 2;`
 - Auditoria: `SELECT created_at, actor, action, data FROM audit_events ORDER BY id DESC LIMIT 50;`
+
+## Banco no Supabase
+
+Projeto `jsafyoqvypkzqdtefpzp`, região Canada Central (ca-central-1), pooler `aws-0-ca-central-1`.
+
+1. Rodar `docs/supabase/setup.sql` uma vez no SQL Editor. Ele cria o usuário `gestor_app` (sem superusuário, sem BYPASSRLS), o schema privado `app` e mostra a senha gerada uma única vez.
+2. `DATABASE_URL` de `api` e `worker` (modo sessão do Supavisor, porta 5432, TLS com verificação de certificado e de host):
+
+   ```
+   postgres://gestor_app.jsafyoqvypkzqdtefpzp:<SENHA>@aws-0-ca-central-1.pooler.supabase.com:5432/postgres?sslmode=verify-full&sslrootcert=/app/certs/supabase-root-2021.crt
+   ```
+
+3. Network Restrictions: permitir só o IP da VPS (`2.25.215.158/32`).
+4. Settings → API → Exposed schemas: `app` não pode aparecer.
+5. Todas as tabelas nascem com RLS (migration 0003) e o teste `TestEveryTableHasRowLevelSecurity` impede tabela nova sem RLS.
+
+Certificado: `deploy/supabase-root-2021.crt` (Supabase Root 2021 CA, válido até 2031),
+SHA-256 `80:70:25:AD:50:D4:ED:21:9D:2C:9C:7D:29:9C:00:4F:82:4E:B0:0C:F7:F6:5A:FE:F6:07:D0:7B:72:E6:CA:FA`.
