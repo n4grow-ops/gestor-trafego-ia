@@ -29,6 +29,9 @@ func (e *Engine) HandleJob(ctx context.Context, job store.Job) error {
 		if err := e.WA.SendText(ctx, s.ChatID, s.Text); err != nil {
 			return err
 		}
+		if s.ConversationID == 0 {
+			return nil // aviso ao operador: fora de conversa
+		}
 		return e.Store.AddMessage(ctx, s.ConversationID, "out", "text", s.Text)
 	default:
 		return fmt.Errorf("engine: job desconhecido %q", job.Kind)
@@ -37,28 +40,60 @@ func (e *Engine) HandleJob(ctx context.Context, job store.Job) error {
 
 // OnJobFailed é chamado quando um job esgota as tentativas: o cliente não pode ficar esperando.
 func (e *Engine) OnJobFailed(ctx context.Context, job store.Job) error {
-	if job.Kind != JobPropose {
-		return nil
+	switch job.Kind {
+	case JobPropose:
+		var p ProposeJob
+		if err := json.Unmarshal(job.Payload, &p); err != nil {
+			return fmt.Errorf("engine: %w", err)
+		}
+		return e.escalateIf(ctx, p.ConversationID, store.StateAwaitingProposal, "falha ao gerar proposta: tentativas esgotadas")
+	case JobSend:
+		var s SendJob
+		if err := json.Unmarshal(job.Payload, &s); err != nil {
+			return fmt.Errorf("engine: %w", err)
+		}
+		if s.ConversationID == 0 {
+			e.Log.Error("aviso ao operador não entregue", "job_id", job.ID)
+			return nil
+		}
+		// Resumo com código não entregue: a proposta perde a validade e um humano assume.
+		return e.escalateIf(ctx, s.ConversationID, store.StateAwaitingApproval, "não foi possível entregar a proposta pelo WhatsApp")
 	}
-	var p ProposeJob
-	if err := json.Unmarshal(job.Payload, &p); err != nil {
-		return fmt.Errorf("engine: %w", err)
-	}
-	conv, err := e.Store.GetConversation(ctx, p.ConversationID)
+	return nil
+}
+
+// escalateIf escala a conversa só se ela ainda estiver no estado esperado.
+func (e *Engine) escalateIf(ctx context.Context, convID int64, state, reason string) error {
+	unlock, err := e.Store.LockConversation(ctx, convID)
 	if err != nil {
 		return err
 	}
-	if conv.State != store.StateAwaitingProposal {
+	defer unlock()
+	conv, err := e.Store.GetConversation(ctx, convID)
+	if err != nil {
+		return err
+	}
+	if conv.State != state {
 		return nil
 	}
 	ident, err := e.Store.GetIdentity(ctx, conv.IdentityID)
 	if err != nil {
 		return err
 	}
-	return e.escalate(ctx, ident, conv, "falha ao gerar proposta: tentativas esgotadas", msgProposalFailed)
+	if state == store.StateAwaitingApproval {
+		if err := e.closeOpenDraft(ctx, ident, conv, "expired"); err != nil {
+			return err
+		}
+	}
+	return e.escalate(ctx, ident, conv, reason, msgProposalFailed)
 }
 
 func (e *Engine) propose(ctx context.Context, p ProposeJob) error {
+	unlock, err := e.Store.LockConversation(ctx, p.ConversationID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	conv, err := e.Store.GetConversation(ctx, p.ConversationID)
 	if err != nil {
 		return err
@@ -102,9 +137,11 @@ func (e *Engine) propose(ctx context.Context, p ProposeJob) error {
 		OrgID: ident.OrgID, ConversationID: conv.ID,
 		Briefing: b, Proposal: prop, ProposalHash: hash,
 		CodeHash: campaign.HashCode(code), ExpiresAt: e.now().Add(codeTTL),
-		SendKind:    JobSend,
-		SendPayload: SendJob{ConversationID: conv.ID, ChatID: conv.ChatID, Text: campaign.Summary(prop, code)},
+		Send: sendJob(conv.ID, conv.ChatID, campaign.Summary(prop, code)),
 	})
+	if errors.Is(err, store.ErrStateChanged) {
+		return nil // a conversa seguiu enquanto o Gestor trabalhava
+	}
 	if err != nil {
 		return err
 	}

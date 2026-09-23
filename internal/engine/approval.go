@@ -46,7 +46,7 @@ func (e *Engine) approve(ctx context.Context, ident store.Identity, conv store.C
 		if err := e.Store.SetDraftStatus(ctx, d.ID, "expired"); err != nil {
 			return err
 		}
-		if err := e.Store.SetStateAndEnqueue(ctx, conv.ID, store.StateAwaitingProposal, conv.Fields, JobPropose, ProposeJob{ConversationID: conv.ID}); err != nil {
+		if err := e.Store.SetStateAndEnqueue(ctx, conv.ID, store.StateAwaitingProposal, conv.Fields, store.JobSpec{Kind: JobPropose, Payload: ProposeJob{ConversationID: conv.ID}}); err != nil {
 			return err
 		}
 		return e.send(ctx, conv, msg)

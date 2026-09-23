@@ -2,6 +2,7 @@ package engine_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -36,10 +37,12 @@ type sent struct{ ChatID, Text string }
 
 // fakeWA grava o que seria enviado ao WhatsApp.
 type fakeWA struct {
-	mu    sync.Mutex
-	sent  []sent
-	media []byte
-	mime  string
+	mu       sync.Mutex
+	sent     []sent
+	media    []byte
+	mime     string
+	mediaErr error
+	fail     bool // simula o WhatsApp fora do ar
 }
 
 func (f *fakeWA) Name() string { return "openwa" }
@@ -49,11 +52,20 @@ func (f *fakeWA) ParseWebhook([]byte) (whatsapp.Inbound, bool, error) {
 func (f *fakeWA) SendText(_ context.Context, chatID, text string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.fail {
+		return errors.New("whatsapp fora do ar")
+	}
 	f.sent = append(f.sent, sent{chatID, text})
 	return nil
 }
 func (f *fakeWA) DownloadMedia(context.Context, whatsapp.Inbound) ([]byte, string, error) {
-	return f.media, f.mime, nil
+	return f.media, f.mime, f.mediaErr
+}
+
+func (f *fakeWA) setFail(v bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.fail = v
 }
 func (f *fakeWA) ChatIDForPhone(p string) string { return p + "@c.us" }
 
@@ -238,6 +250,7 @@ func TestHumanRequestEscalatesAndSilencesBot(t *testing.T) {
 	h := newHarness(t, "owner")
 	h.att.Responses = []string{`{"intent":"human","fields":{},"reply":"ok"}`}
 	h.say("quero falar com uma pessoa")
+	h.runJobs()
 	if h.conv().State != store.StateNeedsHuman {
 		t.Fatalf("estado = %s", h.conv().State)
 	}

@@ -29,7 +29,7 @@ func TestMigrateCreatesTablesAndIsIdempotent(t *testing.T) {
 	if err := pool.QueryRow(ctx, "SELECT count(*) FROM schema_migrations").Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 1 {
-		t.Errorf("schema_migrations = %d linhas, want 1", n)
+	if n != 2 {
+		t.Errorf("schema_migrations = %d linhas, want 2", n)
 	}
 }

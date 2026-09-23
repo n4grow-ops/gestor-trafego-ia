@@ -236,6 +236,7 @@ func TestOnJobFailedEscalates(t *testing.T) {
 		t.Fatal("sem job")
 	}
 	h.must(h.eng.OnJobFailed(ctx, job))
+	h.runJobs()
 	if h.conv().State != store.StateNeedsHuman || len(h.wa.to(operatorChat)) != 1 {
 		t.Errorf("estado = %s operador = %v", h.conv().State, h.wa.to(operatorChat))
 	}

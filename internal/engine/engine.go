@@ -25,7 +25,17 @@ const (
 
 	codeTTL     = 30 * time.Minute
 	historySize = 12
+
+	// Envios ao cliente aguentam o WhatsApp fora por uns 14 min (espera de 30 s × tentativa).
+	sendAttempts = 8
 )
+
+// errMediaFailed marca falha ao baixar ou transcrever mídia: o cliente é avisado e o evento não é reprocessado.
+var errMediaFailed = errors.New("engine: mídia indisponível")
+
+func sendJob(convID int64, chatID, text string) store.JobSpec {
+	return store.JobSpec{Kind: JobSend, Payload: SendJob{ConversationID: convID, ChatID: chatID, Text: text}, MaxAttempts: sendAttempts}
+}
 
 type ProposeJob struct {
 	ConversationID int64  `json:"conversation_id"`
@@ -71,7 +81,27 @@ func (e *Engine) HandleInbound(ctx context.Context, in whatsapp.Inbound) error {
 	if err != nil {
 		return err
 	}
+	// Uma mensagem por vez por conversa: evita que mensagens seguidas sobrescrevam campos.
+	unlock, err := e.Store.LockConversation(ctx, conv.ID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if conv, err = e.Store.GetConversation(ctx, conv.ID); err != nil {
+		return err
+	}
 	text, err := e.inboundText(ctx, ident, &conv, in)
+	if errors.Is(err, errMediaFailed) {
+		e.Log.Error("falha na mídia", "conversation_id", conv.ID, "erro", err)
+		e.audit(ctx, ident.OrgID, "system", "media_failed", map[string]any{"conversation_id": conv.ID, "error": err.Error()})
+		if err := e.Store.AddMessage(ctx, conv.ID, "in", string(in.Kind), "[áudio não processado]"); err != nil {
+			return err
+		}
+		if conv.State == store.StateNeedsHuman {
+			return nil
+		}
+		return e.send(ctx, conv, msgAudioFailed)
+	}
 	if err != nil {
 		return err
 	}
@@ -99,12 +129,12 @@ func (e *Engine) inboundText(ctx context.Context, ident store.Identity, conv *st
 	case whatsapp.KindAudio:
 		data, mime, err := e.WA.DownloadMedia(ctx, in)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("%w: %v", errMediaFailed, err)
 		}
 		resp, err := e.Transcriber.Transcribe(ctx, e.TranscribeModel, data, audioFormat(mime))
 		e.recordUsage(ctx, ident.OrgID, "transcriber", resp.Usage)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("%w: %v", errMediaFailed, err)
 		}
 		return strings.TrimSpace(resp.Content), nil
 	case whatsapp.KindImage:
@@ -190,7 +220,7 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 
 func (e *Engine) requestProposal(ctx context.Context, conv store.Conversation, f contract.Fields, adjustment, reply string) error {
 	job := ProposeJob{ConversationID: conv.ID, Adjustment: adjustment}
-	if err := e.Store.SetStateAndEnqueue(ctx, conv.ID, store.StateAwaitingProposal, f, JobPropose, job); err != nil {
+	if err := e.Store.SetStateAndEnqueue(ctx, conv.ID, store.StateAwaitingProposal, f, store.JobSpec{Kind: JobPropose, Payload: job}); err != nil {
 		return err
 	}
 	return e.send(ctx, conv, reply)
@@ -227,20 +257,17 @@ func (e *Engine) history(ctx context.Context, convID int64) ([]attendant.Turn, e
 }
 
 // escalate passa a conversa para um humano: o bot para de responder e o operador é avisado.
+// Os avisos vão pelo outbox na mesma transação do estado, para sobreviver ao WhatsApp fora do ar.
 func (e *Engine) escalate(ctx context.Context, ident store.Identity, conv store.Conversation, reason, clientMsg string) error {
-	if err := e.Store.UpdateConversation(ctx, conv.ID, store.StateNeedsHuman, conv.Fields); err != nil {
+	jobs := []store.JobSpec{sendJob(conv.ID, conv.ChatID, clientMsg)}
+	if e.OperatorPhone != "" {
+		note := fmt.Sprintf(msgOperator, ident.MemberName, ident.OrgName, ident.Phone, reason)
+		jobs = append(jobs, sendJob(0, e.WA.ChatIDForPhone(e.OperatorPhone), note))
+	}
+	if err := e.Store.SetStateAndEnqueue(ctx, conv.ID, store.StateNeedsHuman, conv.Fields, jobs...); err != nil {
 		return err
 	}
 	e.audit(ctx, ident.OrgID, "system", "escalated_human", map[string]any{"conversation_id": conv.ID, "reason": reason})
-	if err := e.send(ctx, conv, clientMsg); err != nil {
-		return err
-	}
-	if e.OperatorPhone != "" {
-		note := fmt.Sprintf(msgOperator, ident.MemberName, ident.OrgName, ident.Phone, reason)
-		if err := e.WA.SendText(ctx, e.WA.ChatIDForPhone(e.OperatorPhone), note); err != nil {
-			e.Log.Error("falha ao avisar operador", "erro", err)
-		}
-	}
 	return nil
 }
 

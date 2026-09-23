@@ -11,8 +11,15 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/contract"
 )
 
-// Tentativas antes de um evento ou job virar failed.
+// Tentativas antes de um evento do inbox virar failed; também o padrão dos jobs.
 const maxAttempts = 3
+
+// JobSpec descreve um job a enfileirar. MaxAttempts 0 usa o padrão (3).
+type JobSpec struct {
+	Kind        string
+	Payload     any
+	MaxAttempts int
+}
 
 // Event é um webhook recebido, guardado cru para o worker processar.
 type Event struct {
@@ -73,15 +80,23 @@ func (s *Store) FinishInbox(ctx context.Context, id int64, procErr error) error 
 }
 
 func (s *Store) EnqueueJob(ctx context.Context, kind string, payload any) error {
-	return enqueue(ctx, s.pool, kind, payload)
+	return enqueue(ctx, s.pool, JobSpec{Kind: kind, Payload: payload})
 }
 
-func enqueue(ctx context.Context, q querier, kind string, payload any) error {
-	raw, err := json.Marshal(payload)
+func (s *Store) Enqueue(ctx context.Context, j JobSpec) error {
+	return enqueue(ctx, s.pool, j)
+}
+
+func enqueue(ctx context.Context, q querier, j JobSpec) error {
+	raw, err := json.Marshal(j.Payload)
 	if err != nil {
 		return fmt.Errorf("store: %w", err)
 	}
-	_, err = q.Exec(ctx, `INSERT INTO outbox_jobs (kind, payload) VALUES ($1, $2)`, kind, string(raw))
+	max := j.MaxAttempts
+	if max <= 0 {
+		max = maxAttempts
+	}
+	_, err = q.Exec(ctx, `INSERT INTO outbox_jobs (kind, payload, max_attempts) VALUES ($1, $2, $3)`, j.Kind, string(raw), max)
 	return err
 }
 
@@ -112,15 +127,15 @@ func (s *Store) FinishJob(ctx context.Context, id int64, procErr error) (bool, e
 	}
 	var status string
 	err := s.pool.QueryRow(ctx, `UPDATE outbox_jobs
-		SET status = CASE WHEN attempts >= $2 THEN 'failed' ELSE 'pending' END,
-		    last_error = $3, locked_until = NULL,
+		SET status = CASE WHEN attempts >= max_attempts THEN 'failed' ELSE 'pending' END,
+		    last_error = $2, locked_until = NULL,
 		    run_after = now() + attempts * interval '30 seconds', updated_at = now()
-		WHERE id = $1 RETURNING status`, id, maxAttempts, procErr.Error()).Scan(&status)
+		WHERE id = $1 RETURNING status`, id, procErr.Error()).Scan(&status)
 	return status == "failed", err
 }
 
-// SetStateAndEnqueue muda o estado da conversa e enfileira o job na mesma transação.
-func (s *Store) SetStateAndEnqueue(ctx context.Context, convID int64, state string, f contract.Fields, kind string, payload any) error {
+// SetStateAndEnqueue muda o estado da conversa e enfileira os jobs na mesma transação.
+func (s *Store) SetStateAndEnqueue(ctx context.Context, convID int64, state string, f contract.Fields, jobs ...JobSpec) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -129,8 +144,30 @@ func (s *Store) SetStateAndEnqueue(ctx context.Context, convID int64, state stri
 	if err := updateConversation(ctx, tx, convID, state, f); err != nil {
 		return err
 	}
-	if err := enqueue(ctx, tx, kind, payload); err != nil {
-		return err
+	for _, j := range jobs {
+		if err := enqueue(ctx, tx, j); err != nil {
+			return err
+		}
 	}
 	return tx.Commit(ctx)
+}
+
+// Classe da trava consultiva por conversa (a outra metade da chave é o id da conversa).
+const conversationLockClass int32 = 727002
+
+// LockConversation serializa o processamento de uma conversa entre workers.
+// Segura uma conexão até a função devolvida ser chamada.
+func (s *Store) LockConversation(ctx context.Context, convID int64) (func(), error) {
+	conn, err := s.pool.Acquire(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1, $2)`, conversationLockClass, int32(convID)); err != nil {
+		conn.Release()
+		return nil, err
+	}
+	return func() {
+		conn.Exec(context.Background(), `SELECT pg_advisory_unlock($1, $2)`, conversationLockClass, int32(convID))
+		conn.Release()
+	}, nil
 }

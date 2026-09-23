@@ -126,7 +126,7 @@ func TestSetStateAndEnqueue(t *testing.T) {
 	c, err := st.GetOrCreateConversation(ctx, ident.ID, "a@c.us")
 	must(t, err)
 	f := contract.Fields{Offer: contract.Str("Pizza")}
-	must(t, st.SetStateAndEnqueue(ctx, c.ID, store.StateAwaitingProposal, f, "manager.propose", map[string]int64{"conversation_id": c.ID}))
+	must(t, st.SetStateAndEnqueue(ctx, c.ID, store.StateAwaitingProposal, f, store.JobSpec{Kind: "manager.propose", Payload: map[string]int64{"conversation_id": c.ID}}))
 
 	got, err := st.GetConversation(ctx, c.ID)
 	must(t, err)
@@ -138,7 +138,7 @@ func TestSetStateAndEnqueue(t *testing.T) {
 	if !ok || job.Kind != "manager.propose" {
 		t.Errorf("job = %+v", job)
 	}
-	if err := st.SetStateAndEnqueue(ctx, 999, store.StateIdle, f, "k", nil); !errors.Is(err, store.ErrNotFound) {
+	if err := st.SetStateAndEnqueue(ctx, 999, store.StateIdle, f, store.JobSpec{Kind: "k"}); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("conversa inexistente: %v", err)
 	}
 	if _, ok, _ := st.ClaimJob(ctx); ok {

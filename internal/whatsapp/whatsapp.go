@@ -52,3 +52,7 @@ func NormalizePhone(s string) (string, error) {
 	}
 	return d, nil
 }
+
+// Digits só remove o que não é dígito, sem mexer no nono dígito. Usado para destinos
+// que precisam casar com o número exatamente como está registrado no WhatsApp.
+func Digits(s string) string { return nonDigits.ReplaceAllString(s, "") }

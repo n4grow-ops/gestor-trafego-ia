@@ -75,13 +75,13 @@ func TestParseUsesSenderWhenFromIsLID(t *testing.T) {
 
 func TestParseIgnores(t *testing.T) {
 	cases := map[string][]byte{
-		"outro evento": envelope("onAck", `{"id":"a"}`),
+		"outro evento":    envelope("onAck", `{"id":"a"}`),
 		"enviada por nós": envelope("onMessage", `{"id":"m","from":"5511988887777@c.us","type":"chat","body":"x","fromMe":true}`),
-		"grupo":          envelope("onMessage", `{"id":"m","from":"5511988887777@c.us","type":"chat","body":"x","isGroupMsg":true}`),
-		"id de grupo":    envelope("onMessage", `{"id":"m","from":"12036302@g.us","type":"chat","body":"x"}`),
-		"status":         envelope("onMessage", `{"id":"m","from":"status@broadcast","type":"chat","body":"x"}`),
-		"só lid":         envelope("onMessage", `{"id":"m","from":"99999@lid","sender":{"id":"99999@lid"},"type":"chat","body":"oi"}`),
-		"sem id":         envelope("onMessage", `{"from":"5511988887777@c.us","type":"chat","body":"x"}`),
+		"grupo":           envelope("onMessage", `{"id":"m","from":"5511988887777@c.us","type":"chat","body":"x","isGroupMsg":true}`),
+		"id de grupo":     envelope("onMessage", `{"id":"m","from":"12036302@g.us","type":"chat","body":"x"}`),
+		"status":          envelope("onMessage", `{"id":"m","from":"status@broadcast","type":"chat","body":"x"}`),
+		"só lid":          envelope("onMessage", `{"id":"m","from":"99999@lid","sender":{"id":"99999@lid"},"type":"chat","body":"oi"}`),
+		"sem id":          envelope("onMessage", `{"from":"5511988887777@c.us","type":"chat","body":"x"}`),
 	}
 	for name, body := range cases {
 		if _, ok := parse(t, body); ok {

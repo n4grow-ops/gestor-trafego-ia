@@ -18,6 +18,8 @@ var (
 	ErrCodeInvalid = errors.New("store: código de aprovação inválido")
 	ErrCodeExpired = errors.New("store: código de aprovação vencido")
 	ErrCodeLocked  = errors.New("store: código bloqueado por tentativas erradas")
+	// ErrStateChanged: a conversa saiu de awaiting_proposal enquanto a proposta era gerada.
+	ErrStateChanged = errors.New("store: a conversa mudou de estado")
 )
 
 const MaxCodeAttempts = 5
@@ -41,8 +43,7 @@ type ProposalRecord struct {
 	ProposalHash   string
 	CodeHash       string
 	ExpiresAt      time.Time
-	SendKind       string // job que leva o resumo ao cliente
-	SendPayload    any
+	Send           JobSpec // job que leva o resumo ao cliente
 }
 
 // SaveProposal grava rascunho, código, estado awaiting_approval e o job de envio numa transação.
@@ -71,14 +72,15 @@ func (s *Store) SaveProposal(ctx context.Context, r ProposalRecord) (int64, erro
 		id, r.CodeHash, r.ProposalHash, r.ExpiresAt); err != nil {
 		return 0, err
 	}
-	tag, err := tx.Exec(ctx, `UPDATE conversations SET state = $2, updated_at = now() WHERE id = $1`, r.ConversationID, StateAwaitingApproval)
+	tag, err := tx.Exec(ctx, `UPDATE conversations SET state = $2, updated_at = now() WHERE id = $1 AND state = $3`,
+		r.ConversationID, StateAwaitingApproval, StateAwaitingProposal)
 	if err != nil {
 		return 0, err
 	}
 	if tag.RowsAffected() == 0 {
-		return 0, ErrNotFound
+		return 0, ErrStateChanged
 	}
-	if err := enqueue(ctx, tx, r.SendKind, r.SendPayload); err != nil {
+	if err := enqueue(ctx, tx, r.Send); err != nil {
 		return 0, err
 	}
 	return id, tx.Commit(ctx)

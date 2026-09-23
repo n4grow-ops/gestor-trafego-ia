@@ -36,7 +36,7 @@ func seedDraft(t *testing.T) draftFixture {
 		Briefing:     contract.Briefing{OrganizationID: ident.OrgID, Offer: "Pizza"},
 		Proposal:     contract.CampaignProposal{Objective: "OUTCOME_ENGAGEMENT", DailyBudgetBRL: 40},
 		ProposalHash: "hash-da-proposta", CodeHash: goodCode, ExpiresAt: t0.Add(30 * time.Minute),
-		SendKind: "whatsapp.send", SendPayload: map[string]string{"text": "resumo"},
+		Send: store.JobSpec{Kind: "whatsapp.send", Payload: map[string]string{"text": "resumo"}},
 	})
 	must(t, err)
 	return draftFixture{st: st, pool: pool, ident: ident, conv: conv, draftID: id}

@@ -115,14 +115,21 @@ func TestProposalValidateRejects(t *testing.T) {
 		{"objetivo", func(p *contract.CampaignProposal, _ *contract.Briefing) { p.Objective = "OUTCOME_SALES" }, "objective"},
 		{"orçamento zero", func(p *contract.CampaignProposal, _ *contract.Briefing) { p.DailyBudgetBRL = 0 }, "maior que zero"},
 		{"acima do cliente", func(p *contract.CampaignProposal, _ *contract.Briefing) { p.DailyBudgetBRL = 60 }, "orçamento do cliente"},
-		{"acima do limite", func(p *contract.CampaignProposal, b *contract.Briefing) { b.DailyBudgetBRL = 500; p.DailyBudgetBRL = 150 }, "limite da conta"},
+		{"acima do limite", func(p *contract.CampaignProposal, b *contract.Briefing) {
+			b.DailyBudgetBRL = 500
+			p.DailyBudgetBRL = 150
+		}, "limite da conta"},
 		{"duração", func(p *contract.CampaignProposal, _ *contract.Briefing) { p.DurationDays = 0 }, "duration_days"},
 		{"idade", func(p *contract.CampaignProposal, _ *contract.Briefing) { p.Audience.AgeMin = 16 }, "idade"},
-		{"idade invertida", func(p *contract.CampaignProposal, _ *contract.Briefing) { p.Audience.AgeMin, p.Audience.AgeMax = 50, 30 }, "idade"},
+		{"idade invertida", func(p *contract.CampaignProposal, _ *contract.Briefing) {
+			p.Audience.AgeMin, p.Audience.AgeMax = 50, 30
+		}, "idade"},
 		{"gênero", func(p *contract.CampaignProposal, _ *contract.Briefing) { p.Audience.Genders = []string{"x"} }, "gender"},
 		{"raio", func(p *contract.CampaignProposal, _ *contract.Briefing) { p.Audience.RadiusKM = 0 }, "radius_km"},
 		{"sem copies", func(p *contract.CampaignProposal, _ *contract.Briefing) { p.Copies = nil }, "copies"},
-		{"headline longo", func(p *contract.CampaignProposal, _ *contract.Briefing) { p.Copies[0].Headline = strings.Repeat("é", 41) }, "headline"},
+		{"headline longo", func(p *contract.CampaignProposal, _ *contract.Briefing) {
+			p.Copies[0].Headline = strings.Repeat("é", 41)
+		}, "headline"},
 		{"texto vazio", func(p *contract.CampaignProposal, _ *contract.Briefing) { p.Copies[0].Text = "" }, "text"},
 		{"cta", func(p *contract.CampaignProposal, _ *contract.Briefing) { p.Copies[0].CTA = "BUY_NOW" }, "cta"},
 		{"rationale", func(p *contract.CampaignProposal, _ *contract.Briefing) { p.Rationale = " " }, "rationale"},

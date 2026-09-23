@@ -1,122 +1,122 @@
 [
- {
-  "name": "orcamento_sem_validacao",
-  "type": "noul",
-  "instructions": "Algum valor de orçamento vindo de IA ou do cliente é gravado, enviado ou usado sem passar por contract.CampaignProposal.Validate ou pela checagem de max_daily_budget_brl no Go?"
- },
- {
-  "name": "gestor_ve_texto_cru",
-  "type": "noul",
-  "instructions": "O texto cru do cliente (mensagem, transcrição ou histórico) chega ao Gestor (agent/manager) fora dos campos estruturados do Briefing?"
- },
- {
-  "name": "tag_cliente_sem_escape",
-  "type": "noul",
-  "instructions": "Texto do cliente entra no prompt do Atendente sem passar pela função que envolve em <cliente> e neutraliza as tags?"
- },
- {
-  "name": "agente_com_ferramenta",
-  "type": "noul",
-  "instructions": "Algum agente de IA recebe ferramentas, faz chamada HTTP própria ou executa ação (gravar rascunho, aprovar, enviar mensagem) em vez de só devolver JSON?"
- },
- {
-  "name": "aprovacao_sem_papel",
-  "type": "noul",
-  "instructions": "Uma aprovação de rascunho pode acontecer sem conferir que o membro é owner ou approver?"
- },
- {
-  "name": "codigo_sem_limite",
-  "type": "noul",
-  "instructions": "O código de aprovação pode ser aceito vencido, reutilizado, com hash da proposta diferente ou após 5 tentativas erradas?"
- },
- {
-  "name": "comparacao_segredo_nao_constante",
-  "type": "noul",
-  "instructions": "Segredos, tokens ou hashes de código são comparados com == ou strings.EqualFold em vez de subtle.ConstantTimeCompare?"
- },
- {
-  "name": "webhook_segredo_vazio",
-  "type": "noul",
-  "instructions": "O webhook aceita requisição quando WEBHOOK_SECRET está vazio?"
- },
- {
-  "name": "log_conteudo_mensagem",
-  "type": "noul",
-  "instructions": "Algum log em nível info ou warn inclui o conteúdo de mensagem do cliente, transcrição, código de aprovação, chave de API ou token?"
- },
- {
-  "name": "sql_concatenado",
-  "type": "noul",
-  "instructions": "Alguma query SQL monta valores por concatenação ou fmt.Sprintf em vez de parâmetros $1, $2?"
- },
- {
-  "name": "erro_ignorado",
-  "type": "noul",
-  "instructions": "Algum erro retornado é descartado (atribuído a _ ou não verificado) em caminho que grava no banco, envia mensagem ou chama IA?"
- },
- {
-  "name": "transacao_parcial",
-  "type": "noul",
-  "instructions": "Duas ou mais escritas que precisam ser atômicas (estado da conversa + job, rascunho + código) são feitas fora de uma transação?"
- },
- {
-  "name": "estado_inconsistente",
-  "type": "noul",
-  "instructions": "Alguma transição deixa a conversa em awaiting_proposal ou awaiting_approval sem job pendente ou rascunho aberto correspondente?"
- },
- {
-  "name": "retry_duplica_efeito",
-  "type": "noul",
-  "instructions": "Uma nova tentativa de evento do inbox ou job do outbox pode repetir efeito colateral (mensagem, rascunho, aprovação) de forma prejudicial?"
- },
- {
-  "name": "telefone_nao_normalizado",
-  "type": "noul",
-  "instructions": "Telefone é gravado ou buscado sem passar por whatsapp.NormalizePhone (risco do nono dígito brasileiro)?"
- },
- {
-  "name": "miniatura_como_texto",
-  "type": "noul",
-  "instructions": "O body de mensagem de imagem ou mídia do open-wa (miniatura base64) pode ser tratado como texto do cliente?"
- },
- {
-  "name": "contexto_sem_timeout",
-  "type": "noul",
-  "instructions": "Chamada HTTP externa (OpenRouter, open-wa) é feita sem context com prazo ou sem timeout no http.Client?"
- },
- {
-  "name": "corpo_sem_limite",
-  "type": "noul",
-  "instructions": "Corpo de requisição ou resposta HTTP é lido sem io.LimitReader?"
- },
- {
-  "name": "panic_derruba_worker",
-  "type": "noul",
-  "instructions": "Este arquivo é código Go (não teste, doc ou config) e contém um laço de processamento de eventos ou jobs que chama código externo sem recover, de modo que um panic derrubaria o processo?"
- },
- {
-  "name": "texto_cliente_ingles",
-  "type": "noul",
-  "instructions": "Alguma mensagem enviada ao cliente pelo WhatsApp está em inglês ou fora do português do Brasil?"
- },
- {
-  "name": "resposta_ia_sem_validar",
-  "type": "noul",
-  "instructions": "Resposta JSON de um modelo é usada sem Unmarshal + Validate do tipo de contrato correspondente?"
- },
- {
-  "name": "teste_gasta_tokens",
-  "type": "noul",
-  "instructions": "Algum teste chama o OpenRouter ou o open-wa reais em vez de llm.Fake, httptest ou WhatsApp falso?"
- },
- {
-  "name": "segredo_no_codigo",
-  "type": "noul",
-  "instructions": "Há chave de API, token, senha ou URL com credencial escrita diretamente no código ou em arquivo versionado?"
- },
- {
-  "name": "dependencia_nova",
-  "type": "noul",
-  "instructions": "O diff adiciona dependência externa além de github.com/jackc/pgx/v5 (ORM, framework HTTP, lib de migrations)?"
- }
+  {
+    "name": "orcamento_sem_validacao",
+    "type": "noul",
+    "instructions": "Algum valor de orçamento vindo de IA ou do cliente é gravado, enviado ou usado sem passar por contract.CampaignProposal.Validate ou pela checagem de max_daily_budget_brl no Go?"
+  },
+  {
+    "name": "gestor_ve_texto_cru",
+    "type": "noul",
+    "instructions": "O texto cru do cliente (mensagem, transcrição ou histórico) chega ao Gestor (agent/manager) fora dos campos estruturados do Briefing?"
+  },
+  {
+    "name": "tag_cliente_sem_escape",
+    "type": "noul",
+    "instructions": "Texto do cliente entra no prompt do Atendente sem passar pela função que envolve em <cliente> e neutraliza as tags?"
+  },
+  {
+    "name": "agente_com_ferramenta",
+    "type": "noul",
+    "instructions": "Algum agente de IA recebe ferramentas, faz chamada HTTP própria ou executa ação (gravar rascunho, aprovar, enviar mensagem) em vez de só devolver JSON?"
+  },
+  {
+    "name": "aprovacao_sem_papel",
+    "type": "noul",
+    "instructions": "Uma aprovação de rascunho pode acontecer sem conferir que o membro é owner ou approver?"
+  },
+  {
+    "name": "codigo_sem_limite",
+    "type": "noul",
+    "instructions": "O código de aprovação pode ser aceito vencido, reutilizado, com hash da proposta diferente ou após 5 tentativas erradas?"
+  },
+  {
+    "name": "comparacao_segredo_nao_constante",
+    "type": "noul",
+    "instructions": "Segredos, tokens ou hashes de código são comparados com == ou strings.EqualFold em vez de subtle.ConstantTimeCompare?"
+  },
+  {
+    "name": "webhook_segredo_vazio",
+    "type": "noul",
+    "instructions": "O webhook aceita requisição quando WEBHOOK_SECRET está vazio?"
+  },
+  {
+    "name": "log_conteudo_mensagem",
+    "type": "noul",
+    "instructions": "Algum log em nível info ou warn inclui o conteúdo de mensagem do cliente, transcrição, código de aprovação, chave de API ou token?"
+  },
+  {
+    "name": "sql_concatenado",
+    "type": "noul",
+    "instructions": "Alguma query SQL monta valores por concatenação ou fmt.Sprintf em vez de parâmetros $1, $2?"
+  },
+  {
+    "name": "erro_ignorado",
+    "type": "noul",
+    "instructions": "Algum erro retornado é descartado (atribuído a _ ou não verificado) em caminho que grava no banco, envia mensagem ou chama IA?"
+  },
+  {
+    "name": "transacao_parcial",
+    "type": "noul",
+    "instructions": "Duas ou mais escritas que precisam ser atômicas (estado da conversa + job, rascunho + código) são feitas fora de uma transação?"
+  },
+  {
+    "name": "estado_inconsistente",
+    "type": "noul",
+    "instructions": "Alguma transição deixa a conversa em awaiting_proposal ou awaiting_approval sem job pendente ou rascunho aberto correspondente?"
+  },
+  {
+    "name": "retry_duplica_efeito",
+    "type": "noul",
+    "instructions": "Uma nova tentativa de evento do inbox ou job do outbox pode repetir efeito colateral (mensagem, rascunho, aprovação) de forma prejudicial?"
+  },
+  {
+    "name": "telefone_nao_normalizado",
+    "type": "noul",
+    "instructions": "Telefone é gravado ou buscado sem passar por whatsapp.NormalizePhone (risco do nono dígito brasileiro)?"
+  },
+  {
+    "name": "miniatura_como_texto",
+    "type": "noul",
+    "instructions": "O body de mensagem de imagem ou mídia do open-wa (miniatura base64) pode ser tratado como texto do cliente?"
+  },
+  {
+    "name": "contexto_sem_timeout",
+    "type": "noul",
+    "instructions": "Chamada HTTP externa (OpenRouter, open-wa) é feita sem context com prazo ou sem timeout no http.Client?"
+  },
+  {
+    "name": "corpo_sem_limite",
+    "type": "noul",
+    "instructions": "Corpo de requisição ou resposta HTTP é lido sem io.LimitReader?"
+  },
+  {
+    "name": "panic_derruba_worker",
+    "type": "noul",
+    "instructions": "Este diff adiciona ou altera um laço de worker/consumidor (goroutine processando eventos ou jobs) que chama código externo (HTTP, banco, IA, callback) sem um defer recover() cobrindo esse laço? Responda não se o arquivo não tiver esse laço, se for teste, doc ou config, ou se já houver recover."
+  },
+  {
+    "name": "texto_cliente_ingles",
+    "type": "noul",
+    "instructions": "Alguma mensagem enviada ao cliente pelo WhatsApp está em inglês ou fora do português do Brasil?"
+  },
+  {
+    "name": "resposta_ia_sem_validar",
+    "type": "noul",
+    "instructions": "Resposta JSON de um modelo é usada sem Unmarshal + Validate do tipo de contrato correspondente?"
+  },
+  {
+    "name": "teste_gasta_tokens",
+    "type": "noul",
+    "instructions": "Algum teste chama o OpenRouter ou o open-wa reais em vez de llm.Fake, httptest ou WhatsApp falso?"
+  },
+  {
+    "name": "segredo_no_codigo",
+    "type": "noul",
+    "instructions": "Há chave de API, token, senha ou URL com credencial escrita diretamente no código ou em arquivo versionado?"
+  },
+  {
+    "name": "dependencia_nova",
+    "type": "noul",
+    "instructions": "O diff adiciona dependência externa além de github.com/jackc/pgx/v5 (ORM, framework HTTP, lib de migrations)?"
+  }
 ]

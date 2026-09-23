@@ -17,4 +17,5 @@ const (
 	msgRejected       = "Tudo bem, descartei essa proposta. Quando quiser, é só me contar o que anunciar."
 	msgProposalFailed = "Não consegui montar uma proposta segura com esses dados. Vou chamar uma pessoa da nossa equipe para te ajudar."
 	msgOperator       = "Atendimento humano: %s (%s), telefone %s. Motivo: %s"
+	msgAudioFailed    = "Não consegui ouvir seu áudio agora. Pode me mandar por escrito?"
 )

@@ -34,14 +34,8 @@ func run(log *slog.Logger) error {
 		"TRANSCRIBE_MODEL", "OPENWA_URL", "OPENWA_API_KEY"); err != nil {
 		return err
 	}
-	operator := ""
-	if cfg.OperatorPhone != "" {
-		p, err := whatsapp.NormalizePhone(cfg.OperatorPhone)
-		if err != nil {
-			return err
-		}
-		operator = p
-	}
+	// Sem normalizar: o aviso precisa ir ao número exatamente como está no WhatsApp do operador.
+	operator := whatsapp.Digits(cfg.OperatorPhone)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

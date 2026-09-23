@@ -25,3 +25,17 @@ func TestNormalizePhone(t *testing.T) {
 		}
 	}
 }
+
+// O destino do operador precisa ser exatamente o número registrado no WhatsApp:
+// Digits não insere o nono dígito, ao contrário de NormalizePhone.
+func TestDigitsKeepsNumberAsTyped(t *testing.T) {
+	for in, want := range map[string]string{
+		"+55 (11) 8888-7777":  "551188887777",
+		"+55 (11) 98888-7777": "5511988887777",
+		"":                    "",
+	} {
+		if got := whatsapp.Digits(in); got != want {
+			t.Errorf("Digits(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
