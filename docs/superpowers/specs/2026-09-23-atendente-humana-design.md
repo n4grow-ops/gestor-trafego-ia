@@ -72,7 +72,9 @@ oficial.
   - `SendJob` ganha `Voice bool`, `Human bool` e `Next []string` (balões restantes). O job envia o
     balão atual com presença e, se houver `Next`, enfileira o próximo balão; assim a ordem é garantida e
     uma retentativa nunca reenvia balão já entregue.
-  - `store.JobSpec` ganha `Delay time.Duration` (usa a coluna `run_after`, que já existe). Sem migration.
+  - `store.JobSpec` ganha `Delay time.Duration` (usa a coluna `run_after`, que já existe).
+  - Migration `0005`: `conversations.replied_through` marca até qual mensagem de entrada já houve
+    resposta, para o lote seguinte não repetir mensagens enquanto os balões anteriores estão na fila.
 - Configuração (`internal/config`): `HUMANIZE` (padrão `true`), `REPLY_DEBOUNCE_SECONDS` (4),
   `VOICE_REPLIES` (`true`), `TTS_MODEL`, `TTS_VOICE`. Sem `TTS_MODEL`, áudio fica desligado. Com
   `HUMANIZE=false`, tudo volta ao comportamento atual (sem debounce, sem presença, um balão).
