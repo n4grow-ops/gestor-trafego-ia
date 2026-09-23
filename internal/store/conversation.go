@@ -90,3 +90,15 @@ func (s *Store) RecentMessages(ctx context.Context, convID int64, limit int) ([]
 		return m, err
 	})
 }
+
+// ResetConversation devolve a conversa da identidade ao estado inicial (usado ao encerrar atendimento humano).
+func (s *Store) ResetConversation(ctx context.Context, identityID int64) error {
+	tag, err := s.pool.Exec(ctx, `UPDATE conversations SET state = 'idle', fields = '{}', updated_at = now() WHERE identity_id = $1`, identityID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
