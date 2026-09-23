@@ -2,8 +2,12 @@ package store
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/contract"
 )
 
 // Identity é o telefone de WhatsApp com o membro e a organização a que pertence.
@@ -19,23 +23,33 @@ type Identity struct {
 	Niche             string
 	MaxDailyBudgetBRL float64
 	AllowedObjectives []string
+	Profile           contract.Profile // memória do negócio
+	Status            string           // active ou blocked
+	DailyMessageLimit int
+	SignupSource      string // admin ou auto
 }
 
 // CanApprove diz se o membro pode aprovar gasto.
 func (i Identity) CanApprove() bool { return i.Role == "owner" || i.Role == "approver" }
 
 const identitySelect = `SELECT wi.id, wi.provider, wi.phone_e164, m.id, m.name, m.role,
-	o.id, o.name, o.niche, o.max_daily_budget_brl::float8, o.allowed_objectives
+	o.id, o.name, o.niche, o.max_daily_budget_brl::float8, o.allowed_objectives,
+	o.profile, o.status, o.daily_message_limit, o.signup_source
 	FROM whatsapp_identities wi
 	JOIN members m ON m.id = wi.member_id
 	JOIN organizations o ON o.id = m.organization_id`
 
 func scanIdentity(row pgx.Row) (Identity, error) {
 	var i Identity
+	var profile []byte
 	err := row.Scan(&i.ID, &i.Provider, &i.Phone, &i.MemberID, &i.MemberName, &i.Role,
-		&i.OrgID, &i.OrgName, &i.Niche, &i.MaxDailyBudgetBRL, &i.AllowedObjectives)
+		&i.OrgID, &i.OrgName, &i.Niche, &i.MaxDailyBudgetBRL, &i.AllowedObjectives,
+		&profile, &i.Status, &i.DailyMessageLimit, &i.SignupSource)
 	if err != nil {
 		return Identity{}, notFound(err)
+	}
+	if err := json.Unmarshal(profile, &i.Profile); err != nil {
+		return Identity{}, fmt.Errorf("store: profile inválido: %w", err)
 	}
 	return i, nil
 }

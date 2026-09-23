@@ -15,6 +15,7 @@ var ErrNotFound = errors.New("store: registro não encontrado")
 // Estados da conversa.
 const (
 	StateIdle             = "idle"
+	StateOnboarding       = "onboarding"
 	StateCollecting       = "collecting"
 	StateAwaitingProposal = "awaiting_proposal"
 	StateAwaitingApproval = "awaiting_approval"

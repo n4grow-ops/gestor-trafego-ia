@@ -11,11 +11,12 @@ import (
 )
 
 type Conversation struct {
-	ID         int64
-	IdentityID int64
-	ChatID     string
-	State      string
-	Fields     contract.Fields
+	ID              int64
+	IdentityID      int64
+	ChatID          string
+	State           string
+	Fields          contract.Fields
+	ActiveProjectID *int64
 }
 
 type Message struct {
@@ -24,12 +25,12 @@ type Message struct {
 	Body      string
 }
 
-const conversationCols = `id, identity_id, chat_id, state, fields`
+const conversationCols = `id, identity_id, chat_id, state, fields, active_project_id`
 
 func scanConversation(row pgx.Row) (Conversation, error) {
 	var c Conversation
 	var raw []byte
-	if err := row.Scan(&c.ID, &c.IdentityID, &c.ChatID, &c.State, &raw); err != nil {
+	if err := row.Scan(&c.ID, &c.IdentityID, &c.ChatID, &c.State, &raw, &c.ActiveProjectID); err != nil {
 		return Conversation{}, notFound(err)
 	}
 	if err := json.Unmarshal(raw, &c.Fields); err != nil {
@@ -59,12 +60,23 @@ func updateConversation(ctx context.Context, q querier, id int64, state string, 
 	if err != nil {
 		return fmt.Errorf("store: %w", err)
 	}
-	tag, err := q.Exec(ctx, `UPDATE conversations SET state = $2, fields = $3, updated_at = now() WHERE id = $1`,
-		id, state, string(fields))
+	// Estados de trabalho espelham campos e estágio no projeto ativo, na mesma instrução.
+	// idle, onboarding e needs_human não mexem no projeto (ex.: aprovar zera a conversa, não o projeto).
+	var n int
+	err = q.QueryRow(ctx, `WITH conv AS (
+			UPDATE conversations SET state = $2, fields = $3, updated_at = now() WHERE id = $1
+			RETURNING active_project_id
+		), proj AS (
+			UPDATE projects SET fields = $3, stage = $2, updated_at = now()
+			WHERE id = (SELECT active_project_id FROM conv)
+			  AND $2::text IN ('collecting', 'awaiting_proposal', 'awaiting_approval')
+			RETURNING 1
+		)
+		SELECT count(*) FROM conv`, id, state, string(fields)).Scan(&n)
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() == 0 {
+	if n == 0 {
 		return ErrNotFound
 	}
 	return nil

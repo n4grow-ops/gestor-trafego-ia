@@ -63,8 +63,8 @@ func (s *Store) SaveProposal(ctx context.Context, r ProposalRecord) (int64, erro
 	defer tx.Rollback(ctx)
 
 	var id int64
-	if err := tx.QueryRow(ctx, `INSERT INTO campaign_drafts (organization_id, conversation_id, briefing, proposal, proposal_hash)
-		VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+	if err := tx.QueryRow(ctx, `INSERT INTO campaign_drafts (organization_id, conversation_id, briefing, proposal, proposal_hash, project_id)
+		VALUES ($1, $2, $3, $4, $5, (SELECT active_project_id FROM conversations WHERE id = $2)) RETURNING id`,
 		r.OrgID, r.ConversationID, string(briefing), string(proposal), r.ProposalHash).Scan(&id); err != nil {
 		return 0, err
 	}
@@ -79,6 +79,10 @@ func (s *Store) SaveProposal(ctx context.Context, r ProposalRecord) (int64, erro
 	}
 	if tag.RowsAffected() == 0 {
 		return 0, ErrStateChanged
+	}
+	if _, err := tx.Exec(ctx, `UPDATE projects SET stage = 'awaiting_approval', updated_at = now()
+		WHERE id = (SELECT active_project_id FROM conversations WHERE id = $1)`, r.ConversationID); err != nil {
+		return 0, err
 	}
 	if err := enqueue(ctx, tx, r.Send); err != nil {
 		return 0, err
