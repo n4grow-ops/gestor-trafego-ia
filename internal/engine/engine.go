@@ -84,6 +84,10 @@ func (e *Engine) HandleInbound(ctx context.Context, in whatsapp.Inbound) error {
 		return nil
 	case store.StateAwaitingProposal:
 		return e.send(ctx, conv, msgBusy)
+	case store.StateAwaitingApproval:
+		if code, ok := campaign.ParseApproval(text); ok {
+			return e.approve(ctx, ident, conv, code)
+		}
 	}
 	return e.converse(ctx, ident, conv, text)
 }
