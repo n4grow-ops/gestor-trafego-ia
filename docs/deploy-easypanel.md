@@ -45,7 +45,7 @@ WHATSAPP_SWAGGER_USERNAME / WHATSAPP_SWAGGER_PASSWORD
 
 ## Primeiro acesso
 
-1. Ler o QR code do open-wa com o número de teste.
+1. Parear o número de teste pelo painel do WAHA (QR ou código por número).
 2. No console do `worker`:
    ```
    /app/admin org-create --name "Minha Empresa" --niche "restaurante" --max-budget 100
