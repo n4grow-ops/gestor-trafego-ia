@@ -1,0 +1,74 @@
+// Comando worker: processa webhooks e jobs e roda as duas IAs.
+package main
+
+import (
+	"context"
+	"log/slog"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/attendant"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/manager"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/config"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/db"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/engine"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/llm"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp/openwa"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/worker"
+)
+
+func main() {
+	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	if err := run(log); err != nil {
+		log.Error("worker parou", "erro", err)
+		os.Exit(1)
+	}
+}
+
+func run(log *slog.Logger) error {
+	cfg := config.Load(os.Getenv)
+	if err := cfg.Require("DATABASE_URL", "OPENROUTER_API_KEY", "ATTENDANT_MODEL", "MANAGER_MODEL",
+		"TRANSCRIBE_MODEL", "OPENWA_URL", "OPENWA_API_KEY"); err != nil {
+		return err
+	}
+	operator := ""
+	if cfg.OperatorPhone != "" {
+		p, err := whatsapp.NormalizePhone(cfg.OperatorPhone)
+		if err != nil {
+			return err
+		}
+		operator = p
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	pool, err := db.Connect(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	if err := db.Migrate(ctx, pool); err != nil {
+		return err
+	}
+
+	st := store.New(pool)
+	wa := openwa.New(cfg.OpenWAURL, cfg.OpenWAAPIKey)
+	router := llm.NewOpenRouter(cfg.OpenRouterBaseURL, cfg.OpenRouterAPIKey)
+	eng := &engine.Engine{
+		Store:           st,
+		WA:              wa,
+		Attendant:       &attendant.Agent{LLM: router, Model: cfg.AttendantModel},
+		Manager:         &manager.Agent{LLM: router, Model: cfg.ManagerModel},
+		Transcriber:     router,
+		TranscribeModel: cfg.TranscribeModel,
+		OperatorPhone:   operator,
+		Log:             log,
+	}
+	w := &worker.Worker{Store: st, WA: wa, Engine: eng, Log: log}
+	log.Info("worker iniciado", "atendente", cfg.AttendantModel, "gestor", cfg.ManagerModel)
+	return w.Run(ctx)
+}
