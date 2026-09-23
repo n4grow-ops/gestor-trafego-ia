@@ -136,3 +136,22 @@ func TestReplyGivesBusinessMemoryAndProjects(t *testing.T) {
 		}
 	}
 }
+
+func promptFor(t *testing.T, in attendant.Input) string {
+	t.Helper()
+	fake := &llm.Fake{Responses: []string{validTurn}}
+	a := attendant.Agent{LLM: fake, Model: "flash"}
+	if _, _, err := a.Reply(ctx, in); err != nil {
+		t.Fatal(err)
+	}
+	return fake.Requests[0].Messages[1].Content
+}
+
+func TestPromptSaysResponseFormat(t *testing.T) {
+	if p := promptFor(t, attendant.Input{Message: "oi", Voice: true}); !strings.Contains(p, "Formato da resposta: áudio") {
+		t.Fatalf("prompt sem formato de áudio:\n%s", p)
+	}
+	if p := promptFor(t, attendant.Input{Message: "oi"}); !strings.Contains(p, "Formato da resposta: texto") {
+		t.Fatalf("prompt sem formato de texto:\n%s", p)
+	}
+}

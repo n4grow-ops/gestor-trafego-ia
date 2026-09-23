@@ -26,6 +26,9 @@ func (e *Engine) HandleJob(ctx context.Context, job store.Job) error {
 		if err := json.Unmarshal(job.Payload, &s); err != nil {
 			return fmt.Errorf("engine: payload de envio inválido: %w", err)
 		}
+		if s.Human {
+			return e.sendHuman(ctx, s)
+		}
 		if err := e.WA.SendText(ctx, s.ChatID, s.Text); err != nil {
 			return err
 		}
@@ -33,6 +36,12 @@ func (e *Engine) HandleJob(ctx context.Context, job store.Job) error {
 			return nil // aviso ao operador: fora de conversa
 		}
 		return e.Store.AddMessage(ctx, s.ConversationID, "out", "text", s.Text)
+	case JobReply:
+		var r ReplyJob
+		if err := json.Unmarshal(job.Payload, &r); err != nil {
+			return fmt.Errorf("engine: payload de resposta inválido: %w", err)
+		}
+		return e.reply(ctx, r)
 	default:
 		return fmt.Errorf("engine: job desconhecido %q", job.Kind)
 	}
@@ -58,6 +67,20 @@ func (e *Engine) OnJobFailed(ctx context.Context, job store.Job) error {
 		}
 		// Resumo com código não entregue: a proposta perde a validade e um humano assume.
 		return e.escalateIf(ctx, s.ConversationID, store.StateAwaitingApproval, "não foi possível entregar a proposta pelo WhatsApp")
+	case JobReply:
+		// Resposta esgotou as tentativas: o cliente não fica sem retorno.
+		var r ReplyJob
+		if err := json.Unmarshal(job.Payload, &r); err != nil {
+			return fmt.Errorf("engine: %w", err)
+		}
+		conv, err := e.Store.GetConversation(ctx, r.ConversationID)
+		if err != nil {
+			return err
+		}
+		if err := e.Store.MarkReplied(ctx, conv.ID, r.MessageID); err != nil {
+			return err
+		}
+		return e.Store.Enqueue(ctx, sendJob(conv.ID, conv.ChatID, msgRetryLater))
 	}
 	return nil
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/contract"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/manager"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/campaign"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/humanize"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/llm"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp"
@@ -22,9 +23,11 @@ import (
 const (
 	JobPropose = "manager.propose"
 	JobSend    = "whatsapp.send"
+	JobReply   = "conversation.reply"
 
 	codeTTL     = 30 * time.Minute
 	historySize = 12
+	maxBatch    = 10 // mensagens seguidas respondidas de uma vez
 
 	// Envios ao cliente aguentam o WhatsApp fora por uns 14 min (espera de 30 s × tentativa).
 	sendAttempts = 8
@@ -43,9 +46,19 @@ type ProposeJob struct {
 }
 
 type SendJob struct {
-	ConversationID int64  `json:"conversation_id"`
-	ChatID         string `json:"chat_id"`
-	Text           string `json:"text"`
+	ConversationID int64    `json:"conversation_id"`
+	ChatID         string   `json:"chat_id"`
+	Text           string   `json:"text"`
+	OrgID          int64    `json:"org_id,omitempty"`
+	Human          bool     `json:"human,omitempty"` // com presença e tempo de digitação
+	Voice          bool     `json:"voice,omitempty"` // tenta mandar como mensagem de voz
+	Next           []string `json:"next,omitempty"`  // balões seguintes, enviados em jobs encadeados
+}
+
+// ReplyJob responde as mensagens seguidas de uma conversa depois do debounce.
+type ReplyJob struct {
+	ConversationID int64 `json:"conversation_id"`
+	MessageID      int64 `json:"message_id"` // mensagem que agendou; só a mais nova responde
 }
 
 type Engine struct {
@@ -63,6 +76,15 @@ type Engine struct {
 	AutoSignup       bool
 	SignupMaxBudget  float64
 	SignupDailyLimit int
+
+	// Atendente humana: debounce, visto, presença, balões e voz. Sem Voice, só texto.
+	Humanize bool
+	Debounce time.Duration
+	Voice    llm.Speaker
+	TTSModel string
+	TTSVoice string
+	Sleep    func(context.Context, time.Duration) error // espera; trocada nos testes
+	Rand     func() float64                             // variação dos tempos; trocada nos testes
 }
 
 func (e *Engine) now() time.Time {
@@ -142,21 +164,37 @@ func (e *Engine) HandleInbound(ctx context.Context, in whatsapp.Inbound) error {
 	if err != nil {
 		return err
 	}
+	if e.Humanize {
+		id, err := e.Store.AddInbound(ctx, conv.ID, string(in.Kind), text)
+		if err != nil {
+			return err
+		}
+		if conv.State == store.StateNeedsHuman {
+			return e.Store.MarkReplied(ctx, conv.ID, id) // humano atende; o bot não junta isso depois
+		}
+		// Debounce: quem responde é o job da mensagem mais nova, depois de um tempo sem mensagens.
+		return e.Store.Enqueue(ctx, store.JobSpec{Kind: JobReply, Payload: ReplyJob{ConversationID: conv.ID, MessageID: id}, Delay: e.debounce()})
+	}
 	if err := e.Store.AddMessage(ctx, conv.ID, "in", string(in.Kind), text); err != nil {
 		return err
 	}
+	return e.dispatch(ctx, ident, conv, text, text, nil)
+}
 
+// dispatch decide a resposta pelo estado da conversa. last é a última mensagem (aprovação);
+// batch são os ids do lote, fora do histórico (nil = só a última mensagem gravada).
+func (e *Engine) dispatch(ctx context.Context, ident store.Identity, conv store.Conversation, text, last string, batch []int64) error {
 	switch conv.State {
 	case store.StateNeedsHuman:
 		return nil
 	case store.StateAwaitingProposal:
 		return e.send(ctx, conv, msgBusy)
 	case store.StateAwaitingApproval:
-		if code, ok := campaign.ParseApproval(text); ok {
+		if code, ok := campaign.ParseApproval(last); ok {
 			return e.approve(ctx, ident, conv, code)
 		}
 	}
-	return e.converse(ctx, ident, conv, text)
+	return e.converse(ctx, ident, conv, text, batch)
 }
 
 func (e *Engine) inboundText(ctx context.Context, ident store.Identity, conv *store.Conversation, in whatsapp.Inbound) (string, error) {
@@ -185,8 +223,8 @@ func (e *Engine) inboundText(ctx context.Context, ident store.Identity, conv *st
 	}
 }
 
-func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.Conversation, text string) error {
-	history, err := e.history(ctx, conv.ID)
+func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.Conversation, text string, batch []int64) error {
+	history, err := e.history(ctx, conv.ID, batch)
 	if err != nil {
 		return err
 	}
@@ -205,6 +243,7 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 		OrgName: ident.OrgName, Niche: ident.Niche, State: conv.State,
 		Fields: current, Missing: current.Missing(), History: history, Message: text,
 		Profile: ident.Profile, ProjectName: activeName, Projects: names,
+		Voice: e.Voice != nil && voiceWanted(ctx),
 	})
 	e.recordUsage(ctx, ident.OrgID, "attendant", usage)
 	if err != nil {
@@ -222,14 +261,14 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 	}
 	if conv.State == store.StateOnboarding {
 		if !ident.Profile.Complete() {
-			return e.send(ctx, conv, turn.Reply)
+			return e.speak(ctx, ident, conv, turn.Reply)
 		}
 		conv.State = store.StateIdle
 		if err := e.Store.UpdateConversation(ctx, conv.ID, conv.State, conv.Fields); err != nil {
 			return err
 		}
 		if turn.Intent != contract.IntentCreateCampaign && turn.Intent != contract.IntentNewProject && !turn.Fields.HasData() {
-			return e.send(ctx, conv, turn.Reply)
+			return e.speak(ctx, ident, conv, turn.Reply)
 		}
 	}
 
@@ -245,17 +284,19 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 	case contract.IntentHuman:
 		return e.escalate(ctx, ident, conv, "cliente pediu atendimento humano", msgHuman)
 	case contract.IntentReject:
-		reply := turn.Reply
-		if conv.State == store.StateAwaitingApproval {
+		rejectedDraft := conv.State == store.StateAwaitingApproval
+		if rejectedDraft {
 			if err := e.closeOpenDraft(ctx, ident, conv, "rejected"); err != nil {
 				return err
 			}
-			reply = msgRejected
 		}
 		if err := e.Store.UpdateConversation(ctx, conv.ID, store.StateIdle, contract.Fields{}); err != nil {
 			return err
 		}
-		return e.send(ctx, conv, reply)
+		if rejectedDraft {
+			return e.send(ctx, conv, msgRejected)
+		}
+		return e.speak(ctx, ident, conv, turn.Reply)
 	}
 
 	merged := current.Merge(turn.Fields)
@@ -279,32 +320,36 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 
 	if conv.State == store.StateAwaitingApproval {
 		if !campaignTalk {
-			return e.send(ctx, conv, turn.Reply)
+			return e.speak(ctx, ident, conv, turn.Reply)
 		}
 		// Ajuste pedido: descarta o rascunho atual e pede nova proposta ao Gestor.
 		if err := e.closeOpenDraft(ctx, ident, conv, "cancelled"); err != nil {
 			return err
 		}
-		return e.requestProposal(ctx, conv, merged, text, turn.Reply)
+		return e.requestProposal(ctx, ident, conv, merged, text, turn.Reply, false)
 	}
 	if !campaignTalk && conv.State != store.StateCollecting {
-		return e.send(ctx, conv, turn.Reply)
+		return e.speak(ctx, ident, conv, turn.Reply)
 	}
 	if len(merged.Missing()) == 0 {
-		return e.requestProposal(ctx, conv, merged, "", turn.Reply)
+		return e.requestProposal(ctx, ident, conv, merged, "", turn.Reply, false)
 	}
 	if err := e.Store.UpdateConversation(ctx, conv.ID, store.StateCollecting, merged); err != nil {
 		return err
 	}
-	return e.send(ctx, conv, turn.Reply)
+	return e.speak(ctx, ident, conv, turn.Reply)
 }
 
-func (e *Engine) requestProposal(ctx context.Context, conv store.Conversation, f contract.Fields, adjustment, reply string) error {
+// requestProposal pede a proposta ao Gestor; fixed indica que reply é mensagem fixa (nunca vira voz).
+func (e *Engine) requestProposal(ctx context.Context, ident store.Identity, conv store.Conversation, f contract.Fields, adjustment, reply string, fixed bool) error {
 	job := ProposeJob{ConversationID: conv.ID, Adjustment: adjustment}
 	if err := e.Store.SetStateAndEnqueue(ctx, conv.ID, store.StateAwaitingProposal, f, store.JobSpec{Kind: JobPropose, Payload: job}); err != nil {
 		return err
 	}
-	return e.send(ctx, conv, reply)
+	if fixed {
+		return e.send(ctx, conv, reply)
+	}
+	return e.speak(ctx, ident, conv, reply)
 }
 
 func (e *Engine) closeOpenDraft(ctx context.Context, ident store.Identity, conv store.Conversation, status string) error {
@@ -322,17 +367,27 @@ func (e *Engine) closeOpenDraft(ctx context.Context, ident store.Identity, conv 
 	return nil
 }
 
-func (e *Engine) history(ctx context.Context, convID int64) ([]attendant.Turn, error) {
-	msgs, err := e.Store.RecentMessages(ctx, convID, historySize+1)
+// history devolve as últimas mensagens sem as do lote atual (batch nil = sem a última gravada).
+func (e *Engine) history(ctx context.Context, convID int64, batch []int64) ([]attendant.Turn, error) {
+	msgs, err := e.Store.RecentMessages(ctx, convID, historySize+max(len(batch), 1))
 	if err != nil {
 		return nil, err
 	}
-	if len(msgs) > 0 {
+	if batch == nil && len(msgs) > 0 {
 		msgs = msgs[:len(msgs)-1] // a última é a mensagem atual
+	}
+	skip := make(map[int64]bool, len(batch))
+	for _, id := range batch {
+		skip[id] = true
 	}
 	turns := make([]attendant.Turn, 0, len(msgs))
 	for _, m := range msgs {
-		turns = append(turns, attendant.Turn{FromClient: m.Direction == "in", Text: m.Body})
+		if !skip[m.ID] {
+			turns = append(turns, attendant.Turn{FromClient: m.Direction == "in", Text: m.Body})
+		}
+	}
+	if len(turns) > historySize {
+		turns = turns[len(turns)-historySize:]
 	}
 	return turns, nil
 }
@@ -352,11 +407,24 @@ func (e *Engine) escalate(ctx context.Context, ident store.Identity, conv store.
 	return nil
 }
 
+// send manda uma mensagem fixa. No modo humano ela vai em balões com "digitando…", nunca em voz.
 func (e *Engine) send(ctx context.Context, conv store.Conversation, text string) error {
+	if e.Humanize {
+		return e.Store.Enqueue(ctx, humanJob(0, conv, text, false))
+	}
 	if err := e.WA.SendText(ctx, conv.ChatID, text); err != nil {
 		return err
 	}
 	return e.Store.AddMessage(ctx, conv.ID, "out", "text", text)
+}
+
+// speak manda a resposta da Atendente; vira voz quando o cliente falou por áudio.
+func (e *Engine) speak(ctx context.Context, ident store.Identity, conv store.Conversation, text string) error {
+	if !e.Humanize {
+		return e.send(ctx, conv, text)
+	}
+	voice := e.Voice != nil && voiceWanted(ctx) && humanize.ShouldVoice(text)
+	return e.Store.Enqueue(ctx, humanJob(ident.OrgID, conv, text, voice))
 }
 
 func (e *Engine) recordUsage(ctx context.Context, orgID int64, agent string, u llm.Usage) {

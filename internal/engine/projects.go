@@ -128,7 +128,7 @@ func (e *Engine) startProject(ctx context.Context, ident store.Identity, conv st
 	conv.ActiveProjectID, conv.State, conv.Fields = &p.ID, store.StateCollecting, fields
 	e.audit(ctx, ident.OrgID, member(ident), "project_started", map[string]any{"project_id": p.ID, "created": created})
 	if len(fields.Missing()) == 0 {
-		return e.requestProposal(ctx, conv, fields, "", fmt.Sprintf(msgProjectReady, p.Name))
+		return e.requestProposal(ctx, ident, conv, fields, "", fmt.Sprintf(msgProjectReady, p.Name), true)
 	}
 	if err := e.Store.UpdateConversation(ctx, conv.ID, store.StateCollecting, fields); err != nil {
 		return err

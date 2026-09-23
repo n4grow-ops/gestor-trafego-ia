@@ -33,6 +33,7 @@ type Input struct {
 	Projects    []string
 	History     []Turn // mais antigas primeiro, sem a mensagem atual
 	Message     string
+	Voice       bool // a resposta vai virar mensagem de voz
 }
 
 type Agent struct {
@@ -93,6 +94,11 @@ func userPrompt(in Input) string {
 	fmt.Fprintf(&b, "Empresa: %s (nicho: %s)\nMemória do negócio: %s\nProjeto ativo: %s\nProjetos do cliente: %s\n",
 		in.OrgName, in.Niche, profile, active, projects)
 	fmt.Fprintf(&b, "Estado da conversa: %s\nDados já coletados: %s\nDados faltando: %s\n", in.State, fields, missing)
+	if in.Voice {
+		b.WriteString("Formato da resposta: áudio (fale como numa mensagem de voz: sem listas, sem emoji, sem asterisco, uma parte só)\n")
+	} else {
+		b.WriteString("Formato da resposta: texto\n")
+	}
 	if len(in.History) > 0 {
 		b.WriteString("Histórico recente:\n")
 		for _, t := range in.History {
