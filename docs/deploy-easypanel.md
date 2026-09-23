@@ -17,6 +17,18 @@ Projeto `gestor-trafego-ia` com quatro serviços. Hostnames internos seguem o pa
 
 Valores de referência em `.env.example`. Segredos só no Easypanel, nunca no repositório.
 
+Atendente humana (opcional no `worker`): `HUMANIZE` (padrão `true`), `REPLY_DEBOUNCE_SECONDS` (4), `VOICE_REPLIES` (`true`), `TTS_MODEL`, `TTS_VOICE` (`nova`). Sem `TTS_MODEL`, a resposta é sempre em texto. `HUMANIZE=false` volta ao envio direto, sem visto, presença nem balões.
+
+## Atendente humana
+
+- Mensagens seguidas são respondidas juntas, depois de `REPLY_DEBOUNCE_SECONDS` sem mensagem nova.
+- Antes de responder: visto azul, "digitando…" proporcional ao texto (1,5 a 7 s), até 3 balões com pausa curta entre eles.
+- Cliente mandou áudio: "gravando áudio…", voz gerada pelo TTS do OpenRouter (MP3) e enviada com `sendVoice` (`convert: true`, o WAHA converte para OGG/Opus). TTS falhou: vai em texto.
+- Proposta, valores, código de aprovação e aviso ao operador sempre em texto.
+- Requer WAHA `2026.6.1` ou mais novo (mídia no Core). Se o "auto presence" do WAHA estiver ligado, desligar para não brigar com a presença do worker.
+- Teste: mandar texto (visto, digitando, balões); mandar três mensagens seguidas (uma resposta só); mandar áudio (gravando, voz).
+- Custo do TTS: `SELECT sum(cost_usd), count(*) FROM llm_usage WHERE agent = 'tts';`
+
 ## Réplicas
 
 `worker` com 1 réplica. As conversas têm trava por conversa no banco, mas uma réplica só mantém a ordem das mensagens e o custo previsível.

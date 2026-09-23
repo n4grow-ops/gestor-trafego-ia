@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -25,6 +26,13 @@ type Config struct {
 	AutoSignup       bool
 	SignupMaxBudget  float64
 	SignupDailyLimit int
+
+	// Atendente humana.
+	Humanize      bool
+	ReplyDebounce time.Duration
+	VoiceReplies  bool
+	TTSModel      string
+	TTSVoice      string
 }
 
 func Load(getenv func(string) string) Config {
@@ -44,6 +52,11 @@ func Load(getenv func(string) string) Config {
 		AutoSignup:        getenv("AUTO_SIGNUP") == "true",
 		SignupMaxBudget:   positiveFloat(getenv("AUTO_SIGNUP_MAX_BUDGET"), 50),
 		SignupDailyLimit:  positiveInt(getenv("AUTO_SIGNUP_DAILY_LIMIT"), 60),
+		Humanize:          getenv("HUMANIZE") != "false",
+		ReplyDebounce:     time.Duration(positiveInt(getenv("REPLY_DEBOUNCE_SECONDS"), 4)) * time.Second,
+		VoiceReplies:      getenv("VOICE_REPLIES") != "false",
+		TTSModel:          getenv("TTS_MODEL"),
+		TTSVoice:          orDefault(getenv("TTS_VOICE"), "nova"),
 	}
 }
 

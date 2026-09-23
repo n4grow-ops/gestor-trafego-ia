@@ -65,8 +65,17 @@ func run(log *slog.Logger) error {
 		AutoSignup:       cfg.AutoSignup,
 		SignupMaxBudget:  cfg.SignupMaxBudget,
 		SignupDailyLimit: cfg.SignupDailyLimit,
+
+		Humanize: cfg.Humanize,
+		Debounce: cfg.ReplyDebounce,
+		TTSModel: cfg.TTSModel,
+		TTSVoice: cfg.TTSVoice,
+	}
+	if cfg.VoiceReplies && cfg.TTSModel != "" {
+		eng.Voice = router // voz só com modelo de TTS configurado
 	}
 	w := &worker.Worker{Store: st, WA: wa, Engine: eng, Log: log}
-	log.Info("worker iniciado", "atendente", cfg.AttendantModel, "gestor", cfg.ManagerModel)
+	log.Info("worker iniciado", "atendente", cfg.AttendantModel, "gestor", cfg.ManagerModel,
+		"humano", cfg.Humanize, "voz", eng.Voice != nil)
 	return w.Run(ctx)
 }

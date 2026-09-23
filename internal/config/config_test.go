@@ -2,6 +2,7 @@ package config_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/config"
 )
@@ -64,5 +65,16 @@ func TestAutoSignupConfig(t *testing.T) {
 	c = config.Load(env(map[string]string{"AUTO_SIGNUP_MAX_BUDGET": "abc", "AUTO_SIGNUP_DAILY_LIMIT": "-1"}))
 	if c.SignupMaxBudget != 50 || c.SignupDailyLimit != 60 {
 		t.Errorf("valores inválidos deveriam cair no padrão: %+v", c)
+	}
+}
+
+func TestHumanizeConfig(t *testing.T) {
+	c := config.Load(env(nil))
+	if !c.Humanize || c.ReplyDebounce != 4*time.Second || !c.VoiceReplies || c.TTSModel != "" || c.TTSVoice != "nova" {
+		t.Fatalf("padrões = %+v", c)
+	}
+	c = config.Load(env(map[string]string{"HUMANIZE": "false", "REPLY_DEBOUNCE_SECONDS": "7", "VOICE_REPLIES": "false", "TTS_MODEL": "m", "TTS_VOICE": "alloy"}))
+	if c.Humanize || c.ReplyDebounce != 7*time.Second || c.VoiceReplies || c.TTSModel != "m" || c.TTSVoice != "alloy" {
+		t.Fatalf("lidos = %+v", c)
 	}
 }
