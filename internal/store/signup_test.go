@@ -13,7 +13,7 @@ import (
 func regForm() signup.Form {
 	return signup.Form{FullName: "Ana Souza", BusinessName: "Pizzaria Boa", LegalName: "PIZZARIA BOA LTDA",
 		CNPJ: "11222333000181", CPF: "52998224725", Segment: "restaurante", City: "Campinas", UF: "SP",
-		Instagram: "@pizzariaboa", Objective: "mensagens", MonthlyBudget: "500_1500", AdsExperience: "nunca",
+		Instagram: "@pizzariaboa", Objectives: []string{"mensagens", "vendas"}, MonthlyBudget: "500_1500", AdsExperience: "nunca",
 		MetaAdAccount: "nao_sei", Approver: "self", AcceptTerms: true}
 }
 
@@ -109,6 +109,11 @@ func TestCompleteRegistration(t *testing.T) {
 	if email != "ana@mail.com" || fullName != "Ana Souza" || cpf != "52998224725" || cnpj != "11222333000181" ||
 		segment != "Restaurante e alimentação" || plan != "free" || got.Niche != "restaurante" {
 		t.Fatalf("gravado: %s %s %s %s %s %s", email, fullName, cpf, cnpj, segment, plan)
+	}
+	var objectives []string
+	must(t, pool.QueryRow(ctx, `SELECT ads_objective FROM organizations WHERE id = $1`, ident.OrgID).Scan(&objectives))
+	if len(objectives) != 2 || objectives[0] != "mensagens" || objectives[1] != "vendas" {
+		t.Fatalf("objetivos gravados = %v", objectives)
 	}
 	var consents, jobs int
 	must(t, pool.QueryRow(ctx, `SELECT count(*) FROM consents WHERE member_id = $1 AND version = '2026-09-23'`, ident.MemberID).Scan(&consents))

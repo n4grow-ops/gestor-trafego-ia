@@ -37,7 +37,7 @@ func TestValidCNPJ(t *testing.T) {
 func validForm() signup.Form {
 	return signup.Form{
 		FullName: "  Ana  Souza ", BusinessName: "Pizzaria Boa", Segment: "restaurante",
-		City: "Campinas", UF: "sp", Objective: "mensagens", MonthlyBudget: "500_1500",
+		City: "Campinas", UF: "sp", Objectives: []string{"mensagens"}, MonthlyBudget: "500_1500",
 		AdsExperience: "nunca", MetaAdAccount: "nao_sei", Approver: "self", AcceptTerms: true,
 	}
 }
@@ -60,7 +60,7 @@ func TestNormalizeReportsFields(t *testing.T) {
 	f := validForm()
 	f.FullName = ""
 	f.UF = "XX"
-	f.Objective = "hackear"
+	f.Objectives = []string{"mensagens", "hackear"}
 	f.CPF = "123"
 	f.Segment = "outro"
 	f.Approver = "other"
@@ -70,10 +70,28 @@ func TestNormalizeReportsFields(t *testing.T) {
 	if !errors.As(err, &ve) {
 		t.Fatalf("erro = %v", err)
 	}
-	for _, field := range []string{"full_name", "uf", "objective", "cpf", "segment_other", "approver_name", "accept_terms"} {
+	for _, field := range []string{"full_name", "uf", "objectives", "cpf", "segment_other", "approver_name", "accept_terms"} {
 		if ve.Fields[field] == "" {
 			t.Errorf("sem erro em %s: %v", field, ve.Fields)
 		}
+	}
+}
+
+func TestObjectivesAreMultiple(t *testing.T) {
+	f := validForm()
+	f.Objectives = []string{"vendas", "mensagens", "vendas", " leads "}
+	got, err := f.Normalize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// sem repetição, na ordem da lista oficial
+	if strings.Join(got.Objectives, ",") != "mensagens,vendas,leads" {
+		t.Fatalf("objetivos = %v", got.Objectives)
+	}
+	f.Objectives = nil
+	var ve *signup.ValidationError
+	if _, err := f.Normalize(); !errors.As(err, &ve) || ve.Fields["objectives"] == "" {
+		t.Fatalf("sem objetivo deveria falhar: %v", err)
 	}
 }
 

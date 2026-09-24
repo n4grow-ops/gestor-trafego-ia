@@ -40,18 +40,90 @@
     show("erro");
   }
 
-  function fillSelect(id, options, placeholder) {
-    const sel = $(id);
-    sel.innerHTML = "";
-    const first = document.createElement("option");
-    first.value = "";
-    first.textContent = placeholder || "Escolha…";
-    sel.appendChild(first);
-    options.forEach((o) => {
-      const opt = document.createElement("option");
-      if (typeof o === "string") { opt.value = o; opt.textContent = o; } else { opt.value = o.code; opt.textContent = o.label; }
-      sel.appendChild(opt);
-    });
+  // ---------- seletor em janela: escolha única fecha sozinho, múltipla tem "Pronto" ----------
+  const pickers = {};
+
+  function initPicker(field, options, onChange) {
+    const btn = $(field);
+    pickers[field] = { options: options.map((o) => (typeof o === "string" ? { code: o, label: o } : o)), multi: btn.hasAttribute("data-multi"), value: btn.hasAttribute("data-multi") ? [] : "", onChange };
+    btn.addEventListener("click", () => openPick(field));
+    renderPicker(field);
+  }
+
+  function setPick(field, value) {
+    const p = pickers[field];
+    p.value = p.multi ? [...value] : value;
+    renderPicker(field);
+    if (p.onChange) p.onChange(p.value);
+  }
+
+  function renderPicker(field) {
+    const p = pickers[field];
+    const btn = $(field);
+    const chosen = p.options.filter((o) => (p.multi ? p.value.includes(o.code) : o.code === p.value));
+    const empty = btn.dataset.placeholder || "Escolha…";
+    let text = empty;
+    if (chosen.length === 1) text = chosen[0].label;
+    else if (chosen.length && chosen.length === p.options.length) text = "Todas as opções";
+    else if (chosen.length) text = `${chosen[0].label} +${chosen.length - 1}`;
+    btn.querySelector(".picker-val").textContent = text;
+    btn.classList.toggle("empty", !chosen.length);
+    $("passo-dados").querySelector(`input[name="${field}"]`).value = p.multi ? p.value.join(",") : p.value;
+    if (chosen.length) btn.classList.remove("invalid");
+  }
+
+  function openPick(field) {
+    const p = pickers[field];
+    const sheet = $("sheet-pick");
+    const list = $("pick-list");
+    $("pick-title").textContent = $(field).dataset.title;
+    $("pick-hint").textContent = p.multi ? "Pode marcar quantas quiser." : "";
+    $("pick-hint").hidden = !p.multi;
+    $("pick-done").hidden = !p.multi;
+    list.innerHTML = "";
+    let draft = p.multi ? [...p.value] : p.value;
+    const row = (code, label, i, cls) => {
+      const el = document.createElement("label");
+      el.className = "opt" + (p.multi ? " multi" : "") + (cls ? " " + cls : "");
+      el.style.setProperty("--i", i);
+      const input = document.createElement("input");
+      input.type = p.multi ? "checkbox" : "radio";
+      input.name = "pick";
+      input.value = code;
+      const mark = document.createElement("span");
+      mark.className = "opt-mark";
+      const text = document.createElement("span");
+      text.textContent = label;
+      el.append(input, mark, text);
+      list.appendChild(el);
+      return input;
+    };
+    if (p.multi) {
+      const all = row("__all", "Todas as opções", 0, "all");
+      const boxes = p.options.map((o, i) => row(o.code, o.label, i + 1));
+      const sync = () => { boxes.forEach((b) => { b.checked = draft.includes(b.value); }); all.checked = draft.length === p.options.length; };
+      all.addEventListener("change", () => { draft = all.checked ? p.options.map((o) => o.code) : []; sync(); });
+      boxes.forEach((b) => b.addEventListener("change", () => {
+        draft = p.options.map((o) => o.code).filter((c) => (c === b.value ? b.checked : draft.includes(c)));
+        sync();
+      }));
+      sync();
+      $("pick-done").onclick = () => { setPick(field, draft); sheet.close(); };
+    } else {
+      p.options.forEach((o, i) => {
+        const r = row(o.code, o.label, i);
+        r.checked = o.code === draft;
+        r.addEventListener("change", () => { setPick(field, o.code); setTimeout(() => sheet.close(), 160); });
+      });
+    }
+    $(field).setAttribute("aria-expanded", "true");
+    sheet.onclose = () => { $(field).setAttribute("aria-expanded", "false"); $(field).focus({ preventScroll: true }); };
+    sheet.showModal();
+    const first = list.querySelector("input:checked") || list.querySelector("input");
+    if (first) {
+      first.focus({ preventScroll: true });
+      first.closest(".opt").scrollIntoView({ block: "nearest" });
+    }
   }
 
   // "SAO PAULO" -> "Sao Paulo"; preposições ficam minúsculas.
@@ -109,12 +181,12 @@
 
   function collect() {
     const f = $("passo-dados");
-    const get = (n) => (f.elements[n] ? f.elements[n].value : "");
+    const get = (n) => { const el = f.querySelector(`[name="${n}"]`); return el ? el.value : ""; };
     return {
       full_name: get("full_name"), cpf: get("cpf"), business_name: get("business_name"), cnpj: get("cnpj"),
       legal_name: get("legal_name"), segment: get("segment"), segment_other: get("segment_other"),
       city: get("city"), uf: get("uf"), website: get("website"), instagram: get("instagram"),
-      objective: get("objective"), monthly_budget: get("monthly_budget"), ads_experience: get("ads_experience"),
+      objectives: pickers.objectives ? [...pickers.objectives.value] : [], monthly_budget: get("monthly_budget"), ads_experience: get("ads_experience"),
       meta_ad_account: get("meta_ad_account"), approver: get("approver"), approver_name: get("approver_name"),
       referral_source: get("referral_source"), accept_terms: $("accept_terms").checked,
     };
@@ -122,8 +194,9 @@
 
   function localCheck(d) {
     const errs = {};
-    ["full_name", "business_name", "segment", "city", "uf", "objective", "monthly_budget", "ads_experience", "meta_ad_account", "approver"]
+    ["full_name", "business_name", "segment", "city", "uf", "monthly_budget", "ads_experience", "meta_ad_account", "approver"]
       .forEach((n) => { if (!String(d[n] || "").trim()) errs[n] = "obrigatório"; });
+    if (!d.objectives.length) errs.objectives = "escolha pelo menos um";
     if (d.segment === "outro" && !d.segment_other.trim()) errs.segment_other = "diga qual é o segmento";
     if (d.approver === "other" && !d.approver_name.trim()) errs.approver_name = "diga quem aprova";
     if (!d.accept_terms) errs.accept_terms = "é preciso aceitar os Termos e a Política de Privacidade";
@@ -152,7 +225,7 @@
       $("legal_name").value = c.legal_name || "";
       if (!$("business_name").value) $("business_name").value = c.trade_name || c.legal_name || "";
       if (!$("city").value && c.city) $("city").value = titleCase(c.city);
-      if (!$("uf").value && c.uf) $("uf").value = c.uf;
+      if (!pickers.uf.value && c.uf) setPick("uf", c.uf);
       hint.textContent = `Encontrado: ${c.legal_name}${c.status && c.status !== "ATIVA" ? " (situação: " + c.status + ")" : ""}`;
     } catch (_) {
       hint.textContent = "Não deu pra buscar agora. Preencha os dados abaixo.";
@@ -213,7 +286,7 @@
     $("btn-email").addEventListener("click", () => {
       msg("msg-choice", "");
       sheet.showModal();
-      setTimeout(() => ($("form-codigo").hidden ? $("otp-email") : $("otp-code")).focus(), 50);
+      ($("form-codigo").hidden ? $("otp-email") : $("otp-code")).focus();
     });
     $("btn-sheet-close").addEventListener("click", () => sheet.close());
     sheet.addEventListener("click", (ev) => { if (ev.target === sheet) sheet.close(); });
@@ -274,8 +347,8 @@
       msg("msg-email", "");
     });
 
-    $("segment").addEventListener("change", () => { $("segment_other_box").hidden = $("segment").value !== "outro"; });
-    $("approver").addEventListener("change", () => { $("approver_name_box").hidden = $("approver").value !== "other"; });
+    $("pick-close").addEventListener("click", () => $("sheet-pick").close());
+    $("sheet-pick").addEventListener("click", (ev) => { if (ev.target === $("sheet-pick")) $("sheet-pick").close(); });
     $("cnpj").addEventListener("blur", lookupCNPJ);
 
     $("passo-dados").addEventListener("submit", (ev) => {
@@ -309,17 +382,17 @@
     cfg = body;
     $("erro-whatsapp").href = cfg.whatsapp;
     const o = cfg.options;
-    fillSelect("segment", o.segments);
-    fillSelect("uf", o.ufs, "UF");
-    fillSelect("objective", o.objectives);
-    fillSelect("monthly_budget", o.monthly_budgets);
-    fillSelect("ads_experience", o.ads_experiences);
-    fillSelect("meta_ad_account", o.meta_ad_accounts);
-    fillSelect("approver", o.approvers);
+    initPicker("segment", o.segments, (v) => { $("segment_other_box").hidden = v !== "outro"; });
+    initPicker("uf", o.ufs);
+    initPicker("objectives", o.objectives);
+    initPicker("monthly_budget", o.monthly_budgets);
+    initPicker("ads_experience", o.ads_experiences);
+    initPicker("meta_ad_account", o.meta_ad_accounts);
+    initPicker("approver", o.approvers, (v) => { $("approver_name_box").hidden = v !== "other"; });
     const p = cfg.prefill;
     $("business_name").value = p.business_name || "";
     $("city").value = p.city || "";
-    if (p.uf) $("uf").value = p.uf;
+    if (p.uf) setPick("uf", p.uf);
     renderPlans(cfg.plans);
 
     if (!window.supabase || !cfg.supabase.url) { fail("O cadastro está indisponível agora. Tente de novo em instantes."); return; }

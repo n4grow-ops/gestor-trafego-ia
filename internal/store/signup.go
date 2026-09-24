@@ -199,7 +199,7 @@ func (s *Store) CompleteRegistration(ctx context.Context, r Registration) (Regis
 			registration_status = 'complete', registered_at = now()
 		WHERE id = $1`,
 		res.OrgID, f.BusinessName, f.LegalName, f.CNPJ, f.SegmentLabel(), f.City, f.UF, f.Website, f.Instagram,
-		f.Objective, f.MonthlyBudget, f.AdsExperience, f.MetaAdAccount, approver, f.ReferralSource,
+		f.Objectives, f.MonthlyBudget, f.AdsExperience, f.MetaAdAccount, approver, f.ReferralSource,
 		plan.MaxDailyBudgetBRL, plan.DailyMessageLimit); err != nil {
 		return RegistrationResult{}, fmt.Errorf("store: organização: %w", err)
 	}

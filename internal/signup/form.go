@@ -42,25 +42,25 @@ var (
 
 // Form é o que a página envia. E-mail não está aqui: vem do Supabase Auth.
 type Form struct {
-	FullName       string `json:"full_name"`
-	CPF            string `json:"cpf"`
-	BusinessName   string `json:"business_name"`
-	CNPJ           string `json:"cnpj"`
-	LegalName      string `json:"legal_name"`
-	Segment        string `json:"segment"`
-	SegmentOther   string `json:"segment_other"`
-	City           string `json:"city"`
-	UF             string `json:"uf"`
-	Website        string `json:"website"`
-	Instagram      string `json:"instagram"`
-	Objective      string `json:"objective"`
-	MonthlyBudget  string `json:"monthly_budget"`
-	AdsExperience  string `json:"ads_experience"`
-	MetaAdAccount  string `json:"meta_ad_account"`
-	Approver       string `json:"approver"`
-	ApproverName   string `json:"approver_name"`
-	ReferralSource string `json:"referral_source"`
-	AcceptTerms    bool   `json:"accept_terms"`
+	FullName       string   `json:"full_name"`
+	CPF            string   `json:"cpf"`
+	BusinessName   string   `json:"business_name"`
+	CNPJ           string   `json:"cnpj"`
+	LegalName      string   `json:"legal_name"`
+	Segment        string   `json:"segment"`
+	SegmentOther   string   `json:"segment_other"`
+	City           string   `json:"city"`
+	UF             string   `json:"uf"`
+	Website        string   `json:"website"`
+	Instagram      string   `json:"instagram"`
+	Objectives     []string `json:"objectives"`
+	MonthlyBudget  string   `json:"monthly_budget"`
+	AdsExperience  string   `json:"ads_experience"`
+	MetaAdAccount  string   `json:"meta_ad_account"`
+	Approver       string   `json:"approver"`
+	ApproverName   string   `json:"approver_name"`
+	ReferralSource string   `json:"referral_source"`
+	AcceptTerms    bool     `json:"accept_terms"`
 }
 
 // ValidationError lista o problema de cada campo, para a página marcar.
@@ -98,7 +98,7 @@ func (f Form) Normalize() (Form, error) {
 		LegalName: clean(f.LegalName, longMax), Segment: clean(f.Segment, 40), SegmentOther: clean(f.SegmentOther, shortMax),
 		City: clean(f.City, shortMax), UF: strings.ToUpper(clean(f.UF, 2)),
 		Website: clean(f.Website, longMax), Instagram: clean(f.Instagram, shortMax),
-		Objective: clean(f.Objective, 40), MonthlyBudget: clean(f.MonthlyBudget, 40),
+		MonthlyBudget: clean(f.MonthlyBudget, 40),
 		AdsExperience: clean(f.AdsExperience, 40), MetaAdAccount: clean(f.MetaAdAccount, 40),
 		Approver: clean(f.Approver, 40), ApproverName: clean(f.ApproverName, shortMax),
 		ReferralSource: clean(f.ReferralSource, longMax), AcceptTerms: f.AcceptTerms,
@@ -118,7 +118,22 @@ func (f Form) Normalize() (Form, error) {
 		errs[field] = "escolha uma opção"
 	}
 	oneOf("segment", out.Segment, Segments)
-	oneOf("objective", out.Objective, Objectives)
+	// Objetivos: um ou mais, sem repetição, na ordem da lista oficial.
+	chosen := map[string]bool{}
+	for _, o := range f.Objectives {
+		chosen[strings.TrimSpace(o)] = true
+	}
+	for _, o := range Objectives {
+		if chosen[o.Code] {
+			out.Objectives = append(out.Objectives, o.Code)
+			delete(chosen, o.Code)
+		}
+	}
+	if len(out.Objectives) == 0 {
+		errs["objectives"] = "escolha pelo menos um"
+	} else if len(chosen) > 0 {
+		errs["objectives"] = "opção inválida"
+	}
 	oneOf("monthly_budget", out.MonthlyBudget, MonthlyBudgets)
 	oneOf("ads_experience", out.AdsExperience, AdsExperiences)
 	oneOf("meta_ad_account", out.MetaAdAccount, MetaAdAccounts)

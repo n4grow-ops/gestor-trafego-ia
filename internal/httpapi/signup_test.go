@@ -104,7 +104,7 @@ func (e signupEnv) do(method, target, body, bearer string) *httptest.ResponseRec
 }
 
 const validBody = `{"full_name":"Ana Souza","business_name":"Pizzaria Boa","segment":"restaurante","city":"Campinas","uf":"SP",
-"objective":"mensagens","monthly_budget":"500_1500","ads_experience":"nunca","meta_ad_account":"nao_sei","approver":"self",
+"objectives":["mensagens","leads"],"monthly_budget":"500_1500","ads_experience":"nunca","meta_ad_account":"nao_sei","approver":"self",
 "cnpj":"11.222.333/0001-81","accept_terms":true,"plan":"free"}`
 
 func TestSignupPageAndTerms(t *testing.T) {
