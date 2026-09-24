@@ -223,7 +223,7 @@
       $("form-otp").hidden = true;
       $("form-codigo").hidden = false;
       $("otp-code").focus();
-      msg("msg-email", "Código enviado. Confira também a caixa de spam.");
+      msg("msg-email", "Enviamos um e-mail. Toque no link dele (ou digite o código, se vier um). Confira também o spam.");
     });
 
     $("form-codigo").addEventListener("submit", async (ev) => {
@@ -301,8 +301,10 @@
     renderPlans(cfg.plans);
 
     if (!window.supabase || !cfg.supabase.url) { fail("O cadastro está indisponível agora. Tente de novo em instantes."); return; }
+    // Fluxo implícito: o link do e-mail funciona mesmo aberto em outro navegador (app de e-mail),
+    // porque a sessão volta no próprio link. Com PKCE ele só funcionaria no navegador que pediu.
     sb = window.supabase.createClient(cfg.supabase.url, cfg.supabase.key, {
-      auth: { flowType: "pkce", detectSessionInUrl: true, persistSession: true },
+      auth: { flowType: "implicit", detectSessionInUrl: true, persistSession: true },
     });
     bind();
     try {
