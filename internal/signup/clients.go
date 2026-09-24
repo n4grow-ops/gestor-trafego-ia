@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -21,13 +20,29 @@ var (
 	ErrUnauthorized = errors.New("signup: login inválido ou e-mail não confirmado")
 )
 
+const (
+	tokenAlphabet = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	// 12 caracteres de 62 = ~71 bits: impossível de adivinhar com link de 24 h, uso único e limite de tentativas,
+	// e curto o bastante para o link caber bonito no WhatsApp.
+	tokenLength = 12
+)
+
 // NewToken gera o token do link de cadastro: raw vai na URL, hash vai para o banco.
 func NewToken() (raw, hash string, err error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", "", fmt.Errorf("signup: %w", err)
+	out := make([]byte, 0, tokenLength)
+	buf := make([]byte, 32)
+	for len(out) < tokenLength {
+		if _, err := rand.Read(buf); err != nil {
+			return "", "", fmt.Errorf("signup: %w", err)
+		}
+		for _, b := range buf {
+			// descarta 248..255 para não enviesar o alfabeto de 62 (248 = 4 × 62)
+			if b < 248 && len(out) < tokenLength {
+				out = append(out, tokenAlphabet[int(b)%len(tokenAlphabet)])
+			}
+		}
 	}
-	raw = base64.RawURLEncoding.EncodeToString(b)
+	raw = string(out)
 	return raw, HashToken(raw), nil
 }
 

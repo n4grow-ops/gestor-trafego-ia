@@ -48,6 +48,7 @@ type Signup struct {
 func (s *Signup) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /{$}", s.home)
 	mux.HandleFunc("GET /cadastro/{token}", s.page("web/cadastro.html"))
+	mux.HandleFunc("GET /c/{token}", s.page("web/cadastro.html")) // link curto enviado no WhatsApp
 	mux.HandleFunc("GET /termos", s.page("web/termos.html"))
 	mux.HandleFunc("GET /privacidade", s.page("web/privacidade.html"))
 	mux.HandleFunc("GET /static/cadastro.css", s.asset("web/cadastro.css", "text/css; charset=utf-8"))

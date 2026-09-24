@@ -7,7 +7,7 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/engine"
 )
 
-const signupBase = "https://cadastro.teste/cadastro"
+const signupBase = "https://cadastro.teste/c"
 
 func newSignupHarness(t *testing.T) *harness {
 	return newSignupHarnessRole(t, "owner")
@@ -44,7 +44,7 @@ func TestPendingClientGetsSignupLink(t *testing.T) {
 	}
 	token := last[strings.Index(last, signupBase+"/")+len(signupBase)+1:]
 	token = strings.Fields(token)[0]
-	if len(token) != 43 {
+	if len(token) != 12 {
 		t.Fatalf("token = %q", token)
 	}
 	if n := h.count(`SELECT count(*) FROM signup_links`); n != 1 {
@@ -57,7 +57,7 @@ func TestPendingClientGetsSignupLink(t *testing.T) {
 	if n := h.count(`SELECT count(*) FROM messages WHERE body LIKE '%' || $1 || '%'`, token); n != 0 {
 		t.Fatal("token do link gravado no histórico")
 	}
-	if n := h.count(`SELECT count(*) FROM messages WHERE direction = 'out' AND body LIKE '%/cadastro/[link]%'`); n != 1 {
+	if n := h.count(`SELECT count(*) FROM messages WHERE direction = 'out' AND body LIKE '%/c/[link]%'`); n != 1 {
 		t.Fatal("mensagem do link não registrada de forma segura")
 	}
 }

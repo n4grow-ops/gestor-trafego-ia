@@ -50,11 +50,11 @@ func (e *Engine) signupGate(ctx context.Context, ident store.Identity, conv stor
 	return e.send(ctx, conv, fmt.Sprintf(msgSignupLink, strings.TrimRight(e.SignupBaseURL, "/")+"/"+raw))
 }
 
-var signupLink = regexp.MustCompile(`/cadastro/[A-Za-z0-9_-]{20,}`)
+var signupLink = regexp.MustCompile(`/(cadastro|c)/[A-Za-z0-9_-]{10,}`)
 
 // redactLinks tira o token dos links de cadastro antes de gravar no histórico: quem lê o banco
 // (ou a IA, que recebe o histórico) não consegue usar o link.
-func redactLinks(text string) string { return signupLink.ReplaceAllString(text, "/cadastro/[link]") }
+func redactLinks(text string) string { return signupLink.ReplaceAllString(text, "/$1/[link]") }
 
 // WelcomeJob é a mensagem de boas-vindas depois do cadastro, enfileirada pela api na conclusão.
 // Mostra o e-mail usado, para o cliente perceber se alguém cadastrou por ele.

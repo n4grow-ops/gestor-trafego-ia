@@ -72,7 +72,7 @@ func run(log *slog.Logger) error {
 		TTSVoice: cfg.TTSVoice,
 	}
 	if cfg.SignupEnabled() {
-		eng.SignupBaseURL = cfg.PublicBaseURL + "/cadastro"
+		eng.SignupBaseURL = cfg.PublicBaseURL + "/c"
 	}
 	if cfg.VoiceReplies && cfg.TTSModel != "" {
 		eng.Voice = router // voz só com modelo de TTS configurado

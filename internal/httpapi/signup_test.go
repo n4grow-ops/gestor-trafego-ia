@@ -109,6 +109,9 @@ const validBody = `{"full_name":"Ana Souza","business_name":"Pizzaria Boa","segm
 
 func TestSignupPageAndTerms(t *testing.T) {
 	e := newSignupEnv(t)
+	if rec := e.do("GET", "/c/"+e.token, "", ""); rec.Code != 200 || !strings.Contains(rec.Body.String(), "supabase.js") {
+		t.Fatalf("link curto: %d", rec.Code)
+	}
 	rec := e.do("GET", "/cadastro/"+e.token, "", "")
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `src="/static/supabase.js"`) || rec.Header().Get("Referrer-Policy") != "no-referrer" {
 		t.Fatalf("página: %d %q", rec.Code, rec.Header().Get("Referrer-Policy"))

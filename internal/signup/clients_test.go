@@ -18,12 +18,21 @@ func TestTokenHash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(raw) != 43 || len(hash) != 64 || signup.HashToken(raw) != hash {
+	if len(raw) != 12 || len(hash) != 64 || signup.HashToken(raw) != hash {
 		t.Fatalf("raw=%q (%d) hash=%q", raw, len(raw), hash)
 	}
-	other, _, _ := signup.NewToken()
-	if other == raw {
-		t.Fatal("tokens repetidos")
+	for _, r := range raw {
+		if !(r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z') {
+			t.Fatalf("caractere fora do alfabeto curto: %q", raw)
+		}
+	}
+	seen := map[string]bool{}
+	for range 2000 {
+		r, _, _ := signup.NewToken()
+		if seen[r] {
+			t.Fatal("tokens repetidos")
+		}
+		seen[r] = true
 	}
 }
 
