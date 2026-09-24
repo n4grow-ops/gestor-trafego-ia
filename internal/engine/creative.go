@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -61,6 +62,10 @@ func (e *Engine) saveCreative(ctx context.Context, ident store.Identity, conv st
 // creativesTurn responde enquanto a conversa espera os anúncios (imagens ou vídeos).
 func (e *Engine) creativesTurn(ctx context.Context, conv store.Conversation, msgs []string) error {
 	d, err := e.Store.LatestApprovedDraft(ctx, conv.ID)
+	if errors.Is(err, store.ErrNotFound) {
+		// sem proposta aprovada não há anúncio a pedir: a conversa volta ao normal
+		return e.Store.UpdateConversation(ctx, conv.ID, store.StateIdle, conv.Fields)
+	}
 	if err != nil {
 		return err
 	}
