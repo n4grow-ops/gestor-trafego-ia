@@ -4,10 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
 
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/humanize"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/media"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp"
 )
@@ -15,17 +20,22 @@ import (
 // Storage guarda os arquivos dos anúncios (Supabase Storage, bucket privado).
 type Storage interface {
 	Upload(ctx context.Context, bucket, path, contentType string, data []byte) error
+	Download(ctx context.Context, bucket, path string) ([]byte, error)
+	Delete(ctx context.Context, bucket, path string) error
 }
 
 const (
 	CreativesBucket = "creatives"
 	maxCreatives    = 5
 
-	creativeSaved  = "[anúncio recebido]"
-	creativeFailed = "[anúncio não salvo]"
+	// Marcadores gravados como texto da mensagem recebida; o turno lê e responde.
+	creativeSaved    = "[anúncio recebido]"
+	creativeWarned   = "[anúncio recebido com aviso: "
+	creativeRejected = "[anúncio recusado: "
+	creativeFailed   = "[anúncio não salvo]"
 )
 
-// saveCreative guarda a imagem ou o vídeo do anúncio junto do rascunho aprovado.
+// saveCreative confere a qualidade e guarda a imagem ou o vídeo junto do rascunho aprovado.
 func (e *Engine) saveCreative(ctx context.Context, ident store.Identity, conv store.Conversation, in whatsapp.Inbound) string {
 	d, err := e.Store.LatestApprovedDraft(ctx, conv.ID)
 	if err != nil {
@@ -42,20 +52,46 @@ func (e *Engine) saveCreative(ctx context.Context, ident store.Identity, conv st
 		return creativeFailed
 	}
 	kind := "image"
-	if in.Kind == whatsapp.KindVideo {
+	if in.Kind == whatsapp.KindVideo || strings.HasPrefix(mime, "video/") {
 		kind = "video"
 	}
-	path := fmt.Sprintf("org/%d/draft/%d/%d-%s.%s", ident.OrgID, d.ID, e.now().UnixNano(), safeName(in.ExternalID), extension(mime, kind))
-	if err := e.Storage.Upload(ctx, CreativesBucket, path, mime, data); err != nil {
+	c := store.Creative{OrgID: ident.OrgID, DraftID: d.ID, ProjectID: d.ProjectID, Kind: kind, Mime: mime,
+		Size: int64(len(data)), Format: string(media.Other), Placement: string(media.Feed)}
+	warning := ""
+	if mime == "" {
+		mime = kind + "/*"
+	}
+	if info, err := media.Inspect(mime, data); err != nil {
+		// arquivo que não sei ler (ex.: formato raro) segue: a Meta confere de novo no envio
+		e.Log.Warn("criativo sem leitura de formato", "conversation_id", conv.ID, "mime", mime, "erro", err)
+	} else {
+		v := media.Check(info)
+		if !v.OK {
+			e.audit(ctx, ident.OrgID, member(ident), "creative_rejected", map[string]any{"draft_id": d.ID, "reason": v.Reason})
+			return creativeRejected + v.Reason + "]"
+		}
+		warning = v.Warning
+		f := info.Format()
+		c.Width, c.Height, c.DurationMS = info.Width, info.Height, int(info.Duration/time.Millisecond)
+		c.Format, c.Placement = string(f), string(f.Placement())
+	}
+	c.Path = fmt.Sprintf("org/%d/draft/%d/%d-%s.%s", ident.OrgID, d.ID, e.now().UnixNano(), safeName(in.ExternalID), extension(mime, kind))
+	contentType := c.Mime
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	if err := e.Storage.Upload(ctx, CreativesBucket, c.Path, contentType, data); err != nil {
 		e.Log.Error("falha ao guardar criativo", "conversation_id", conv.ID, "erro", err)
 		return creativeFailed
 	}
-	if _, err := e.Store.AddCreative(ctx, store.Creative{OrgID: ident.OrgID, DraftID: d.ID, ProjectID: d.ProjectID,
-		Kind: kind, Path: path, Mime: mime, Size: int64(len(data))}); err != nil {
+	if _, err := e.Store.AddCreative(ctx, c); err != nil {
 		e.Log.Error("falha ao registrar criativo", "conversation_id", conv.ID, "erro", err)
 		return creativeFailed
 	}
-	e.audit(ctx, ident.OrgID, member(ident), "creative_received", map[string]any{"draft_id": d.ID, "kind": kind})
+	e.audit(ctx, ident.OrgID, member(ident), "creative_received", map[string]any{"draft_id": d.ID, "kind": kind, "format": c.Format})
+	if warning != "" {
+		return creativeWarned + warning + "]"
+	}
 	return creativeSaved
 }
 
@@ -69,41 +105,332 @@ func (e *Engine) creativesTurn(ctx context.Context, conv store.Conversation, msg
 	if err != nil {
 		return err
 	}
-	n, err := e.Store.CountCreatives(ctx, d.ID)
+	list, err := e.Store.ListCreatives(ctx, d.ID)
 	if err != nil {
 		return err
 	}
-	var received, failed, done bool
+	var parts, warnings, rejected []string
+	var received, failed, done, changed bool
 	for _, m := range msgs {
 		switch {
 		case strings.HasPrefix(m, creativeSaved):
 			received = true
+		case strings.HasPrefix(m, creativeWarned):
+			received = true
+			warnings = append(warnings, strings.TrimSuffix(strings.TrimPrefix(m, creativeWarned), "]"))
+		case strings.HasPrefix(m, creativeRejected):
+			rejected = append(rejected, strings.TrimSuffix(strings.TrimPrefix(m, creativeRejected), "]"))
 		case strings.HasPrefix(m, creativeFailed):
 			failed = true
 		case isDone(m):
 			done = true
+		default:
+			cmd := parseCreativeCommand(m)
+			if cmd.kind == cmdNone {
+				continue
+			}
+			reply, deleted, err := e.applyCreativeCommand(ctx, d.ID, list, cmd)
+			if err != nil {
+				return err
+			}
+			parts = append(parts, reply)
+			if deleted {
+				changed = true
+				if list, err = e.Store.ListCreatives(ctx, d.ID); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	n := len(list)
+	if n >= maxCreatives || (done && n > 0) {
+		if miss := missingPlacement(list); done && n < maxCreatives && miss != "" && !d.Nudged {
+			if err := e.Store.MarkCreativesNudged(ctx, d.ID); err != nil {
+				return err
+			}
+			return e.send(ctx, conv, join(append(parts, fmt.Sprintf(msgCreativesNudge, miss))...))
+		}
+		return e.finishCreatives(ctx, conv, d, n, parts)
+	}
+	for _, r := range rejected {
+		parts = append(parts, fmt.Sprintf(msgCreativeRejected, r))
+	}
+	if failed {
+		parts = append(parts, msgCreativeFailed)
+	}
+	if received {
+		ack := "Recebi! ✅"
+		for _, w := range warnings {
+			ack += "\n⚠️ " + upperFirst(w) + "."
+		}
+		parts = append(parts, ack)
+	}
+	switch {
+	case done: // pronto sem nenhum anúncio
+		parts = append(parts, msgCreativesNeedOne)
+	case received || changed || len(rejected) > 0:
+		parts = append(parts, creativesStatus(list))
+	case len(parts) == 0 && !failed:
+		parts = append(parts, msgCreativesWaiting)
+	}
+	return e.send(ctx, conv, join(parts...))
+}
+
+// finishCreatives fecha a etapa, avança o projeto e agenda a prévia do anúncio.
+func (e *Engine) finishCreatives(ctx context.Context, conv store.Conversation, d store.ApprovedDraft, n int, parts []string) error {
+	if err := e.Store.UpdateConversation(ctx, conv.ID, store.StateIdle, conv.Fields); err != nil {
+		return err
+	}
+	if conv.ActiveProjectID != nil {
+		if err := e.Store.SetProjectStage(ctx, *conv.ActiveProjectID, store.StageReady); err != nil {
+			return err
+		}
+	}
+	text := join(append(parts, fmt.Sprintf(msgCreativesDone, n))...)
+	if err := e.send(ctx, conv, text); err != nil {
+		return err
+	}
+	delay := 2 * time.Second
+	if e.Humanize {
+		delay += humanize.ChainDuration(text)
+	}
+	return e.Store.Enqueue(ctx, store.JobSpec{Kind: JobCreativesPreview, MaxAttempts: 3, Delay: delay,
+		Payload: PreviewJob{ConversationID: conv.ID, DraftID: d.ID}})
+}
+
+// creativesStatus mostra quantos anúncios chegaram e quais posicionamentos já estão cobertos.
+func creativesStatus(list []store.Creative) string {
+	var feed, stories bool
+	for _, c := range list {
+		if c.Placement == string(media.Stories) {
+			stories = true
+		} else {
+			feed = true
+		}
+	}
+	mark := func(ok bool, missing string) string {
+		if ok {
+			return "✅"
+		}
+		return "⏳ falta " + missing
+	}
+	s := fmt.Sprintf("Até agora: %d de %d anúncios.\n• Feed: %s\n• Stories e Reels: %s", len(list), maxCreatives,
+		mark(feed, "uma quadrada ou em pé (4:5)"), mark(stories, "uma vertical de tela cheia (9:16)"))
+	if len(list) < maxCreatives {
+		s += "\n\nPode mandar mais ou escrever PRONTO."
+	}
+	return s
+}
+
+// missingPlacement descreve o formato que falta para cobrir feed e Stories/Reels ("" = nada falta).
+func missingPlacement(list []store.Creative) string {
+	var feed, stories bool
+	for _, c := range list {
+		if c.Placement == string(media.Stories) {
+			stories = true
+		} else {
+			feed = true
 		}
 	}
 	switch {
-	case n >= maxCreatives || (done && n > 0):
-		if err := e.Store.UpdateConversation(ctx, conv.ID, store.StateIdle, conv.Fields); err != nil {
-			return err
+	case !stories:
+		return "nenhum vertical de tela cheia (9:16), que é o formato dos Stories e Reels"
+	case !feed:
+		return "nenhum quadrado ou em pé (4:5), que é o formato do feed"
+	}
+	return ""
+}
+
+func describeCreative(c store.Creative) string {
+	kind := "Imagem"
+	if c.Kind == "video" {
+		kind = "Vídeo"
+	}
+	format := media.Format(c.Format).Label()
+	if c.Kind == "video" {
+		format = strings.NewReplacer("quadrada", "quadrado", "deitada", "deitado").Replace(format)
+	}
+	s := kind + " " + format
+	if c.Kind == "video" && c.DurationMS > 0 {
+		s += fmt.Sprintf(", %d s", (c.DurationMS+500)/1000)
+	}
+	where := "Feed"
+	if c.Placement == string(media.Stories) {
+		where = "Stories e Reels"
+	}
+	return s + " — " + where
+}
+
+func listCreatives(list []store.Creative) string {
+	var b strings.Builder
+	for i, c := range list {
+		fmt.Fprintf(&b, "\n%d. %s", i+1, describeCreative(c))
+	}
+	return b.String()
+}
+
+// ---------- apagar, trocar e listar ----------
+
+type cmdKind int
+
+const (
+	cmdNone cmdKind = iota
+	cmdDelete
+	cmdReplace
+	cmdList
+)
+
+type creativeCmd struct {
+	kind    cmdKind
+	all     bool
+	targets []int // posições 1..n; -1 = último, -2 = penúltimo
+	onlyOf  string
+}
+
+var (
+	reDelete  = regexp.MustCompile(`^(?:pode\s+|por favor\s+|quero\s+)?(?:apag\w*|remov\w*|exclu\w*|tira|tire|tirar|delet\w*|descart\w*)\b(.*)$`)
+	reReplace = regexp.MustCompile(`^(?:pode\s+|quero\s+)?(?:troc\w*|substitu\w*)\b(.*)$`)
+	reList    = regexp.MustCompile(`(?:quais|lista|listar|mostra|mostrar|ver)\b.*\b(?:mandei|enviei|anúnci\w*|anunci\w*|fotos?|vídeos?|videos?|arquivos?)|o que (?:eu )?(?:já )?(?:mandei|enviei)`)
+	reNumber  = regexp.MustCompile(`\b([1-9])\b`)
+	ordinals  = []struct {
+		prefix string
+		pos    int
+	}{{"penúltim", -2}, {"penultim", -2}, {"últim", -1}, {"ultim", -1}, {"primeir", 1}, {"segund", 2}, {"terceir", 3}, {"quart", 4}, {"quint", 5}}
+)
+
+func parseCreativeCommand(s string) creativeCmd {
+	s = strings.ToLower(strings.TrimSpace(s))
+	var rest string
+	cmd := creativeCmd{}
+	if m := reDelete.FindStringSubmatch(s); m != nil {
+		cmd.kind, rest = cmdDelete, m[1]
+	} else if m := reReplace.FindStringSubmatch(s); m != nil {
+		cmd.kind, rest = cmdReplace, m[1]
+	} else if reList.MatchString(s) {
+		return creativeCmd{kind: cmdList}
+	} else {
+		return cmd
+	}
+	for _, w := range strings.FieldsFunc(rest, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }) {
+		switch {
+		case w == "todas" || w == "todos" || w == "tudo":
+			cmd.all = true
+		case w == "foto" || w == "imagem" || w == "fotos" || w == "imagens":
+			cmd.onlyOf = "image"
+		case w == "vídeo" || w == "video" || w == "vídeos" || w == "videos":
+			cmd.onlyOf = "video"
 		}
-		if conv.ActiveProjectID != nil {
-			if err := e.Store.SetProjectStage(ctx, *conv.ActiveProjectID, store.StageReady); err != nil {
-				return err
+		for _, o := range ordinals {
+			if strings.HasPrefix(w, o.prefix) {
+				cmd.targets = append(cmd.targets, o.pos)
+				break
 			}
 		}
-		return e.send(ctx, conv, fmt.Sprintf(msgCreativesDone, n))
-	case failed:
-		return e.send(ctx, conv, msgCreativeFailed)
-	case done:
-		return e.send(ctx, conv, msgCreativesNeedOne)
-	case received:
-		return e.send(ctx, conv, fmt.Sprintf(msgCreativesAck, n, maxCreatives))
-	default:
-		return e.send(ctx, conv, msgCreativesWaiting)
 	}
+	for _, m := range reNumber.FindAllStringSubmatch(rest, -1) {
+		v, _ := strconv.Atoi(m[1])
+		cmd.targets = append(cmd.targets, v)
+	}
+	return cmd
+}
+
+// applyCreativeCommand executa o pedido e devolve a resposta; deleted indica se algo foi apagado.
+func (e *Engine) applyCreativeCommand(ctx context.Context, draftID int64, list []store.Creative, cmd creativeCmd) (string, bool, error) {
+	if cmd.kind == cmdList {
+		if len(list) == 0 {
+			return msgCreativesNone, false, nil
+		}
+		return "Seus anúncios até agora:" + listCreatives(list) + "\n\n" + msgCreativesHowToDelete, false, nil
+	}
+	if len(list) == 0 {
+		return msgCreativesNone, false, nil
+	}
+	var pick []int // índices 0..n-1
+	switch {
+	case cmd.all:
+		for i := range list {
+			if cmd.onlyOf == "" || list[i].Kind == cmd.onlyOf {
+				pick = append(pick, i)
+			}
+		}
+	case len(cmd.targets) > 0:
+		for _, t := range cmd.targets {
+			i := t - 1
+			if t < 0 {
+				i = len(list) + t
+			}
+			if i < 0 || i >= len(list) {
+				return fmt.Sprintf(msgCreativeNotFound, abs(t)) + listCreatives(list), false, nil
+			}
+			if !slices.Contains(pick, i) {
+				pick = append(pick, i)
+			}
+		}
+	default:
+		// sem número: vale se só houver um candidato
+		for i := range list {
+			if cmd.onlyOf == "" || list[i].Kind == cmd.onlyOf {
+				pick = append(pick, i)
+			}
+		}
+		if len(pick) != 1 {
+			return msgCreativeWhich + listCreatives(list), false, nil
+		}
+	}
+	if len(pick) == 0 {
+		return msgCreativeWhich + listCreatives(list), false, nil
+	}
+	slices.Sort(pick)
+	var names []string
+	for j := len(pick) - 1; j >= 0; j-- { // do fim para o começo: a numeração vista pelo cliente não muda
+		c := list[pick[j]]
+		path, err := e.Store.DeleteCreative(ctx, draftID, c.ID)
+		if errors.Is(err, store.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return "", false, err
+		}
+		if err := e.Storage.Delete(ctx, CreativesBucket, path); err != nil {
+			e.Log.Error("arquivo do anúncio não apagado no storage", "path", path, "erro", err)
+		}
+		e.audit(ctx, c.OrgID, "system", "creative_deleted", map[string]any{"draft_id": draftID, "creative_id": c.ID})
+		names = append([]string{strconv.Itoa(pick[j] + 1)}, names...)
+	}
+	which := "a " + strings.Join(names, " e a ")
+	if len(pick) == len(list) && len(list) > 1 {
+		which = "todos"
+	}
+	if cmd.kind == cmdReplace {
+		return fmt.Sprintf("Tirei %s. Pode mandar o novo aqui 👇", which), true, nil
+	}
+	return fmt.Sprintf("Pronto, apaguei %s.", which), true, nil
+}
+
+func abs(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
+func join(parts ...string) string {
+	var out []string
+	for _, p := range parts {
+		if strings.TrimSpace(p) != "" {
+			out = append(out, p)
+		}
+	}
+	return strings.Join(out, "\n\n")
+}
+
+func upperFirst(s string) string {
+	r := []rune(s)
+	if len(r) == 0 {
+		return s
+	}
+	r[0] = unicode.ToUpper(r[0])
+	return string(r)
 }
 
 // isDone reconhece "pronto", "é isso", "só isso", "terminei"...

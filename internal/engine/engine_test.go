@@ -46,6 +46,7 @@ type fakeWA struct {
 	voiceFail bool     // simula o WAHA recusando mensagem de voz
 	events    []string // visto, presenças, voz e textos, na ordem
 	voices    []sent
+	images    []sentImage
 }
 
 func (f *fakeWA) Name() string { return "openwa" }
@@ -83,6 +84,30 @@ func (f *fakeWA) SendVoice(_ context.Context, chatID string, audio []byte, _ str
 	f.events = append(f.events, "voice")
 	f.voices = append(f.voices, sent{chatID, string(audio)})
 	return nil
+}
+
+func (f *fakeWA) SendImage(_ context.Context, chatID string, image []byte, mime, caption string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.fail {
+		return errors.New("whatsapp fora do ar")
+	}
+	f.events = append(f.events, "image:"+caption)
+	f.images = append(f.images, sentImage{chatID, image, mime, caption})
+	return nil
+}
+
+func (f *fakeWA) sentImages() []sentImage {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]sentImage(nil), f.images...)
+}
+
+type sentImage struct {
+	ChatID  string
+	Data    []byte
+	Mime    string
+	Caption string
 }
 
 // log devolve visto, presenças, voz e textos na ordem em que aconteceram.

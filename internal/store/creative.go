@@ -2,9 +2,13 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/contract"
 )
 
 // StateAwaitingCreatives: proposta aprovada, esperando as imagens ou vídeos do anúncio.
@@ -14,34 +18,53 @@ const StateAwaitingCreatives = "awaiting_creatives"
 type ApprovedDraft struct {
 	ID        int64
 	ProjectID *int64
+	Nudged    bool // já avisou do posicionamento faltando
 }
 
 func (s *Store) LatestApprovedDraft(ctx context.Context, convID int64) (ApprovedDraft, error) {
 	var d ApprovedDraft
-	err := s.pool.QueryRow(ctx, `SELECT id, project_id FROM campaign_drafts
-		WHERE conversation_id = $1 AND status = 'approved' ORDER BY id DESC LIMIT 1`, convID).Scan(&d.ID, &d.ProjectID)
+	err := s.pool.QueryRow(ctx, `SELECT id, project_id, creatives_nudged FROM campaign_drafts
+		WHERE conversation_id = $1 AND status = 'approved' ORDER BY id DESC LIMIT 1`, convID).Scan(&d.ID, &d.ProjectID, &d.Nudged)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ApprovedDraft{}, ErrNotFound
 	}
 	return d, err
 }
 
+func (s *Store) MarkCreativesNudged(ctx context.Context, draftID int64) error {
+	_, err := s.pool.Exec(ctx, `UPDATE campaign_drafts SET creatives_nudged = true WHERE id = $1`, draftID)
+	return err
+}
+
 // Creative é uma imagem ou vídeo do anúncio, guardado no Supabase Storage.
 type Creative struct {
-	OrgID     int64
-	DraftID   int64
-	ProjectID *int64
-	Kind      string // image ou video
-	Path      string
-	Mime      string
-	Size      int64
+	ID         int64
+	OrgID      int64
+	DraftID    int64
+	ProjectID  *int64
+	Kind       string // image ou video
+	Path       string
+	Mime       string
+	Size       int64
+	Width      int
+	Height     int
+	DurationMS int
+	Format     string // square, portrait, vertical, landscape, other
+	Placement  string // feed ou stories
 }
 
 func (s *Store) AddCreative(ctx context.Context, c Creative) (int64, error) {
+	if c.Format == "" {
+		c.Format = "other"
+	}
+	if c.Placement == "" {
+		c.Placement = "feed"
+	}
 	var id int64
-	err := s.pool.QueryRow(ctx, `INSERT INTO creatives (organization_id, draft_id, project_id, kind, storage_path, mime, size_bytes)
-		VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-		c.OrgID, c.DraftID, c.ProjectID, c.Kind, c.Path, c.Mime, c.Size).Scan(&id)
+	err := s.pool.QueryRow(ctx, `INSERT INTO creatives (organization_id, draft_id, project_id, kind, storage_path, mime, size_bytes,
+			width, height, duration_ms, format, placement)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, nullif($8, 0), nullif($9, 0), nullif($10, 0), $11, $12) RETURNING id`,
+		c.OrgID, c.DraftID, c.ProjectID, c.Kind, c.Path, c.Mime, c.Size, c.Width, c.Height, c.DurationMS, c.Format, c.Placement).Scan(&id)
 	return id, err
 }
 
@@ -49,4 +72,52 @@ func (s *Store) CountCreatives(ctx context.Context, draftID int64) (int, error) 
 	var n int
 	err := s.pool.QueryRow(ctx, `SELECT count(*) FROM creatives WHERE draft_id = $1`, draftID).Scan(&n)
 	return n, err
+}
+
+// ListCreatives devolve os anúncios do rascunho na ordem de envio (a numeração que o cliente vê).
+func (s *Store) ListCreatives(ctx context.Context, draftID int64) ([]Creative, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id, organization_id, draft_id, project_id, kind, storage_path, mime, size_bytes,
+			coalesce(width, 0), coalesce(height, 0), coalesce(duration_ms, 0), format, placement
+		FROM creatives WHERE draft_id = $1 ORDER BY id`, draftID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Creative, error) {
+		var c Creative
+		err := r.Scan(&c.ID, &c.OrgID, &c.DraftID, &c.ProjectID, &c.Kind, &c.Path, &c.Mime, &c.Size,
+			&c.Width, &c.Height, &c.DurationMS, &c.Format, &c.Placement)
+		return c, err
+	})
+}
+
+// DeleteCreative apaga o registro e devolve o caminho do arquivo, para apagar também no Storage.
+func (s *Store) DeleteCreative(ctx context.Context, draftID, id int64) (string, error) {
+	var path string
+	err := s.pool.QueryRow(ctx, `DELETE FROM creatives WHERE id = $1 AND draft_id = $2 RETURNING storage_path`, id, draftID).Scan(&path)
+	return path, notFound(err)
+}
+
+// PreviewData é o que a prévia do anúncio mostra: nome da conta e o primeiro texto da proposta.
+type PreviewData struct {
+	Account string
+	Copy    contract.Copy
+}
+
+func (s *Store) PreviewData(ctx context.Context, draftID int64) (PreviewData, error) {
+	var raw []byte
+	var p PreviewData
+	err := s.pool.QueryRow(ctx, `SELECT d.proposal,
+			coalesce(nullif(trim(o.instagram), ''), nullif(trim(o.trade_name), ''), nullif(trim(o.profile->>'business_name'), ''), o.name)
+		FROM campaign_drafts d JOIN organizations o ON o.id = d.organization_id WHERE d.id = $1`, draftID).Scan(&raw, &p.Account)
+	if err != nil {
+		return PreviewData{}, notFound(err)
+	}
+	var prop contract.CampaignProposal
+	if err := json.Unmarshal(raw, &prop); err != nil {
+		return PreviewData{}, fmt.Errorf("store: proposta inválida: %w", err)
+	}
+	if len(prop.Copies) > 0 {
+		p.Copy = prop.Copies[0]
+	}
+	return p, nil
 }

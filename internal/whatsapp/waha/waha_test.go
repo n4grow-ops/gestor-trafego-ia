@@ -202,8 +202,16 @@ func TestHumanEndpoints(t *testing.T) {
 	if err := c.SendVoice(ctx, "5511@c.us", []byte("MP3"), "audio/mpeg"); err != nil {
 		t.Fatal(err)
 	}
-	if len(calls) != 3 {
+	if err := c.SendImage(ctx, "5511@c.us", []byte("JPG"), "image/jpeg", "Prévia"); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 4 {
 		t.Fatalf("chamadas = %d", len(calls))
+	}
+	img, _ := calls[3].Body["file"].(map[string]any)
+	if calls[3].Path != "/api/sendImage" || calls[3].Body["caption"] != "Prévia" || calls[3].Body["chatId"] != "5511@c.us" ||
+		img["mimetype"] != "image/jpeg" || img["data"] != base64.StdEncoding.EncodeToString([]byte("JPG")) {
+		t.Errorf("sendImage = %+v", calls[3])
 	}
 	if calls[0].Path != "/api/sendSeen" || calls[0].Body["chatId"] != "5511@c.us" || calls[0].Body["session"] != "default" {
 		t.Errorf("sendSeen = %+v", calls[0])

@@ -49,6 +49,8 @@ type Provider interface {
 	SetPresence(ctx context.Context, chatID string, p Presence) error
 	// SendVoice envia mensagem de voz; o provedor converte o áudio para o formato do WhatsApp.
 	SendVoice(ctx context.Context, chatID string, audio []byte, mime string) error
+	// SendImage envia uma imagem com legenda (ex.: prévia do anúncio).
+	SendImage(ctx context.Context, chatID string, image []byte, mime, caption string) error
 	DownloadMedia(ctx context.Context, in Inbound) (data []byte, mimeType string, err error)
 	// ChatIDForPhone monta o destino para um telefone canônico (usado para avisar o operador).
 	ChatIDForPhone(phone string) string

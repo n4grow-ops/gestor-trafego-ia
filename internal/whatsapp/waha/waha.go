@@ -169,6 +169,14 @@ func (c *Client) SendVoice(ctx context.Context, chatID string, audio []byte, mim
 	})
 }
 
+// SendImage manda a imagem em base64 com legenda.
+func (c *Client) SendImage(ctx context.Context, chatID string, image []byte, mime, caption string) error {
+	return c.post(ctx, "/api/sendImage", map[string]any{
+		"session": c.Session, "chatId": chatID, "caption": caption,
+		"file": map[string]string{"mimetype": mime, "filename": "previa.jpg", "data": base64.StdEncoding.EncodeToString(image)},
+	})
+}
+
 func (c *Client) post(ctx context.Context, path string, payload any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {

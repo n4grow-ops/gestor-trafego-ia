@@ -50,6 +50,12 @@ func (e *Engine) HandleJob(ctx context.Context, job store.Job) error {
 			return fmt.Errorf("engine: payload de lembrete inválido: %w", err)
 		}
 		return e.remind(ctx, r)
+	case JobCreativesPreview:
+		var p PreviewJob
+		if err := json.Unmarshal(job.Payload, &p); err != nil {
+			return fmt.Errorf("engine: payload de prévia inválido: %w", err)
+		}
+		return e.sendPreview(ctx, p)
 	default:
 		return fmt.Errorf("engine: job desconhecido %q", job.Kind)
 	}
@@ -80,6 +86,10 @@ func (e *Engine) OnJobFailed(ctx context.Context, job store.Job) error {
 		}
 		// Resumo com código não entregue: a proposta perde a validade e um humano assume.
 		return e.escalateIf(ctx, s.ConversationID, store.StateAwaitingApproval, "não foi possível entregar a proposta pelo WhatsApp")
+	case JobCreativesPreview:
+		// Prévia é cortesia: a etapa já fechou, então só registra.
+		e.Log.Error("prévia do anúncio não entregue", "job_id", job.ID)
+		return nil
 	case JobReply:
 		// Resposta esgotou as tentativas: o cliente não fica sem retorno.
 		var r ReplyJob
