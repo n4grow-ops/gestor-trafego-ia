@@ -125,7 +125,8 @@ func TestWelcomeJobIsHumanText(t *testing.T) {
 	spec := engine.WelcomeJob(7, "5511@c.us", "Ana Souza", "ana@mail.com")
 	s, ok := spec.Payload.(engine.SendJob)
 	all := s.Text + " " + strings.Join(s.Next, " ")
-	if spec.Kind != engine.JobSend || !ok || !s.Human || s.Voice || s.ConversationID != 7 || !strings.Contains(all, "Ana") || !strings.Contains(all, "ana@mail.com") {
+	if spec.Kind != engine.JobSend || !ok || !s.Human || s.Voice || s.ConversationID != 7 || !strings.Contains(all, "Ana") ||
+		!strings.Contains(all, "ana@mail.com") || !strings.Contains(all, "o que a sua empresa faz") || strings.Contains(all, "anunciar primeiro") {
 		t.Fatalf("boas-vindas = %+v", spec)
 	}
 }

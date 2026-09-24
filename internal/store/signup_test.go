@@ -123,8 +123,8 @@ func TestCompleteRegistration(t *testing.T) {
 	}
 	c, err := st.GetConversation(ctx, conv.ID)
 	must(t, err)
-	if c.State != store.StateIdle {
-		t.Fatalf("conversa = %s", c.State)
+	if c.State != store.StateOnboarding {
+		t.Fatalf("depois do cadastro a conversa conhece o negócio (onboarding); estado = %s", c.State)
 	}
 
 	if _, err := st.CompleteRegistration(ctx, reg); !errors.Is(err, store.ErrAlreadyRegistered) {

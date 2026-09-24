@@ -155,3 +155,11 @@ func TestPromptSaysResponseFormat(t *testing.T) {
 		t.Fatalf("prompt sem formato de texto:\n%s", p)
 	}
 }
+
+func TestPromptListsMissingBusinessData(t *testing.T) {
+	p := promptFor(t, attendant.Input{Message: "oi", State: "onboarding",
+		Profile: contract.Profile{BusinessName: contract.Str("Pizzaria"), City: contract.Str("Campinas")}})
+	if !strings.Contains(p, "Negócio faltando: o que a empresa faz") || !strings.Contains(p, "região que atende") {
+		t.Fatalf("prompt sem o que falta do negócio:\n%s", p)
+	}
+}

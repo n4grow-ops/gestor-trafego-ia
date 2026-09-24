@@ -91,8 +91,12 @@ func userPrompt(in Input) string {
 	if len(in.Projects) > 0 {
 		projects = strings.Join(in.Projects, ", ")
 	}
-	fmt.Fprintf(&b, "Empresa: %s (nicho: %s)\nMemória do negócio: %s\nProjeto ativo: %s\nProjetos do cliente: %s\n",
-		in.OrgName, in.Niche, profile, active, projects)
+	business := "nenhum"
+	if m := in.Profile.Missing(); len(m) > 0 {
+		business = strings.Join(m, "; ")
+	}
+	fmt.Fprintf(&b, "Empresa: %s (nicho: %s)\nMemória do negócio: %s\nNegócio faltando: %s\nProjeto ativo: %s\nProjetos do cliente: %s\n",
+		in.OrgName, in.Niche, profile, business, active, projects)
 	fmt.Fprintf(&b, "Estado da conversa: %s\nDados já coletados: %s\nDados faltando: %s\n", in.State, fields, missing)
 	if in.Voice {
 		b.WriteString("Formato da resposta: áudio (fale como numa mensagem de voz: sem listas, sem emoji, sem asterisco, uma parte só)\n")

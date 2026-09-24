@@ -217,10 +217,10 @@ func (s *Store) CompleteRegistration(ctx context.Context, r Registration) (Regis
 	if _, err := tx.Exec(ctx, `UPDATE signup_links SET used_at = now() WHERE id = $1`, linkID); err != nil {
 		return RegistrationResult{}, err
 	}
-	// Conversa: sai do onboarding (os dados já vieram do cadastro); conversa em andamento fica como está.
+	// Conversa: vai conhecer o negócio (onboarding) antes de falar de anúncio; conversa em andamento fica como está.
 	var convID int64
 	var chatID string
-	err = tx.QueryRow(ctx, `UPDATE conversations SET state = CASE WHEN state = 'onboarding' THEN 'idle' ELSE state END, updated_at = now()
+	err = tx.QueryRow(ctx, `UPDATE conversations SET state = CASE WHEN state IN ('idle', 'onboarding') THEN 'onboarding' ELSE state END, updated_at = now()
 		WHERE identity_id = $1 RETURNING id, chat_id`, res.IdentityID).Scan(&convID, &chatID)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return RegistrationResult{}, err

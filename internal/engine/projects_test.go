@@ -42,7 +42,8 @@ func TestAutoSignupStartsOnboarding(t *testing.T) {
 	h.eng.AutoSignup, h.eng.SignupMaxBudget, h.eng.SignupDailyLimit = true, 50, 60
 	h.att.Responses = []string{
 		`{"intent":"other","fields":{},"profile":{},"reply":"Bem-vindo! Qual o nome do seu negócio e a cidade?"}`,
-		`{"intent":"provide_info","fields":{},"profile":{"business_name":"Açaí da Bia","city":"Salvador"},"reply":"Prazer, Bia!"}`,
+		`{"intent":"provide_info","fields":{},"profile":{"business_name":"Açaí da Bia","city":"Salvador"},"reply":"Prazer, Bia! O que você vende?"}`,
+		`{"intent":"provide_info","fields":{},"profile":{"offer":"açaí e sorvetes","audience":"jovens e famílias que curtem academia","audience_age":"18 a 40","audience_gender":"todos","differentials":"açaí puro sem xarope","service_area":"delivery em 4 km","average_ticket":"R$ 25","sales_channel":"WhatsApp e iFood"},"reply":"Anotado! Agora sim: o que você quer anunciar primeiro?"}`,
 	}
 	h.sayFrom(newPhone, "oi")
 	ident, err := h.st.FindIdentity(ctx, "openwa", newPhone)
@@ -62,8 +63,17 @@ func TestAutoSignupStartsOnboarding(t *testing.T) {
 		t.Errorf("memória = %+v", ident.Profile)
 	}
 	c, _ := h.st.GetOrCreateConversation(ctx, ident.ID, "")
-	if c.State != store.StateIdle {
-		t.Errorf("estado após onboarding = %s", c.State)
+	if c.State != store.StateOnboarding {
+		t.Errorf("com só nome e cidade ainda conhece o negócio; estado = %s", c.State)
+	}
+	h.sayFrom(newPhone, "vendo açaí e sorvete, pra jovens e famílias, açaí puro, entrego em 4 km")
+	if !strings.Contains(h.att.Requests[2].Messages[1].Content, "Negócio faltando: o que a empresa faz") {
+		t.Errorf("atendente não recebeu o que falta:\n%s", h.att.Requests[2].Messages[1].Content)
+	}
+	ident, _ = h.st.FindIdentity(ctx, "openwa", newPhone)
+	c, _ = h.st.GetOrCreateConversation(ctx, ident.ID, "")
+	if c.State != store.StateIdle || ident.Profile.ServiceArea == nil || *ident.Profile.Differentials != "açaí puro sem xarope" {
+		t.Errorf("negócio completo deveria liberar a conversa: estado = %s perfil = %+v", c.State, ident.Profile)
 	}
 }
 
