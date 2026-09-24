@@ -1,0 +1,152 @@
+package store_test
+
+import (
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/contract"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/signup"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
+)
+
+func regForm() signup.Form {
+	return signup.Form{FullName: "Ana Souza", BusinessName: "Pizzaria Boa", LegalName: "PIZZARIA BOA LTDA",
+		CNPJ: "11222333000181", CPF: "52998224725", Segment: "restaurante", City: "Campinas", UF: "SP",
+		Instagram: "@pizzariaboa", Objective: "mensagens", MonthlyBudget: "500_1500", AdsExperience: "nunca",
+		MetaAdAccount: "nao_sei", Approver: "self", AcceptTerms: true}
+}
+
+func welcome(convID int64, chatID, name string) store.JobSpec {
+	return store.JobSpec{Kind: "whatsapp.send", Payload: map[string]any{"conversation_id": convID, "chat_id": chatID, "text": "oi " + name}}
+}
+
+func TestSignupLinkLifecycle(t *testing.T) {
+	st, pool := newStore(t)
+	ident := seedIdentity(t, st, "owner", "5511988887777")
+	if ident.RegistrationStatus != "pending" {
+		t.Fatalf("status inicial = %q", ident.RegistrationStatus)
+	}
+	if _, ok, err := st.LastSignupLinkAt(ctx, ident.ID); err != nil || ok {
+		t.Fatalf("sem link ainda: ok=%v err=%v", ok, err)
+	}
+	must(t, st.CreateSignupLink(ctx, ident.ID, "hash-ok", time.Now().Add(time.Hour)))
+	must(t, st.CreateSignupLink(ctx, ident.ID, "hash-old", time.Now().Add(-time.Minute)))
+	if at, ok, err := st.LastSignupLinkAt(ctx, ident.ID); err != nil || !ok || time.Since(at) > time.Minute {
+		t.Fatalf("último link: %v %v %v", at, ok, err)
+	}
+	must(t, st.UpdateOrgProfile(ctx, ident.OrgID, contract.Profile{BusinessName: ptr("Pizzaria Boa"), City: ptr("Campinas")}))
+	p, err := st.SignupPrefill(ctx, "hash-ok")
+	must(t, err)
+	if p.Phone != "5511988887777" || p.BusinessName != "Pizzaria Boa" || p.City != "Campinas" {
+		t.Fatalf("pré-preenchimento = %+v", p)
+	}
+	if _, err := st.SignupPrefill(ctx, "hash-old"); !errors.Is(err, store.ErrLinkInvalid) {
+		t.Fatalf("expirado: %v", err)
+	}
+	if _, err := st.SignupPrefill(ctx, "nao-existe"); !errors.Is(err, store.ErrLinkInvalid) {
+		t.Fatalf("inexistente: %v", err)
+	}
+	_ = pool
+}
+
+func TestPlansSeeded(t *testing.T) {
+	st, _ := newStore(t)
+	plans, err := st.Plans(ctx)
+	must(t, err)
+	if len(plans) != 3 || plans[0].Code != "free" || !plans[0].Available || plans[1].Available || plans[0].PriceCents != 0 {
+		t.Fatalf("planos = %+v", plans)
+	}
+}
+
+func TestCompleteRegistration(t *testing.T) {
+	st, pool := newStore(t)
+	ident := seedIdentity(t, st, "owner", "5511988887777")
+	conv, err := st.GetOrCreateConversation(ctx, ident.ID, "5511988887777@c.us")
+	must(t, err)
+	must(t, st.UpdateConversation(ctx, conv.ID, store.StateOnboarding, conv.Fields))
+	must(t, st.CreateSignupLink(ctx, ident.ID, "hash-ok", time.Now().Add(time.Hour)))
+
+	reg := store.Registration{TokenHash: "hash-ok", AuthUserID: "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+		Email: "ana@mail.com", EmailVerifiedAt: time.Now(), Form: regForm(), PlanCode: "free",
+		TermsVersion: "2026-09-23", IP: "1.2.3.4", UserAgent: "teste", Welcome: welcome}
+	res, err := st.CompleteRegistration(ctx, reg)
+	must(t, err)
+	if res.OrgID != ident.OrgID || res.FullName != "Ana Souza" {
+		t.Fatalf("resultado = %+v", res)
+	}
+
+	got, err := st.GetIdentity(ctx, ident.ID)
+	must(t, err)
+	if got.RegistrationStatus != "complete" || got.OrgName != "Pizzaria Boa" || got.DailyMessageLimit != 60 || got.MaxDailyBudgetBRL != 50 {
+		t.Fatalf("identidade = %+v", got)
+	}
+	if got.Profile.BusinessName == nil || *got.Profile.BusinessName != "Pizzaria Boa" || *got.Profile.City != "Campinas" {
+		t.Fatalf("memória do negócio = %+v", got.Profile)
+	}
+	var email, fullName, cpf, cnpj, segment, plan string
+	must(t, pool.QueryRow(ctx, `SELECT m.email, m.full_name, m.cpf, o.cnpj, o.segment, s.plan_code
+		FROM members m JOIN organizations o ON o.id = m.organization_id JOIN subscriptions s ON s.organization_id = o.id
+		WHERE m.id = $1`, ident.MemberID).Scan(&email, &fullName, &cpf, &cnpj, &segment, &plan))
+	if email != "ana@mail.com" || fullName != "Ana Souza" || cpf != "52998224725" || cnpj != "11222333000181" ||
+		segment != "Restaurante e alimentação" || plan != "free" {
+		t.Fatalf("gravado: %s %s %s %s %s %s", email, fullName, cpf, cnpj, segment, plan)
+	}
+	var consents, jobs int
+	must(t, pool.QueryRow(ctx, `SELECT count(*) FROM consents WHERE member_id = $1 AND version = '2026-09-23'`, ident.MemberID).Scan(&consents))
+	must(t, pool.QueryRow(ctx, `SELECT count(*) FROM outbox_jobs WHERE payload->>'text' = 'oi Ana Souza'`).Scan(&jobs))
+	if consents != 2 || jobs != 1 {
+		t.Fatalf("consentimentos = %d, boas-vindas = %d", consents, jobs)
+	}
+	c, err := st.GetConversation(ctx, conv.ID)
+	must(t, err)
+	if c.State != store.StateIdle {
+		t.Fatalf("conversa = %s", c.State)
+	}
+
+	if _, err := st.CompleteRegistration(ctx, reg); !errors.Is(err, store.ErrAlreadyRegistered) {
+		t.Fatalf("repetido: %v", err)
+	}
+	if _, err := st.SignupPrefill(ctx, "hash-ok"); !errors.Is(err, store.ErrAlreadyRegistered) {
+		t.Fatalf("pré-preenchimento depois de concluir: %v", err)
+	}
+}
+
+func TestCompleteRegistrationKeepsConversationState(t *testing.T) {
+	st, _ := newStore(t)
+	ident := seedIdentity(t, st, "owner", "5511988887777")
+	conv, err := st.GetOrCreateConversation(ctx, ident.ID, "5511988887777@c.us")
+	must(t, err)
+	must(t, st.UpdateConversation(ctx, conv.ID, store.StateCollecting, contract.Fields{Offer: ptr("pizza")}))
+	must(t, st.CreateSignupLink(ctx, ident.ID, "h", time.Now().Add(time.Hour)))
+	_, err = st.CompleteRegistration(ctx, store.Registration{TokenHash: "h", AuthUserID: "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+		Email: "a@b.com", EmailVerifiedAt: time.Now(), Form: regForm(), PlanCode: "free", TermsVersion: "v1", Welcome: welcome})
+	must(t, err)
+	c, _ := st.GetConversation(ctx, conv.ID)
+	if c.State != store.StateCollecting || c.Fields.Offer == nil {
+		t.Fatalf("conversa em andamento foi mexida: %+v", c)
+	}
+}
+
+func TestCompleteRegistrationRejectsBadInput(t *testing.T) {
+	st, _ := newStore(t)
+	ident := seedIdentity(t, st, "owner", "5511988887777")
+	_, err := st.GetOrCreateConversation(ctx, ident.ID, "5511988887777@c.us")
+	must(t, err)
+	must(t, st.CreateSignupLink(ctx, ident.ID, "old", time.Now().Add(-time.Minute)))
+	must(t, st.CreateSignupLink(ctx, ident.ID, "ok", time.Now().Add(time.Hour)))
+	base := store.Registration{AuthUserID: "7c9e6679-7425-40de-944b-e07fc1f90ae7", Email: "a@b.com",
+		EmailVerifiedAt: time.Now(), Form: regForm(), PlanCode: "free", TermsVersion: "v1", Welcome: welcome}
+	expired := base
+	expired.TokenHash = "old"
+	if _, err := st.CompleteRegistration(ctx, expired); !errors.Is(err, store.ErrLinkInvalid) {
+		t.Fatalf("expirado: %v", err)
+	}
+	paid := base
+	paid.TokenHash, paid.PlanCode = "ok", "pro"
+	if _, err := st.CompleteRegistration(ctx, paid); !errors.Is(err, store.ErrPlanUnavailable) {
+		t.Fatalf("plano indisponível: %v", err)
+	}
+}
+
+func ptr(s string) *string { return &s }

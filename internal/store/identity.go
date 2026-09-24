@@ -27,6 +27,8 @@ type Identity struct {
 	Status            string           // active ou blocked
 	DailyMessageLimit int
 	SignupSource      string // admin ou auto
+	// RegistrationStatus: pending até o cliente concluir o cadastro pela página; complete depois.
+	RegistrationStatus string
 }
 
 // CanApprove diz se o membro pode aprovar gasto.
@@ -34,7 +36,7 @@ func (i Identity) CanApprove() bool { return i.Role == "owner" || i.Role == "app
 
 const identitySelect = `SELECT wi.id, wi.provider, wi.phone_e164, m.id, m.name, m.role,
 	o.id, o.name, o.niche, o.max_daily_budget_brl::float8, o.allowed_objectives,
-	o.profile, o.status, o.daily_message_limit, o.signup_source
+	o.profile, o.status, o.daily_message_limit, o.signup_source, o.registration_status
 	FROM whatsapp_identities wi
 	JOIN members m ON m.id = wi.member_id
 	JOIN organizations o ON o.id = m.organization_id`
@@ -44,7 +46,7 @@ func scanIdentity(row pgx.Row) (Identity, error) {
 	var profile []byte
 	err := row.Scan(&i.ID, &i.Provider, &i.Phone, &i.MemberID, &i.MemberName, &i.Role,
 		&i.OrgID, &i.OrgName, &i.Niche, &i.MaxDailyBudgetBRL, &i.AllowedObjectives,
-		&profile, &i.Status, &i.DailyMessageLimit, &i.SignupSource)
+		&profile, &i.Status, &i.DailyMessageLimit, &i.SignupSource, &i.RegistrationStatus)
 	if err != nil {
 		return Identity{}, notFound(err)
 	}
