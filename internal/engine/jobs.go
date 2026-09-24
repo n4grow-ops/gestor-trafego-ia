@@ -42,6 +42,8 @@ func (e *Engine) HandleJob(ctx context.Context, job store.Job) error {
 			return fmt.Errorf("engine: payload de resposta inválido: %w", err)
 		}
 		return e.reply(ctx, r)
+	case JobDailyReport:
+		return e.dailyReport(ctx)
 	case JobSignupRemind:
 		var r RemindJob
 		if err := json.Unmarshal(job.Payload, &r); err != nil {

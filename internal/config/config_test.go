@@ -89,3 +89,14 @@ func TestSignupConfig(t *testing.T) {
 		t.Fatal("cadastro ligado só com PUBLIC_BASE_URL e Supabase")
 	}
 }
+
+func TestCreativesAndReportConfig(t *testing.T) {
+	c := config.Load(env(map[string]string{"SUPABASE_SERVICE_ROLE_KEY": "srv", "OPERATOR_PHONE": "5511900000000"}))
+	if c.SupabaseServiceRoleKey != "srv" || c.ReportPhone != "5511900000000" {
+		t.Fatalf("config = %+v", c)
+	}
+	c = config.Load(env(map[string]string{"OPERATOR_PHONE": "5511900000000", "REPORT_PHONE": "5511911111111"}))
+	if c.ReportPhone != "5511911111111" {
+		t.Fatalf("REPORT_PHONE tem prioridade: %q", c.ReportPhone)
+	}
+}

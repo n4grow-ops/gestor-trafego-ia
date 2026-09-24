@@ -14,6 +14,7 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/db"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/engine"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/llm"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/storage"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp/waha"
@@ -77,8 +78,21 @@ func run(log *slog.Logger) error {
 	if cfg.VoiceReplies && cfg.TTSModel != "" {
 		eng.Voice = router // voz só com modelo de TTS configurado
 	}
+	if cfg.SupabaseURL != "" && cfg.SupabaseServiceRoleKey != "" {
+		files := storage.New(cfg.SupabaseURL, cfg.SupabaseServiceRoleKey)
+		if err := files.EnsureBucket(ctx, engine.CreativesBucket); err != nil {
+			log.Error("bucket dos anúncios indisponível; etapa de anúncios desligada", "erro", err)
+		} else {
+			eng.Storage = files
+		}
+	}
+	eng.ReportPhone = whatsapp.Digits(cfg.ReportPhone)
+	if err := eng.EnsureDailyReport(ctx); err != nil {
+		log.Error("falha ao agendar relatório diário", "erro", err)
+	}
 	w := &worker.Worker{Store: st, WA: wa, Engine: eng, Log: log}
 	log.Info("worker iniciado", "atendente", cfg.AttendantModel, "gestor", cfg.ManagerModel,
-		"humano", cfg.Humanize, "voz", eng.Voice != nil, "cadastro", eng.SignupBaseURL != "")
+		"humano", cfg.Humanize, "voz", eng.Voice != nil, "cadastro", eng.SignupBaseURL != "",
+		"anuncios", eng.Storage != nil, "relatorio", eng.ReportPhone != "")
 	return w.Run(ctx)
 }

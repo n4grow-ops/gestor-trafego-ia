@@ -40,5 +40,7 @@ const (
 	msgSignupReminder1 = "Oi! Faltou pouquinho pro seu cadastro no meuanuncio.io 🙂 Leva uns 2 minutos e aí a gente já começa a montar seus anúncios:\n\n%s"
 	msgSignupReminder2 = "Passando pra lembrar: seu cadastro ainda está aberto. Se quiser continuar, é só tocar aqui:\n\n%s\n\nQualquer dúvida, me chama por aqui mesmo."
 
+	msgDailyReport = "📊 meuanuncio.io — resumo das últimas 24 h\n\n👤 Contatos novos: %d\n✅ Cadastros concluídos: %d\n⏳ Cadastros pendentes (com link): %d\n💬 Mensagens recebidas: %d\n📝 Propostas geradas: %d\n👍 Propostas aprovadas: %d\n🖼️ Anúncios recebidos: %d\n💸 Custo de IA: US$ %s"
+
 	msgSignupOwner = "Oi! Antes de começar, o cadastro da conta precisa ser feito pelo responsável. Pede pra ele mandar uma mensagem aqui, que eu envio o link."
 )

@@ -91,6 +91,9 @@ type Engine struct {
 
 	// Anúncios (imagens e vídeos) pedidos depois da aprovação. Sem Storage, a aprovação encerra a conversa.
 	Storage Storage
+
+	// Relatório diário às 8 h para este número. Vazio = sem relatório.
+	ReportPhone string
 }
 
 func (e *Engine) now() time.Time {

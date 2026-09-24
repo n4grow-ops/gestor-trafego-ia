@@ -163,6 +163,13 @@ func (s *Store) HasPendingJob(ctx context.Context, kind, field string, value int
 	return ok, err
 }
 
+// HasPendingKind diz se existe algum job pendente do tipo.
+func (s *Store) HasPendingKind(ctx context.Context, kind string) (bool, error) {
+	var ok bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM outbox_jobs WHERE kind = $1 AND status = 'pending')`, kind).Scan(&ok)
+	return ok, err
+}
+
 // Classe da trava consultiva por conversa (a outra metade da chave é o id da conversa).
 const conversationLockClass int32 = 727002
 

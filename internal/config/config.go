@@ -39,6 +39,10 @@ type Config struct {
 	SupabaseURL            string
 	SupabasePublishableKey string
 	BotWhatsAppNumber      string
+
+	// Anúncios no Supabase Storage (só no worker) e relatório diário.
+	SupabaseServiceRoleKey string
+	ReportPhone            string
 }
 
 // SignupEnabled diz se o cadastro está configurado: sem isso, ninguém é barrado pelo portão.
@@ -73,6 +77,8 @@ func Load(getenv func(string) string) Config {
 		SupabaseURL:            strings.TrimRight(getenv("SUPABASE_URL"), "/"),
 		SupabasePublishableKey: getenv("SUPABASE_PUBLISHABLE_KEY"),
 		BotWhatsAppNumber:      getenv("BOT_WHATSAPP_NUMBER"),
+		SupabaseServiceRoleKey: getenv("SUPABASE_SERVICE_ROLE_KEY"),
+		ReportPhone:            orDefault(getenv("REPORT_PHONE"), getenv("OPERATOR_PHONE")),
 	}
 }
 
