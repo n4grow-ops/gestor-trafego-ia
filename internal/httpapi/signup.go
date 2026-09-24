@@ -55,6 +55,8 @@ func (s *Signup) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /static/icon.png", s.asset("web/icon.png", "image/png"))
 	mux.HandleFunc("GET /static/favicon.png", s.asset("web/favicon.png", "image/png"))
 	mux.HandleFunc("GET /favicon.ico", s.asset("web/favicon.png", "image/png"))
+	mux.HandleFunc("GET /static/bricolage.woff2", s.asset("web/bricolage.woff2", "font/woff2"))
+	mux.HandleFunc("GET /static/figtree.woff2", s.asset("web/figtree.woff2", "font/woff2"))
 	mux.HandleFunc("GET /static/cadastro.js", s.asset("web/cadastro.js", "text/javascript; charset=utf-8"))
 	// supabase-js 2.117.1 (UMD) servido daqui: sem CDN de terceiros rodando na página do cadastro.
 	mux.HandleFunc("GET /static/supabase.js", s.asset("web/supabase.js", "text/javascript; charset=utf-8"))
@@ -84,7 +86,7 @@ func (s *Signup) home(w http.ResponseWriter, r *http.Request) {
 	}
 	link := s.whatsappLink() + "?text=" + url.QueryEscape("Oi! Quero anunciar meu negócio.")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "public, max-age=300")
+	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'none'; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'")
 	w.Write(bytes.ReplaceAll(b, []byte("{{WHATSAPP}}"), []byte(html.EscapeString(link))))
 }

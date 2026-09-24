@@ -136,12 +136,13 @@ func TestHomePage(t *testing.T) {
 	if rec.Code != 200 || !strings.Contains(body, "meuanuncio.io") || !strings.Contains(body, "https://wa.me/5511900000000?text=") || strings.Contains(body, "{{WHATSAPP}}") {
 		t.Fatalf("início: %d %s", rec.Code, body)
 	}
-	for _, p := range []string{"/static/logo.png", "/static/icon.png", "/favicon.ico"} {
-		if rec := e.do("GET", p, "", ""); rec.Code != 200 || rec.Header().Get("Content-Type") != "image/png" {
+	for p, ct := range map[string]string{"/static/logo.png": "image/png", "/static/icon.png": "image/png", "/favicon.ico": "image/png",
+		"/static/bricolage.woff2": "font/woff2", "/static/figtree.woff2": "font/woff2"} {
+		if rec := e.do("GET", p, "", ""); rec.Code != 200 || rec.Header().Get("Content-Type") != ct {
 			t.Errorf("%s: %d %q", p, rec.Code, rec.Header().Get("Content-Type"))
 		}
 	}
-	if !strings.Contains(body, `src="/static/logo.png"`) {
+	if !strings.Contains(body, `src="/static/logo.png?v=2"`) {
 		t.Error("início sem a logo")
 	}
 	if rec := e.do("GET", "/nao-existe", "", ""); rec.Code != 404 {

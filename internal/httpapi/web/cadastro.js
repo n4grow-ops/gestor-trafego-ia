@@ -67,9 +67,10 @@
   function renderPlans(plans) {
     const box = $("planos");
     box.innerHTML = "";
-    plans.forEach((p) => {
+    plans.forEach((p, i) => {
       const el = document.createElement("div");
       el.className = "plan" + (p.code === "free" ? " selected" : "") + (p.available ? "" : " soon");
+      el.style.setProperty("--i", i);
       const info = document.createElement("div");
       const h = document.createElement("h2");
       h.textContent = p.name;
