@@ -308,6 +308,18 @@
       auth: { flowType: "implicit", detectSessionInUrl: true, persistSession: true },
     });
     bind();
+    // Botão do Google só aparece se o provedor estiver ativo no Supabase.
+    try {
+      const r = await fetch(`${cfg.supabase.url}/auth/v1/settings`, { headers: { apikey: cfg.supabase.key } });
+      const st = r.ok ? await r.json() : null;
+      if (!st || !st.external || !st.external.google) {
+        $("btn-google").hidden = true;
+        document.querySelector("#passo-email .divider").hidden = true;
+      }
+    } catch (_) {
+      $("btn-google").hidden = true;
+      document.querySelector("#passo-email .divider").hidden = true;
+    }
     try {
       const { data } = await sb.auth.getSession();
       session = data.session;

@@ -161,6 +161,7 @@ input:focus, select:focus {
 }
 .btn:hover { background: oklch(0.85 0.18 157); color: var(--green-ink); box-shadow: 0 14px 34px -12px oklch(0.8 0.19 157 / 0.85); }
 .btn:active { transform: scale(0.97); }
+.btn[hidden], .divider[hidden] { display: none; }
 .btn[disabled] { cursor: progress; color: transparent; }
 .btn[disabled]::after {
   content: ""; position: absolute; width: 1.25rem; height: 1.25rem; border-radius: 50%;
