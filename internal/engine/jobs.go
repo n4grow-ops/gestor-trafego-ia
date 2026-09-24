@@ -42,6 +42,12 @@ func (e *Engine) HandleJob(ctx context.Context, job store.Job) error {
 			return fmt.Errorf("engine: payload de resposta inválido: %w", err)
 		}
 		return e.reply(ctx, r)
+	case JobSignupRemind:
+		var r RemindJob
+		if err := json.Unmarshal(job.Payload, &r); err != nil {
+			return fmt.Errorf("engine: payload de lembrete inválido: %w", err)
+		}
+		return e.remind(ctx, r)
 	default:
 		return fmt.Errorf("engine: job desconhecido %q", job.Kind)
 	}

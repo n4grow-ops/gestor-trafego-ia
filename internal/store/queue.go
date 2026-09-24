@@ -155,6 +155,14 @@ func (s *Store) SetStateAndEnqueue(ctx context.Context, convID int64, state stri
 	return tx.Commit(ctx)
 }
 
+// HasPendingJob diz se existe job pendente do tipo com payload[field] = value.
+func (s *Store) HasPendingJob(ctx context.Context, kind, field string, value int64) (bool, error) {
+	var ok bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM outbox_jobs
+		WHERE kind = $1 AND status = 'pending' AND (payload->>$2)::bigint = $3)`, kind, field, value).Scan(&ok)
+	return ok, err
+}
+
 // Classe da trava consultiva por conversa (a outra metade da chave é o id da conversa).
 const conversationLockClass int32 = 727002
 

@@ -37,5 +37,8 @@ const (
 	msgCreativeFailed       = "Não consegui salvar um dos arquivos. Manda de novo, por favor?"
 	msgCreativesDone        = "Perfeito, recebi %d anúncio(s)! Etapa dos anúncios concluída: seu projeto está pronto pra publicar na Meta. Assim que a conexão com o Facebook estiver ativa, a campanha é publicada pausada pra uma última conferência."
 
+	msgSignupReminder1 = "Oi! Faltou pouquinho pro seu cadastro no meuanuncio.io 🙂 Leva uns 2 minutos e aí a gente já começa a montar seus anúncios:\n\n%s"
+	msgSignupReminder2 = "Passando pra lembrar: seu cadastro ainda está aberto. Se quiser continuar, é só tocar aqui:\n\n%s\n\nQualquer dúvida, me chama por aqui mesmo."
+
 	msgSignupOwner = "Oi! Antes de começar, o cadastro da conta precisa ser feito pelo responsável. Pede pra ele mandar uma mensagem aqui, que eu envio o link."
 )

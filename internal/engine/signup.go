@@ -47,6 +47,9 @@ func (e *Engine) signupGate(ctx context.Context, ident store.Identity, conv stor
 		return err
 	}
 	e.audit(ctx, ident.OrgID, "system", "signup_link_sent", map[string]any{"identity_id": ident.ID})
+	if err := e.scheduleFirstReminder(ctx, ident.ID, conv.ID); err != nil {
+		return err
+	}
 	return e.send(ctx, conv, fmt.Sprintf(msgSignupLink, strings.TrimRight(e.SignupBaseURL, "/")+"/"+raw))
 }
 
