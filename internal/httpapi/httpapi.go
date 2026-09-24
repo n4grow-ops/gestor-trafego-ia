@@ -1,5 +1,5 @@
-// Package httpapi expõe o webhook do WhatsApp e o health check. Só grava no inbox;
-// o processamento é do worker.
+// Package httpapi expõe o webhook do WhatsApp, o health check e o cadastro do cliente. O webhook só
+// grava no inbox; o processamento é do worker.
 package httpapi
 
 import (
@@ -18,7 +18,8 @@ type Pinger interface {
 	Ping(ctx context.Context) error
 }
 
-func NewMux(db Pinger, webhook http.Handler) *http.ServeMux {
+// NewMux monta as rotas; extra registra rotas adicionais (ex.: cadastro).
+func NewMux(db Pinger, webhook http.Handler, extra ...func(*http.ServeMux)) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
@@ -30,6 +31,9 @@ func NewMux(db Pinger, webhook http.Handler) *http.ServeMux {
 		io.WriteString(w, "ok")
 	})
 	mux.Handle("POST /webhooks/whatsapp", webhook)
+	for _, register := range extra {
+		register(mux)
+	}
 	return mux
 }
 

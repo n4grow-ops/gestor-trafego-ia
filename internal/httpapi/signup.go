@@ -1,0 +1,216 @@
+package httpapi
+
+import (
+	"context"
+	"embed"
+	"encoding/json"
+	"errors"
+	"io"
+	"log/slog"
+	"net"
+	"net/http"
+	"strings"
+
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/engine"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/signup"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
+)
+
+//go:embed web
+var web embed.FS
+
+// AuthVerifier confere a sessão do Supabase Auth (e-mail verificado).
+type AuthVerifier interface {
+	GetUser(ctx context.Context, accessToken string) (signup.User, error)
+}
+
+// CNPJLookup busca os dados públicos de um CNPJ.
+type CNPJLookup interface {
+	LookupCNPJ(ctx context.Context, cnpj string) (signup.Company, error)
+}
+
+// Signup serve a página de cadastro, os termos e a API que a página usa.
+type Signup struct {
+	Store        *store.Store
+	Auth         AuthVerifier
+	CNPJ         CNPJLookup
+	SupabaseURL  string
+	SupabaseKey  string // chave publishable: pública por natureza
+	BotNumber    string // número do WhatsApp para o botão de voltar
+	TermsVersion string
+	Log          *slog.Logger
+}
+
+func (s *Signup) Register(mux *http.ServeMux) {
+	mux.HandleFunc("GET /cadastro/{token}", s.page("web/cadastro.html"))
+	mux.HandleFunc("GET /termos", s.page("web/termos.html"))
+	mux.HandleFunc("GET /privacidade", s.page("web/privacidade.html"))
+	mux.HandleFunc("GET /static/cadastro.css", s.asset("web/cadastro.css", "text/css; charset=utf-8"))
+	mux.HandleFunc("GET /static/cadastro.js", s.asset("web/cadastro.js", "text/javascript; charset=utf-8"))
+	mux.HandleFunc("GET /api/cadastro/{token}", s.config)
+	mux.HandleFunc("GET /api/cadastro/{token}/cnpj/{cnpj}", s.cnpj)
+	mux.HandleFunc("POST /api/cadastro/{token}", s.submit)
+}
+
+func (s *Signup) page(name string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// O token está na URL: nada de Referer para terceiros nem cache.
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		s.serve(w, name, "text/html; charset=utf-8")
+	}
+}
+
+func (s *Signup) asset(name, contentType string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "public, max-age=300")
+		s.serve(w, name, contentType)
+	}
+}
+
+func (s *Signup) serve(w http.ResponseWriter, name, contentType string) {
+	b, err := web.ReadFile(name)
+	if err != nil {
+		http.NotFound(w, nil)
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Write(b)
+}
+
+func (s *Signup) whatsappLink() string { return "https://wa.me/" + signup.OnlyDigits(s.BotNumber) }
+
+func (s *Signup) config(w http.ResponseWriter, r *http.Request) {
+	prefill, err := s.Store.SignupPrefill(r.Context(), signup.HashToken(r.PathValue("token")))
+	if s.linkError(w, err) {
+		return
+	}
+	plans, err := s.Store.Plans(r.Context())
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"prefill": prefill,
+		"plans":   plans,
+		"options": map[string]any{
+			"segments": signup.Segments, "objectives": signup.Objectives, "monthly_budgets": signup.MonthlyBudgets,
+			"ads_experiences": signup.AdsExperiences, "meta_ad_accounts": signup.MetaAdAccounts,
+			"approvers": signup.Approvers, "ufs": signup.UFs,
+		},
+		"supabase":      map[string]string{"url": s.SupabaseURL, "key": s.SupabaseKey},
+		"terms_version": s.TermsVersion,
+		"whatsapp":      s.whatsappLink(),
+	})
+}
+
+func (s *Signup) cnpj(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.Store.SignupPrefill(r.Context(), signup.HashToken(r.PathValue("token"))); s.linkError(w, err) {
+		return
+	}
+	c, err := s.CNPJ.LookupCNPJ(r.Context(), r.PathValue("cnpj"))
+	switch {
+	case errors.Is(err, signup.ErrInvalid):
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "cnpj_invalido"})
+	case errors.Is(err, signup.ErrNotFound):
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "cnpj_nao_encontrado"})
+	case err != nil:
+		s.Log.Warn("consulta de CNPJ falhou", "erro", err)
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "consulta_indisponivel"})
+	default:
+		writeJSON(w, http.StatusOK, c)
+	}
+}
+
+type submitBody struct {
+	signup.Form
+	Plan string `json:"plan"`
+}
+
+func (s *Signup) submit(w http.ResponseWriter, r *http.Request) {
+	bearer, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	user, err := s.Auth.GetUser(r.Context(), strings.TrimSpace(bearer))
+	if errors.Is(err, signup.ErrUnauthorized) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "sessao_invalida"})
+		return
+	}
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	var body submitBody
+	if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "corpo_invalido"})
+		return
+	}
+	form, err := body.Form.Normalize()
+	var ve *signup.ValidationError
+	if errors.As(err, &ve) {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": "campos_invalidos", "fields": ve.Fields})
+		return
+	}
+	if body.Plan == "" {
+		body.Plan = "free"
+	}
+	_, err = s.Store.CompleteRegistration(r.Context(), store.Registration{
+		TokenHash: signup.HashToken(r.PathValue("token")), AuthUserID: user.ID, Email: user.Email,
+		EmailVerifiedAt: user.VerifiedAt, Form: form, PlanCode: body.Plan, TermsVersion: s.TermsVersion,
+		IP: clientIP(r), UserAgent: truncate(r.UserAgent(), 300), Welcome: engine.WelcomeJob,
+	})
+	if errors.Is(err, store.ErrPlanUnavailable) {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": "plano_indisponivel", "fields": map[string]string{"plan": "plano ainda não disponível"}})
+		return
+	}
+	if s.linkError(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "whatsapp": s.whatsappLink()})
+}
+
+// linkError responde link inválido (410) ou cadastro já concluído (409); devolve true se respondeu.
+func (s *Signup) linkError(w http.ResponseWriter, err error) bool {
+	switch {
+	case err == nil:
+		return false
+	case errors.Is(err, store.ErrLinkInvalid):
+		writeJSON(w, http.StatusGone, map[string]string{"error": "link_invalido"})
+	case errors.Is(err, store.ErrAlreadyRegistered):
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "cadastro_concluido", "whatsapp": s.whatsappLink()})
+	default:
+		s.fail(w, err)
+	}
+	return true
+}
+
+func (s *Signup) fail(w http.ResponseWriter, err error) {
+	s.Log.Error("cadastro falhou", "erro", err)
+	writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "erro_interno"})
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(v)
+}
+
+// clientIP usa o primeiro endereço do X-Forwarded-For (proxy do Easypanel) ou o endereço da conexão.
+func clientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		first, _, _ := strings.Cut(xff, ",")
+		return truncate(strings.TrimSpace(first), 64)
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
+func truncate(s string, n int) string {
+	if len(s) > n {
+		return s[:n]
+	}
+	return s
+}
