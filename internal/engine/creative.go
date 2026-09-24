@@ -84,6 +84,11 @@ func (e *Engine) creativesTurn(ctx context.Context, conv store.Conversation, msg
 		if err := e.Store.UpdateConversation(ctx, conv.ID, store.StateIdle, conv.Fields); err != nil {
 			return err
 		}
+		if conv.ActiveProjectID != nil {
+			if err := e.Store.SetProjectStage(ctx, *conv.ActiveProjectID, store.StageReady); err != nil {
+				return err
+			}
+		}
 		return e.send(ctx, conv, fmt.Sprintf(msgCreativesDone, n))
 	case failed:
 		return e.send(ctx, conv, msgCreativeFailed)

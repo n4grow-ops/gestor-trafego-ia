@@ -18,11 +18,13 @@ import (
 
 // Estágios de projeto.
 const (
-	StageCollecting       = "collecting"
-	StageAwaitingProposal = "awaiting_proposal"
-	StageAwaitingApproval = "awaiting_approval"
-	StageApproved         = "approved"
-	StageArchived         = "archived"
+	StageCollecting        = "collecting"
+	StageAwaitingProposal  = "awaiting_proposal"
+	StageAwaitingApproval  = "awaiting_approval"
+	StageApproved          = "approved"
+	StageAwaitingCreatives = "awaiting_creatives" // etapa dos anúncios (imagens e vídeos)
+	StageReady             = "ready"              // pronto para publicar na Meta
+	StageArchived          = "archived"
 )
 
 type Project struct {

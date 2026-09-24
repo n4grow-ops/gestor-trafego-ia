@@ -65,10 +65,23 @@ func TestApprovalAsksForCreatives(t *testing.T) {
 			t.Fatalf("arquivo %s %s", p, ct)
 		}
 	}
+	if stage := h.projectStage(); stage != store.StageAwaitingCreatives {
+		t.Fatalf("etapa do projeto durante os anúncios = %s", stage)
+	}
 	h.say("pronto")
 	if h.conv().State != store.StateIdle || !strings.Contains(h.wa.last().Text, "recebi 2") {
 		t.Fatalf("conclusão: estado = %s msg = %q", h.conv().State, h.wa.last().Text)
 	}
+	if stage := h.projectStage(); stage != store.StageReady {
+		t.Fatalf("etapa do projeto depois dos anúncios = %s", stage)
+	}
+}
+
+func (h *harness) projectStage() string {
+	h.t.Helper()
+	var stage string
+	h.must(h.pool.QueryRow(ctx, `SELECT stage FROM projects ORDER BY id DESC LIMIT 1`).Scan(&stage))
+	return stage
 }
 
 func TestCreativesNeedAtLeastOne(t *testing.T) {

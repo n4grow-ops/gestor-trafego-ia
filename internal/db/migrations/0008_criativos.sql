@@ -14,6 +14,11 @@ CREATE INDEX creatives_draft_idx ON creatives (draft_id);
 CREATE INDEX creatives_org_idx ON creatives (organization_id, created_at);
 ALTER TABLE creatives ENABLE ROW LEVEL SECURITY;
 
+-- Etapas do projeto: coleta → proposta → aprovação → anúncios → pronto para publicar na Meta.
+ALTER TABLE projects DROP CONSTRAINT projects_stage_check;
+ALTER TABLE projects ADD CONSTRAINT projects_stage_check
+  CHECK (stage IN ('collecting', 'awaiting_proposal', 'awaiting_approval', 'approved', 'awaiting_creatives', 'ready', 'archived'));
+
 ALTER TABLE conversations DROP CONSTRAINT conversations_state_check;
 ALTER TABLE conversations ADD CONSTRAINT conversations_state_check
   CHECK (state IN ('idle', 'onboarding', 'collecting', 'awaiting_proposal', 'awaiting_approval', 'awaiting_creatives', 'needs_human'));

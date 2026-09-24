@@ -31,7 +31,11 @@ func (e *Engine) approve(ctx context.Context, ident store.Identity, conv store.C
 	case err == nil:
 		e.audit(ctx, ident.OrgID, member(ident), "approval_granted", map[string]any{"draft_id": d.ID, "proposal_hash": d.ProposalHash})
 		if conv.ActiveProjectID != nil {
-			if err := e.Store.SetProjectStage(ctx, *conv.ActiveProjectID, store.StageApproved); err != nil {
+			stage := store.StageApproved
+			if e.Storage != nil {
+				stage = store.StageAwaitingCreatives // próxima etapa do projeto: os anúncios
+			}
+			if err := e.Store.SetProjectStage(ctx, *conv.ActiveProjectID, stage); err != nil {
 				return err
 			}
 		}

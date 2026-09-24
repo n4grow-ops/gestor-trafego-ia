@@ -28,11 +28,13 @@ var fieldLabels = map[string]string{
 }
 
 var stageLabels = map[string]string{
-	store.StageCollecting:       "coletando dados",
-	store.StageAwaitingProposal: "proposta em preparo",
-	store.StageAwaitingApproval: "aguardando sua aprovação",
-	store.StageApproved:         "aprovado",
-	store.StageArchived:         "arquivado",
+	store.StageCollecting:        "coletando dados",
+	store.StageAwaitingProposal:  "proposta em preparo",
+	store.StageAwaitingApproval:  "aguardando sua aprovação",
+	store.StageApproved:          "aprovado",
+	store.StageAwaitingCreatives: "aguardando os anúncios (imagens ou vídeos)",
+	store.StageReady:             "pronto para publicar na Meta",
+	store.StageArchived:          "arquivado",
 }
 
 func missingText(f contract.Fields) string {
