@@ -54,6 +54,12 @@
     });
   }
 
+  // "SAO PAULO" -> "Sao Paulo"; preposições ficam minúsculas.
+  function titleCase(s) {
+    const small = ["da", "de", "do", "das", "dos", "e"];
+    return s.toLowerCase().split(" ").map((w, i) => (i > 0 && small.includes(w)) ? w : w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+  }
+
   function money(cents) {
     return cents === 0 ? "Grátis" : (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) + "/mês";
   }
@@ -144,7 +150,7 @@
       const c = await r.json();
       $("legal_name").value = c.legal_name || "";
       if (!$("business_name").value) $("business_name").value = c.trade_name || c.legal_name || "";
-      if (!$("city").value && c.city) $("city").value = c.city.charAt(0) + c.city.slice(1).toLowerCase();
+      if (!$("city").value && c.city) $("city").value = titleCase(c.city);
       if (!$("uf").value && c.uf) $("uf").value = c.uf;
       hint.textContent = `Encontrado: ${c.legal_name}${c.status && c.status !== "ATIVA" ? " (situação: " + c.status + ")" : ""}`;
     } catch (_) {
