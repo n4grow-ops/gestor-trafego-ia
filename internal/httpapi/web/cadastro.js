@@ -164,7 +164,8 @@
     document.querySelectorAll(".invalid").forEach((el) => el.classList.remove("invalid"));
     document.querySelectorAll(".err[data-dyn]").forEach((el) => el.remove());
     $("passo-dados").querySelector('.err[data-for="accept_terms"]').textContent = "";
-    Object.entries(fields || {}).forEach(([name, text]) => {
+    Object.entries(fields || {}).forEach(([key, text]) => {
+      const name = key === "cpf" || key === "cnpj" ? "doc_number" : key;
       if (name === "accept_terms") { $("passo-dados").querySelector('.err[data-for="accept_terms"]').textContent = text; return; }
       const input = $(name);
       if (!input) return;
@@ -183,7 +184,10 @@
     const f = $("passo-dados");
     const get = (n) => { const el = f.querySelector(`[name="${n}"]`); return el ? el.value : ""; };
     return {
-      full_name: get("full_name"), cpf: get("cpf"), business_name: get("business_name"), cnpj: get("cnpj"),
+      full_name: get("full_name"),
+      cpf: get("doc_type") === "cpf" ? get("doc_number") : "",
+      cnpj: get("doc_type") === "cnpj" ? get("doc_number") : "",
+      business_name: get("business_name"),
       legal_name: get("legal_name"), segment: get("segment"), segment_other: get("segment_other"),
       city: get("city"), uf: get("uf"), website: get("website"), instagram: get("instagram"),
       objectives: pickers.objectives ? [...pickers.objectives.value] : [], monthly_budget: get("monthly_budget"), ads_experience: get("ads_experience"),
@@ -212,7 +216,8 @@
   }
 
   async function lookupCNPJ() {
-    const digits = $("cnpj").value.replace(/\D/g, "");
+    if (pickers.doc_type.value !== "cnpj") return;
+    const digits = $("doc_number").value.replace(/\D/g, "");
     const hint = $("cnpj-hint");
     if (digits.length !== 14) { hint.textContent = ""; return; }
     hint.textContent = "Buscando dados do CNPJ…";
@@ -349,7 +354,7 @@
 
     $("pick-close").addEventListener("click", () => $("sheet-pick").close());
     $("sheet-pick").addEventListener("click", (ev) => { if (ev.target === $("sheet-pick")) $("sheet-pick").close(); });
-    $("cnpj").addEventListener("blur", lookupCNPJ);
+    $("doc_number").addEventListener("blur", lookupCNPJ);
 
     $("passo-dados").addEventListener("submit", (ev) => {
       ev.preventDefault();
@@ -382,6 +387,17 @@
     cfg = body;
     $("erro-whatsapp").href = cfg.whatsapp;
     const o = cfg.options;
+    initPicker("doc_type", [
+      { code: "cpf", label: "CPF (pessoa física)" },
+      { code: "cnpj", label: "CNPJ (empresa)" },
+    ], (v) => {
+      $("doc_box").hidden = !v;
+      $("doc_label").textContent = v === "cnpj" ? "Número do CNPJ" : "Número do CPF";
+      $("doc_number").placeholder = v === "cnpj" ? "00.000.000/0000-00" : "000.000.000-00";
+      $("doc_number").value = "";
+      $("cnpj-hint").textContent = v === "cnpj" ? "A gente busca os dados da empresa e preenche o resto pra você." : "";
+      if (v) setTimeout(() => $("doc_number").focus(), 200);
+    });
     initPicker("segment", o.segments, (v) => { $("segment_other_box").hidden = v !== "outro"; });
     initPicker("uf", o.ufs);
     initPicker("objectives", o.objectives);

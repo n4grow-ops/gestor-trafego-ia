@@ -10,9 +10,9 @@
 <link rel="icon" type="image/png" href="/static/favicon.png">
 <link rel="apple-touch-icon" href="/static/icon.png?v=2">
 <link rel="preload" href="/static/figtree.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/static/cadastro.css?v=5">
+<link rel="stylesheet" href="/static/cadastro.css?v=6">
 <script src="/static/supabase.js"></script>
-<script src="/static/cadastro.js?v=5" defer></script>
+<script src="/static/cadastro.js?v=6" defer></script>
 </head>
 <body>
 <main class="shell">
@@ -91,12 +91,12 @@
     <fieldset>
       <legend>Você</legend>
       <div class="field"><label for="full_name">Nome completo</label><input id="full_name" name="full_name" autocomplete="name" required></div>
-      <div class="field"><label for="cpf">CPF <span class="muted">(opcional)</span></label><input id="cpf" name="cpf" inputmode="numeric" placeholder="000.000.000-00"></div>
     </fieldset>
 
     <fieldset>
       <legend>Seu negócio</legend>
-      <div class="field"><label for="cnpj">CNPJ <span class="muted">(opcional, a gente preenche o resto)</span></label><input id="cnpj" name="cnpj" inputmode="numeric" placeholder="00.000.000/0000-00"><small class="hint" id="cnpj-hint"></small></div>
+      <div class="field"><label for="doc_type">CPF ou CNPJ <span class="muted">(opcional)</span></label><button type="button" class="picker" id="doc_type" data-title="Qual documento você quer informar?" data-placeholder="Escolha CPF ou CNPJ" aria-haspopup="dialog"><span class="picker-val">Escolha CPF ou CNPJ</span><svg class="picker-chev" viewBox="0 0 12 8" aria-hidden="true"><path d="M1 1.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button><input type="hidden" name="doc_type"></div>
+      <div class="field" id="doc_box" hidden><label for="doc_number" id="doc_label">Número</label><input id="doc_number" name="doc_number" inputmode="numeric" autocomplete="off"><small class="hint" id="cnpj-hint"></small></div>
       <div class="field"><label for="business_name">Nome do negócio</label><input id="business_name" name="business_name" required></div>
       <input type="hidden" id="legal_name" name="legal_name">
       <div class="field"><label for="segment">Segmento</label><button type="button" class="picker" id="segment" data-title="Qual o seu segmento?" aria-haspopup="dialog"><span class="picker-val">Escolha…</span><svg class="picker-chev" viewBox="0 0 12 8" aria-hidden="true"><path d="M1 1.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button><input type="hidden" name="segment"></div>
