@@ -28,7 +28,14 @@ const (
 	msgProjectAmbiguous       = "Achei mais de um projeto parecido: %s. Qual deles?"
 	msgNoProjects             = "Você ainda não tem projetos. É só me contar o que quer anunciar."
 
-	msgSignupLink  = "Oi! Pra gente começar, faz seu cadastro rapidinho por aqui:\n\n%s\n\nLeva uns 2 minutos. Assim que terminar, a gente continua por aqui."
-	msgWelcome     = "Cadastro concluído, %s! Você está no plano Free (e-mail %s; se não foi você, é só avisar aqui).\n\nPra completar seu cadastro, preciso conhecer bem o seu negócio. São umas perguntas rápidas e é isso que deixa seus anúncios certeiros.\n\nPra começar: o que a sua empresa faz? Me conta os principais produtos ou serviços."
+	msgSignupLink           = "Oi! Pra gente começar, faz seu cadastro rapidinho por aqui:\n\n%s\n\nLeva uns 2 minutos. Assim que terminar, a gente continua por aqui."
+	msgWelcome              = "Cadastro concluído, %s! Você está no plano Free (e-mail %s; se não foi você, é só avisar aqui).\n\nPra completar seu cadastro, preciso conhecer bem o seu negócio. São umas perguntas rápidas e é isso que deixa seus anúncios certeiros.\n\nPra começar: o que a sua empresa faz? Me conta os principais produtos ou serviços."
+	msgApprovedAskCreatives = "Campanha aprovada! ✅\n\nAgora eu preciso dos anúncios em si: as imagens ou vídeos que vão aparecer pras pessoas no Instagram e no Facebook. É isso que eu vou subir na Meta junto com a sua campanha.\n\nMe manda aqui mesmo, até 5: foto do produto, do espaço, da equipe ou um vídeo curto. Quando terminar, é só escrever PRONTO."
+	msgCreativesAck         = "Recebi! Até agora: %d de %d anúncios. Pode mandar mais ou escrever PRONTO."
+	msgCreativesWaiting     = "Tô esperando as imagens ou vídeos dos seus anúncios 🙂 Pode mandar aqui mesmo. Quando terminar, escreve PRONTO."
+	msgCreativesNeedOne     = "Preciso de pelo menos uma imagem ou vídeo pra montar o anúncio na Meta. Pode mandar aqui?"
+	msgCreativeFailed       = "Não consegui salvar um dos arquivos. Manda de novo, por favor?"
+	msgCreativesDone        = "Perfeito, recebi %d anúncio(s)! Eles ficam guardados junto da sua campanha pra subir na Meta. Assim que a conexão com o Facebook estiver ativa, a campanha é publicada pausada pra uma última conferência."
+
 	msgSignupOwner = "Oi! Antes de começar, o cadastro da conta precisa ser feito pelo responsável. Pede pra ele mandar uma mensagem aqui, que eu envio o link."
 )

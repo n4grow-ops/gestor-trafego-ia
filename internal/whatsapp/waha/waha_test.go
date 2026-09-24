@@ -227,3 +227,10 @@ func TestHumanEndpointError(t *testing.T) {
 		t.Fatal("esperava erro")
 	}
 }
+
+func TestParseVideo(t *testing.T) {
+	in, ok := parse(t, event("message", `{"id":"m9","from":"5511988887777@c.us","body":"meu vídeo","hasMedia":true,"media":{"url":"http://x/api/files/default/m9.mp4","mimetype":"video/mp4"}}`))
+	if !ok || in.Kind != whatsapp.KindVideo || in.Text != "meu vídeo" {
+		t.Fatalf("vídeo = %+v ok=%v", in, ok)
+	}
+}

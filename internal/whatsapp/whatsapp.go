@@ -16,6 +16,7 @@ const (
 	KindText  Kind = "text"
 	KindAudio Kind = "audio"
 	KindImage Kind = "image"
+	KindVideo Kind = "video"
 	KindOther Kind = "other"
 )
 

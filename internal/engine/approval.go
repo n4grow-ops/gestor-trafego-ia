@@ -35,6 +35,13 @@ func (e *Engine) approve(ctx context.Context, ident store.Identity, conv store.C
 				return err
 			}
 		}
+		// Aprovada: a própria IA pede os anúncios (imagens ou vídeos) que vão subir na Meta.
+		if e.Storage != nil {
+			if err := e.Store.UpdateConversation(ctx, conv.ID, store.StateAwaitingCreatives, contract.Fields{}); err != nil {
+				return err
+			}
+			return e.send(ctx, conv, msgApprovedAskCreatives)
+		}
 		if err := e.Store.UpdateConversation(ctx, conv.ID, store.StateIdle, contract.Fields{}); err != nil {
 			return err
 		}

@@ -105,6 +105,8 @@ func (c *Client) ParseWebhook(body []byte) (whatsapp.Inbound, bool, error) {
 	case strings.HasPrefix(mime, "image/"):
 		// Em mídia, body é a legenda.
 		in.Kind, in.Text = whatsapp.KindImage, m.Body
+	case strings.HasPrefix(mime, "video/"):
+		in.Kind, in.Text = whatsapp.KindVideo, m.Body
 	default:
 		in.Kind = whatsapp.KindOther
 	}

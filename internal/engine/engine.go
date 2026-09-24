@@ -88,6 +88,9 @@ type Engine struct {
 
 	// Cadastro: com URL, quem não concluiu o cadastro recebe o link em vez de falar com a IA.
 	SignupBaseURL string
+
+	// Anúncios (imagens e vídeos) pedidos depois da aprovação. Sem Storage, a aprovação encerra a conversa.
+	Storage Storage
 }
 
 func (e *Engine) now() time.Time {
@@ -202,6 +205,10 @@ func (e *Engine) dispatch(ctx context.Context, ident store.Identity, conv store.
 		return nil
 	case store.StateAwaitingProposal:
 		return e.send(ctx, conv, msgBusy)
+	case store.StateAwaitingCreatives:
+		if e.Storage != nil {
+			return e.creativesTurn(ctx, conv, msgs)
+		}
 	case store.StateAwaitingApproval:
 		for i := len(msgs) - 1; i >= 0; i-- {
 			if code, ok := campaign.ParseApproval(msgs[i]); ok {
@@ -227,7 +234,13 @@ func (e *Engine) inboundText(ctx context.Context, ident store.Identity, conv *st
 			return "", fmt.Errorf("%w: %v", errMediaFailed, err)
 		}
 		return strings.TrimSpace(resp.Content), nil
-	case whatsapp.KindImage:
+	case whatsapp.KindImage, whatsapp.KindVideo:
+		if conv.State == store.StateAwaitingCreatives && e.Storage != nil {
+			return e.saveCreative(ctx, ident, *conv, in), nil
+		}
+		if in.Kind == whatsapp.KindVideo {
+			return strings.TrimSpace("[vídeo enviado] " + in.Text), nil
+		}
 		conv.Fields = conv.Fields.Merge(contract.Fields{Media: []string{in.ExternalID}})
 		if err := e.Store.UpdateConversation(ctx, conv.ID, conv.State, conv.Fields); err != nil {
 			return "", err
