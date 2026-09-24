@@ -195,15 +195,28 @@
 
   function bind() {
     $("btn-google").addEventListener("click", async () => {
+      if ($("btn-google").classList.contains("unavailable")) {
+        msg("msg-choice", "Entrar com Google chega em breve. Por enquanto, use seu e-mail.");
+        return;
+      }
       busy($("btn-google"), true);
       try {
         const { error } = await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: location.origin + location.pathname } });
         if (error) throw error;
       } catch (_) {
         busy($("btn-google"), false);
-        msg("msg-email", "Não deu pra abrir o Google agora. Tente o código por e-mail.", true);
+        msg("msg-choice", "Não deu pra abrir o Google agora. Tente pelo e-mail.", true);
       }
     });
+
+    const sheet = $("sheet-email");
+    $("btn-email").addEventListener("click", () => {
+      msg("msg-choice", "");
+      sheet.showModal();
+      setTimeout(() => ($("form-codigo").hidden ? $("otp-email") : $("otp-code")).focus(), 50);
+    });
+    $("btn-sheet-close").addEventListener("click", () => sheet.close());
+    sheet.addEventListener("click", (ev) => { if (ev.target === sheet) sheet.close(); });
 
     $("form-otp").addEventListener("submit", async (ev) => {
       ev.preventDefault();
@@ -224,7 +237,7 @@
       $("form-otp").hidden = true;
       $("form-codigo").hidden = false;
       $("otp-code").focus();
-      msg("msg-email", "Enviamos um e-mail. Toque no link dele (ou digite o código, se vier um). Confira também o spam.");
+      msg("msg-email", "");
     });
 
     $("form-codigo").addEventListener("submit", async (ev) => {
@@ -244,7 +257,15 @@
       if (error || !data || !data.session) { msg("msg-email", "Código inválido ou expirado.", true); return; }
       session = data.session;
       msg("msg-email", "");
+      sheet.close();
       goDados();
+    });
+
+    // código completo = confirma sozinho
+    $("otp-code").addEventListener("input", () => {
+      const v = $("otp-code").value.replace(/\D/g, "").slice(0, 6);
+      $("otp-code").value = v;
+      if (v.length === 6) $("form-codigo").requestSubmit();
     });
 
     $("btn-reenviar").addEventListener("click", () => {
@@ -312,13 +333,9 @@
     try {
       const r = await fetch(`${cfg.supabase.url}/auth/v1/settings`, { headers: { apikey: cfg.supabase.key } });
       const st = r.ok ? await r.json() : null;
-      if (!st || !st.external || !st.external.google) {
-        $("btn-google").hidden = true;
-        document.querySelector("#passo-email .divider").hidden = true;
-      }
+      if (!st || !st.external || !st.external.google) $("btn-google").classList.add("unavailable");
     } catch (_) {
-      $("btn-google").hidden = true;
-      document.querySelector("#passo-email .divider").hidden = true;
+      $("btn-google").classList.add("unavailable");
     }
     try {
       const { data } = await sb.auth.getSession();
