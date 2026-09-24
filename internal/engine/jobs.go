@@ -35,7 +35,7 @@ func (e *Engine) HandleJob(ctx context.Context, job store.Job) error {
 		if s.ConversationID == 0 {
 			return nil // aviso ao operador: fora de conversa
 		}
-		return e.Store.AddMessage(ctx, s.ConversationID, "out", "text", s.Text)
+		return e.Store.AddMessage(ctx, s.ConversationID, "out", "text", redactLinks(s.Text))
 	case JobReply:
 		var r ReplyJob
 		if err := json.Unmarshal(job.Payload, &r); err != nil {

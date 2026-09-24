@@ -143,3 +143,14 @@ conheceu o serviço.
   cliente completo segue normal; existente pendente recebe link; portão desligado sem `PUBLIC_BASE_URL`.
 - `httpapi`: página com token válido/inválido; GET de pré-preenchimento; POST sem token do Supabase
   (401), com dados inválidos (422), válido (200 e efeitos), repetido (409).
+
+## Ajustes após a revisão final (2026-09-23)
+
+- Só organizações do cadastro automático ficam `pending` (a decisão era sobre elas); as criadas pelo admin nascem
+  e migram como `complete`.
+- Limites na conclusão: o maior entre o atual e o do plano (Free não rebaixa ninguém). `niche` só é preenchido se vazio.
+- Só o `owner` conclui o cadastro; outros membros recebem aviso para chamar o responsável.
+- Portão não atua em conversa com atendimento humano.
+- Link fica fora do histórico (`/cadastro/[link]`); boas-vindas mostram o e-mail usado ("se não foi você, avise").
+- supabase-js 2.117.1 servido pela própria api (sem CDN), CSP na página, POST confere o link antes do Supabase,
+  limitador por IP e por link (CNPJ: 10/min por link), IP do aceite = último do `X-Forwarded-For` (o do proxy).

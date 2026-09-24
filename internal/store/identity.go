@@ -58,8 +58,9 @@ func scanIdentity(row pgx.Row) (Identity, error) {
 
 func (s *Store) CreateOrganization(ctx context.Context, name, niche string, maxBudget float64, objectives []string) (int64, error) {
 	var id int64
-	err := s.pool.QueryRow(ctx, `INSERT INTO organizations (name, niche, max_daily_budget_brl, allowed_objectives)
-		VALUES ($1, $2, $3, $4) RETURNING id`, name, niche, maxBudget, objectives).Scan(&id)
+	// Criada pelo admin: cliente trazido à mão, já conta como cadastrado.
+	err := s.pool.QueryRow(ctx, `INSERT INTO organizations (name, niche, max_daily_budget_brl, allowed_objectives, registration_status, registered_at)
+		VALUES ($1, $2, $3, $4, 'complete', now()) RETURNING id`, name, niche, maxBudget, objectives).Scan(&id)
 	return id, err
 }
 

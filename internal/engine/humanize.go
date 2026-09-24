@@ -122,7 +122,7 @@ func (e *Engine) sendHuman(ctx context.Context, s SendJob) error {
 		return err
 	}
 	e.presence(ctx, s.ChatID, whatsapp.PresencePaused)
-	if err := e.Store.AddMessage(ctx, s.ConversationID, "out", "text", s.Text); err != nil {
+	if err := e.Store.AddMessage(ctx, s.ConversationID, "out", "text", redactLinks(s.Text)); err != nil {
 		return err
 	}
 	if len(s.Next) == 0 {

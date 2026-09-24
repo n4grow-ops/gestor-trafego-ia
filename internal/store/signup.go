@@ -18,7 +18,19 @@ var (
 	ErrAlreadyRegistered = errors.New("store: cadastro já concluído")
 	// ErrPlanUnavailable: plano inexistente ou ainda não disponível.
 	ErrPlanUnavailable = errors.New("store: plano indisponível")
+	// ErrNotOwner: só o dono da conta conclui o cadastro da organização.
+	ErrNotOwner = errors.New("store: cadastro só pode ser feito pelo responsável")
 )
+
+// SetRegistrationStatus muda o status do cadastro (pending ou complete).
+func (s *Store) SetRegistrationStatus(ctx context.Context, orgID int64, status string) error {
+	tag, err := s.pool.Exec(ctx, `UPDATE organizations SET registration_status = $2,
+		registered_at = CASE WHEN $2 = 'complete' THEN coalesce(registered_at, now()) ELSE registered_at END WHERE id = $1`, orgID, status)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return err
+}
 
 // CreateSignupLink guarda o hash de um link de cadastro para a identidade.
 func (s *Store) CreateSignupLink(ctx context.Context, identityID int64, tokenHash string, expiresAt time.Time) error {
@@ -109,7 +121,7 @@ type Registration struct {
 	IP              string
 	UserAgent       string
 	// Welcome monta a mensagem de boas-vindas no WhatsApp, enfileirada na mesma transação.
-	Welcome func(convID int64, chatID, fullName string) JobSpec
+	Welcome func(convID int64, chatID, fullName, email string) JobSpec
 }
 
 type RegistrationResult struct {
@@ -131,14 +143,14 @@ func (s *Store) CompleteRegistration(ctx context.Context, r Registration) (Regis
 	var res RegistrationResult
 	var linkID int64
 	var usable bool
-	var status string
-	err = tx.QueryRow(ctx, `SELECT l.id, l.identity_id, l.used_at IS NULL AND l.expires_at > now(), m.id, o.id, o.registration_status
+	var status, role string
+	err = tx.QueryRow(ctx, `SELECT l.id, l.identity_id, l.used_at IS NULL AND l.expires_at > now(), m.id, m.role, o.id, o.registration_status
 		FROM signup_links l
 		JOIN whatsapp_identities wi ON wi.id = l.identity_id
 		JOIN members m ON m.id = wi.member_id
 		JOIN organizations o ON o.id = m.organization_id
 		WHERE l.token_hash = $1
-		FOR UPDATE OF l, o`, r.TokenHash).Scan(&linkID, &res.IdentityID, &usable, &res.MemberID, &res.OrgID, &status)
+		FOR UPDATE OF l, o`, r.TokenHash).Scan(&linkID, &res.IdentityID, &usable, &res.MemberID, &role, &res.OrgID, &status)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return RegistrationResult{}, ErrLinkInvalid
 	}
@@ -150,6 +162,9 @@ func (s *Store) CompleteRegistration(ctx context.Context, r Registration) (Regis
 	}
 	if !usable {
 		return RegistrationResult{}, ErrLinkInvalid
+	}
+	if role != "owner" {
+		return RegistrationResult{}, ErrNotOwner
 	}
 
 	var plan Plan
@@ -175,11 +190,12 @@ func (s *Store) CompleteRegistration(ctx context.Context, r Registration) (Regis
 	}
 	if _, err := tx.Exec(ctx, `UPDATE organizations SET
 			name = $2, trade_name = $2, legal_name = nullif($3, ''), cnpj = nullif($4, ''), segment = $5,
-			niche = $5, city = $6, uf = $7, website = nullif($8, ''), instagram = nullif($9, ''),
+			niche = CASE WHEN niche = '' THEN $5 ELSE niche END, city = $6, uf = $7, website = nullif($8, ''), instagram = nullif($9, ''),
 			ads_objective = $10, monthly_budget_range = $11, ads_experience = $12, has_meta_ad_account = $13,
 			approver = $14, referral_source = nullif($15, ''),
 			profile = profile || jsonb_build_object('business_name', $2::text, 'city', $6::text),
-			max_daily_budget_brl = $16, daily_message_limit = $17,
+			-- Plano Free não rebaixa quem já tinha limite maior (clientes trazidos pelo admin).
+			max_daily_budget_brl = greatest(max_daily_budget_brl, $16), daily_message_limit = greatest(daily_message_limit, $17),
 			registration_status = 'complete', registered_at = now()
 		WHERE id = $1`,
 		res.OrgID, f.BusinessName, f.LegalName, f.CNPJ, f.SegmentLabel(), f.City, f.UF, f.Website, f.Instagram,
@@ -210,7 +226,7 @@ func (s *Store) CompleteRegistration(ctx context.Context, r Registration) (Regis
 		return RegistrationResult{}, err
 	}
 	if err == nil && chatID != "" && r.Welcome != nil {
-		if err := enqueue(ctx, tx, r.Welcome(convID, chatID, f.FullName)); err != nil {
+		if err := enqueue(ctx, tx, r.Welcome(convID, chatID, f.FullName, r.Email)); err != nil {
 			return RegistrationResult{}, err
 		}
 	}

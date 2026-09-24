@@ -152,7 +152,8 @@ func (e *Engine) HandleInbound(ctx context.Context, in whatsapp.Inbound) error {
 		}
 		return nil
 	}
-	if e.SignupBaseURL != "" && ident.RegistrationStatus != "complete" {
+	// Portão do cadastro. Em atendimento humano, a pessoa da equipe conduz: nada de link.
+	if e.SignupBaseURL != "" && ident.RegistrationStatus != "complete" && conv.State != store.StateNeedsHuman {
 		return e.signupGate(ctx, ident, conv, in)
 	}
 	text, err := e.inboundText(ctx, ident, &conv, in)
@@ -436,7 +437,7 @@ func (e *Engine) send(ctx context.Context, conv store.Conversation, text string)
 	if err := e.WA.SendText(ctx, conv.ChatID, text); err != nil {
 		return err
 	}
-	return e.Store.AddMessage(ctx, conv.ID, "out", "text", text)
+	return e.Store.AddMessage(ctx, conv.ID, "out", "text", redactLinks(text))
 }
 
 // speak manda a resposta da Atendente; vira voz quando o cliente falou por áudio.

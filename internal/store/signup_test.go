@@ -17,15 +17,27 @@ func regForm() signup.Form {
 		MetaAdAccount: "nao_sei", Approver: "self", AcceptTerms: true}
 }
 
-func welcome(convID int64, chatID, name string) store.JobSpec {
-	return store.JobSpec{Kind: "whatsapp.send", Payload: map[string]any{"conversation_id": convID, "chat_id": chatID, "text": "oi " + name}}
+func welcome(convID int64, chatID, name, email string) store.JobSpec {
+	return store.JobSpec{Kind: "whatsapp.send", Payload: map[string]any{"conversation_id": convID, "chat_id": chatID, "text": "oi " + name + " " + email}}
+}
+
+// pendingIdentity cria um cliente como o cadastro automático: organização pendente.
+func pendingIdentity(t *testing.T, st *store.Store, role, phone string) store.Identity {
+	t.Helper()
+	ident := seedIdentity(t, st, role, phone)
+	must(t, st.SetRegistrationStatus(ctx, ident.OrgID, "pending"))
+	ident.RegistrationStatus = "pending"
+	return ident
 }
 
 func TestSignupLinkLifecycle(t *testing.T) {
 	st, pool := newStore(t)
-	ident := seedIdentity(t, st, "owner", "5511988887777")
-	if ident.RegistrationStatus != "pending" {
-		t.Fatalf("status inicial = %q", ident.RegistrationStatus)
+	if admin := seedIdentity(t, st, "owner", "5511911112222"); admin.RegistrationStatus != "complete" {
+		t.Fatalf("organização criada pelo admin já nasce cadastrada: %q", admin.RegistrationStatus)
+	}
+	ident := pendingIdentity(t, st, "owner", "5511988887777")
+	if auto, err := st.AutoSignup(ctx, "openwa", "5511933334444", 50, 60); err != nil || auto.RegistrationStatus != "pending" {
+		t.Fatalf("cadastro automático nasce pendente: %q %v", auto.RegistrationStatus, err)
 	}
 	if ok, err := st.SignupLinkSentWithin(ctx, ident.ID, 10*time.Minute); err != nil || ok {
 		t.Fatalf("sem link ainda: ok=%v err=%v", ok, err)
@@ -66,7 +78,7 @@ func TestPlansSeeded(t *testing.T) {
 
 func TestCompleteRegistration(t *testing.T) {
 	st, pool := newStore(t)
-	ident := seedIdentity(t, st, "owner", "5511988887777")
+	ident := pendingIdentity(t, st, "owner", "5511988887777")
 	conv, err := st.GetOrCreateConversation(ctx, ident.ID, "5511988887777@c.us")
 	must(t, err)
 	must(t, st.UpdateConversation(ctx, conv.ID, store.StateOnboarding, conv.Fields))
@@ -83,7 +95,8 @@ func TestCompleteRegistration(t *testing.T) {
 
 	got, err := st.GetIdentity(ctx, ident.ID)
 	must(t, err)
-	if got.RegistrationStatus != "complete" || got.OrgName != "Pizzaria Boa" || got.DailyMessageLimit != 60 || got.MaxDailyBudgetBRL != 50 {
+	// Limites: o maior entre o que a organização já tinha (100 no seed) e o do plano Free (50 / 60).
+	if got.RegistrationStatus != "complete" || got.OrgName != "Pizzaria Boa" || got.DailyMessageLimit != 60 || got.MaxDailyBudgetBRL != 100 {
 		t.Fatalf("identidade = %+v", got)
 	}
 	if got.Profile.BusinessName == nil || *got.Profile.BusinessName != "Pizzaria Boa" || *got.Profile.City != "Campinas" {
@@ -94,12 +107,12 @@ func TestCompleteRegistration(t *testing.T) {
 		FROM members m JOIN organizations o ON o.id = m.organization_id JOIN subscriptions s ON s.organization_id = o.id
 		WHERE m.id = $1`, ident.MemberID).Scan(&email, &fullName, &cpf, &cnpj, &segment, &plan))
 	if email != "ana@mail.com" || fullName != "Ana Souza" || cpf != "52998224725" || cnpj != "11222333000181" ||
-		segment != "Restaurante e alimentação" || plan != "free" {
+		segment != "Restaurante e alimentação" || plan != "free" || got.Niche != "restaurante" {
 		t.Fatalf("gravado: %s %s %s %s %s %s", email, fullName, cpf, cnpj, segment, plan)
 	}
 	var consents, jobs int
 	must(t, pool.QueryRow(ctx, `SELECT count(*) FROM consents WHERE member_id = $1 AND version = '2026-09-23'`, ident.MemberID).Scan(&consents))
-	must(t, pool.QueryRow(ctx, `SELECT count(*) FROM outbox_jobs WHERE payload->>'text' = 'oi Ana Souza'`).Scan(&jobs))
+	must(t, pool.QueryRow(ctx, `SELECT count(*) FROM outbox_jobs WHERE payload->>'text' = 'oi Ana Souza ana@mail.com'`).Scan(&jobs))
 	if consents != 2 || jobs != 1 {
 		t.Fatalf("consentimentos = %d, boas-vindas = %d", consents, jobs)
 	}
@@ -119,7 +132,7 @@ func TestCompleteRegistration(t *testing.T) {
 
 func TestCompleteRegistrationKeepsConversationState(t *testing.T) {
 	st, _ := newStore(t)
-	ident := seedIdentity(t, st, "owner", "5511988887777")
+	ident := pendingIdentity(t, st, "owner", "5511988887777")
 	conv, err := st.GetOrCreateConversation(ctx, ident.ID, "5511988887777@c.us")
 	must(t, err)
 	must(t, st.UpdateConversation(ctx, conv.ID, store.StateCollecting, contract.Fields{Offer: ptr("pizza")}))
@@ -135,7 +148,7 @@ func TestCompleteRegistrationKeepsConversationState(t *testing.T) {
 
 func TestCompleteRegistrationRejectsBadInput(t *testing.T) {
 	st, _ := newStore(t)
-	ident := seedIdentity(t, st, "owner", "5511988887777")
+	ident := pendingIdentity(t, st, "owner", "5511988887777")
 	_, err := st.GetOrCreateConversation(ctx, ident.ID, "5511988887777@c.us")
 	must(t, err)
 	must(t, st.CreateSignupLink(ctx, ident.ID, "old", time.Now().Add(-time.Minute)))
@@ -151,6 +164,33 @@ func TestCompleteRegistrationRejectsBadInput(t *testing.T) {
 	paid.TokenHash, paid.PlanCode = "ok", "pro"
 	if _, err := st.CompleteRegistration(ctx, paid); !errors.Is(err, store.ErrPlanUnavailable) {
 		t.Fatalf("plano indisponível: %v", err)
+	}
+}
+
+func TestOnlyOwnerCompletesRegistration(t *testing.T) {
+	st, _ := newStore(t)
+	ident := pendingIdentity(t, st, "approver", "5511988887777")
+	must(t, st.CreateSignupLink(ctx, ident.ID, "h", time.Now().Add(time.Hour)))
+	_, err := st.CompleteRegistration(ctx, store.Registration{TokenHash: "h", AuthUserID: "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+		Email: "a@b.com", EmailVerifiedAt: time.Now(), Form: regForm(), PlanCode: "free", TermsVersion: "v1", Welcome: welcome})
+	if !errors.Is(err, store.ErrNotOwner) {
+		t.Fatalf("aprovador concluindo cadastro: %v", err)
+	}
+}
+
+func TestAutoSignupGetsFreeLimits(t *testing.T) {
+	st, _ := newStore(t)
+	ident, err := st.AutoSignup(ctx, "openwa", "5511988887777", 20, 10)
+	must(t, err)
+	_, err = st.GetOrCreateConversation(ctx, ident.ID, "5511988887777@c.us")
+	must(t, err)
+	must(t, st.CreateSignupLink(ctx, ident.ID, "h", time.Now().Add(time.Hour)))
+	_, err = st.CompleteRegistration(ctx, store.Registration{TokenHash: "h", AuthUserID: "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+		Email: "a@b.com", EmailVerifiedAt: time.Now(), Form: regForm(), PlanCode: "free", TermsVersion: "v1", Welcome: welcome})
+	must(t, err)
+	got, _ := st.GetIdentity(ctx, ident.ID)
+	if got.MaxDailyBudgetBRL != 50 || got.DailyMessageLimit != 60 {
+		t.Fatalf("limites do Free não aplicados: %v %d", got.MaxDailyBudgetBRL, got.DailyMessageLimit)
 	}
 }
 

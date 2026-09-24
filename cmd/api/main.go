@@ -59,7 +59,10 @@ func run(log *slog.Logger) error {
 		reg := &httpapi.Signup{
 			Store: st, Auth: signup.NewSupabaseAuth(cfg.SupabaseURL, cfg.SupabasePublishableKey), CNPJ: signup.NewBrasilAPI(),
 			SupabaseURL: cfg.SupabaseURL, SupabaseKey: cfg.SupabasePublishableKey, BotNumber: cfg.BotWhatsAppNumber,
-			TermsVersion: termsVersion, Log: log,
+			TermsVersion: termsVersion, Log: log, Limiter: httpapi.NewLimiter(),
+		}
+		if cfg.BotWhatsAppNumber == "" {
+			log.Warn("BOT_WHATSAPP_NUMBER vazio: o botão de voltar ao WhatsApp fica sem número")
 		}
 		routes = append(routes, reg.Register)
 	}

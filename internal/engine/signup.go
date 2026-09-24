@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -26,6 +27,14 @@ func (e *Engine) signupGate(ctx context.Context, ident store.Identity, conv stor
 	if err := e.Store.AddMessage(ctx, conv.ID, "in", store.KindSkipped, body); err != nil {
 		return err
 	}
+	if ident.Role != "owner" {
+		// Só o dono conclui o cadastro; os outros membros são avisados (no máximo a cada 10 min).
+		recent, err := e.Store.SignupLinkSentWithin(ctx, ident.ID, signupLinkResend)
+		if err != nil || recent {
+			return err
+		}
+		return e.send(ctx, conv, msgSignupOwner)
+	}
 	recent, err := e.Store.SignupLinkSentWithin(ctx, ident.ID, signupLinkResend)
 	if err != nil || recent {
 		return err
@@ -41,13 +50,20 @@ func (e *Engine) signupGate(ctx context.Context, ident store.Identity, conv stor
 	return e.send(ctx, conv, fmt.Sprintf(msgSignupLink, strings.TrimRight(e.SignupBaseURL, "/")+"/"+raw))
 }
 
+var signupLink = regexp.MustCompile(`/cadastro/[A-Za-z0-9_-]{20,}`)
+
+// redactLinks tira o token dos links de cadastro antes de gravar no histórico: quem lê o banco
+// (ou a IA, que recebe o histórico) não consegue usar o link.
+func redactLinks(text string) string { return signupLink.ReplaceAllString(text, "/cadastro/[link]") }
+
 // WelcomeJob é a mensagem de boas-vindas depois do cadastro, enfileirada pela api na conclusão.
-func WelcomeJob(convID int64, chatID, fullName string) store.JobSpec {
+// Mostra o e-mail usado, para o cliente perceber se alguém cadastrou por ele.
+func WelcomeJob(convID int64, chatID, fullName, email string) store.JobSpec {
 	first := strings.Fields(fullName)
 	name := fullName
 	if len(first) > 0 {
 		name = first[0]
 	}
 	conv := store.Conversation{ID: convID, ChatID: chatID}
-	return humanJob(0, conv, fmt.Sprintf(msgWelcome, name), false)
+	return humanJob(0, conv, fmt.Sprintf(msgWelcome, name, email), false)
 }

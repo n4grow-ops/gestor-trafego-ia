@@ -39,6 +39,7 @@ type Signup struct {
 	BotNumber    string // número do WhatsApp para o botão de voltar
 	TermsVersion string
 	Log          *slog.Logger
+	Limiter      *Limiter // nil = sem limite (só em testes)
 }
 
 func (s *Signup) Register(mux *http.ServeMux) {
@@ -47,9 +48,11 @@ func (s *Signup) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /privacidade", s.page("web/privacidade.html"))
 	mux.HandleFunc("GET /static/cadastro.css", s.asset("web/cadastro.css", "text/css; charset=utf-8"))
 	mux.HandleFunc("GET /static/cadastro.js", s.asset("web/cadastro.js", "text/javascript; charset=utf-8"))
-	mux.HandleFunc("GET /api/cadastro/{token}", s.config)
-	mux.HandleFunc("GET /api/cadastro/{token}/cnpj/{cnpj}", s.cnpj)
-	mux.HandleFunc("POST /api/cadastro/{token}", s.submit)
+	// supabase-js 2.117.1 (UMD) servido daqui: sem CDN de terceiros rodando na página do cadastro.
+	mux.HandleFunc("GET /static/supabase.js", s.asset("web/supabase.js", "text/javascript; charset=utf-8"))
+	mux.HandleFunc("GET /api/cadastro/{token}", s.limit("ip", 60, s.config))
+	mux.HandleFunc("GET /api/cadastro/{token}/cnpj/{cnpj}", s.limit("ip", 30, s.limit("token", 10, s.cnpj)))
+	mux.HandleFunc("POST /api/cadastro/{token}", s.limit("ip", 20, s.submit))
 }
 
 func (s *Signup) page(name string) http.HandlerFunc {
@@ -58,6 +61,8 @@ func (s *Signup) page(name string) http.HandlerFunc {
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "+
+			"connect-src 'self' "+s.SupabaseURL+"; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 		s.serve(w, name, "text/html; charset=utf-8")
 	}
 }
@@ -129,6 +134,10 @@ type submitBody struct {
 }
 
 func (s *Signup) submit(w http.ResponseWriter, r *http.Request) {
+	// Link primeiro (consulta barata no banco); só então pergunta ao Supabase quem é o usuário.
+	if _, err := s.Store.SignupPrefill(r.Context(), signup.HashToken(r.PathValue("token"))); s.linkError(w, err) {
+		return
+	}
 	bearer, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	user, err := s.Auth.GetUser(r.Context(), strings.TrimSpace(bearer))
 	if errors.Is(err, signup.ErrUnauthorized) {
@@ -158,6 +167,10 @@ func (s *Signup) submit(w http.ResponseWriter, r *http.Request) {
 		EmailVerifiedAt: user.VerifiedAt, Form: form, PlanCode: body.Plan, TermsVersion: s.TermsVersion,
 		IP: clientIP(r), UserAgent: truncate(r.UserAgent(), 300), Welcome: engine.WelcomeJob,
 	})
+	if errors.Is(err, store.ErrNotOwner) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "somente_responsavel"})
+		return
+	}
 	if errors.Is(err, store.ErrPlanUnavailable) {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": "plano_indisponivel", "fields": map[string]string{"plan": "plano ainda não disponível"}})
 		return
@@ -195,11 +208,29 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	json.NewEncoder(w).Encode(v)
 }
 
-// clientIP usa o primeiro endereço do X-Forwarded-For (proxy do Easypanel) ou o endereço da conexão.
+// limit aplica o limitador por IP ou por token do link antes do handler.
+func (s *Signup) limit(by string, perMinute int, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.Limiter != nil {
+			key := by + ":" + clientIP(r)
+			if by == "token" {
+				key = by + ":" + signup.HashToken(r.PathValue("token"))
+			}
+			if !s.Limiter.Allow(key, perMinute) {
+				writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "muitas_tentativas"})
+				return
+			}
+		}
+		next(w, r)
+	}
+}
+
+// clientIP usa o último endereço do X-Forwarded-For, que é o que o proxy do Easypanel (Traefik)
+// acrescenta; os anteriores vêm do cliente e podem ser inventados.
 func clientIP(r *http.Request) string {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		first, _, _ := strings.Cut(xff, ",")
-		return truncate(strings.TrimSpace(first), 64)
+		parts := strings.Split(xff, ",")
+		return truncate(strings.TrimSpace(parts[len(parts)-1]), 64)
 	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {

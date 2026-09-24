@@ -17,9 +17,12 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/testdb"
 )
 
-type fakeAuth struct{}
+type fakeAuth struct{ calls *int }
 
-func (fakeAuth) GetUser(_ context.Context, token string) (signup.User, error) {
+func (a fakeAuth) GetUser(_ context.Context, token string) (signup.User, error) {
+	if a.calls != nil {
+		*a.calls++
+	}
 	if token != "sessao-ok" {
 		return signup.User{}, signup.ErrUnauthorized
 	}
@@ -39,10 +42,11 @@ func (fakeCNPJ) LookupCNPJ(_ context.Context, cnpj string) (signup.Company, erro
 }
 
 type signupEnv struct {
-	mux   http.Handler
-	pool  *pgxpool.Pool
-	token string
-	ident store.Identity
+	mux       http.Handler
+	authCalls *int
+	pool      *pgxpool.Pool
+	token     string
+	ident     store.Identity
 }
 
 func newSignupEnv(t *testing.T) signupEnv {
@@ -61,6 +65,9 @@ func newSignupEnv(t *testing.T) signupEnv {
 	if err := st.LinkPhone(ctx, "waha", "5511988887777", mem); err != nil {
 		t.Fatal(err)
 	}
+	if err := st.SetRegistrationStatus(ctx, org, "pending"); err != nil {
+		t.Fatal(err)
+	}
 	ident, err := st.FindIdentity(ctx, "waha", "5511988887777")
 	if err != nil {
 		t.Fatal(err)
@@ -75,9 +82,10 @@ func newSignupEnv(t *testing.T) signupEnv {
 	if err := st.CreateSignupLink(ctx, ident.ID, hash, time.Now().Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	s := &httpapi.Signup{Store: st, Auth: fakeAuth{}, CNPJ: fakeCNPJ{}, SupabaseURL: "https://sb.test", SupabaseKey: "pub",
-		BotNumber: "5511900000000", TermsVersion: "2026-09-23", Log: discard}
-	return signupEnv{mux: httpapi.NewMux(pingOK{}, http.NotFoundHandler(), s.Register), pool: pool, token: raw, ident: ident}
+	calls := 0
+	s := &httpapi.Signup{Store: st, Auth: fakeAuth{calls: &calls}, CNPJ: fakeCNPJ{}, SupabaseURL: "https://sb.test", SupabaseKey: "pub",
+		BotNumber: "5511900000000", TermsVersion: "2026-09-23", Log: discard, Limiter: httpapi.NewLimiter()}
+	return signupEnv{mux: httpapi.NewMux(pingOK{}, http.NotFoundHandler(), s.Register), authCalls: &calls, pool: pool, token: raw, ident: ident}
 }
 
 type pingOK struct{}
@@ -102,8 +110,17 @@ const validBody = `{"full_name":"Ana Souza","business_name":"Pizzaria Boa","segm
 func TestSignupPageAndTerms(t *testing.T) {
 	e := newSignupEnv(t)
 	rec := e.do("GET", "/cadastro/"+e.token, "", "")
-	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "supabase-js") || rec.Header().Get("Referrer-Policy") != "no-referrer" {
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `src="/static/supabase.js"`) || rec.Header().Get("Referrer-Policy") != "no-referrer" {
 		t.Fatalf("página: %d %q", rec.Code, rec.Header().Get("Referrer-Policy"))
+	}
+	if csp := rec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'self'") || !strings.Contains(csp, "connect-src 'self' https://sb.test") {
+		t.Fatalf("CSP = %q", csp)
+	}
+	if strings.Contains(rec.Body.String(), "cdn.jsdelivr") {
+		t.Fatal("script de terceiros na página")
+	}
+	if rec := e.do("GET", "/static/supabase.js", "", ""); rec.Code != 200 || rec.Body.Len() < 100000 {
+		t.Fatalf("supabase.js: %d %d", rec.Code, rec.Body.Len())
 	}
 	for _, p := range []string{"/termos", "/privacidade"} {
 		if rec := e.do("GET", p, "", ""); rec.Code != 200 || !strings.Contains(rec.Body.String(), "LGPD") {
@@ -149,6 +166,27 @@ func TestSignupCNPJLookup(t *testing.T) {
 	}
 }
 
+func TestSignupCNPJLookupIsRateLimited(t *testing.T) {
+	e := newSignupEnv(t)
+	last := 0
+	for range 12 {
+		last = e.do("GET", "/api/cadastro/"+e.token+"/cnpj/11222333000181", "", "").Code
+	}
+	if last != http.StatusTooManyRequests {
+		t.Fatalf("12ª consulta = %d; want 429", last)
+	}
+}
+
+func TestSignupSubmitChecksLinkBeforeSupabase(t *testing.T) {
+	e := newSignupEnv(t)
+	if rec := e.do("POST", "/api/cadastro/nao-existe", validBody, "sessao-ok"); rec.Code != http.StatusGone {
+		t.Fatalf("link ruim: %d", rec.Code)
+	}
+	if *e.authCalls != 0 {
+		t.Fatal("chamou o Supabase com link inválido")
+	}
+}
+
 func TestSignupSubmit(t *testing.T) {
 	e := newSignupEnv(t)
 	target := "/api/cadastro/" + e.token
@@ -171,7 +209,8 @@ func TestSignupSubmit(t *testing.T) {
 		JOIN members m ON m.organization_id = o.id JOIN consents c ON c.member_id = m.id LIMIT 1`).Scan(&status, &email, &ip); err != nil {
 		t.Fatal(err)
 	}
-	if status != "complete" || email != "ana@mail.com" || ip != "200.1.2.3" {
+	// O IP é o que o proxy (último da lista) viu, não o que o cliente escreveu no cabeçalho.
+	if status != "complete" || email != "ana@mail.com" || ip != "10.0.0.1" {
 		t.Fatalf("gravado: %s %s %s", status, email, ip)
 	}
 	var welcome int

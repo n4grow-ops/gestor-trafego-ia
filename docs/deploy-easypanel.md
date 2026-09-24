@@ -53,6 +53,19 @@ Configuração única no Supabase e no Google:
 5. Quando houver subdomínio: DNS apontando para a VPS (`2.25.215.158`), domínio no serviço `api` do Easypanel e
    `PUBLIC_BASE_URL` atualizado nos dois serviços (e nas URLs do passo 1).
 
+Cuidados e limites conhecidos:
+- Quem pede cadastro: só organizações do cadastro automático. As criadas pelo `admin org-create` já nascem cadastradas.
+- Só o dono (`owner`) conclui o cadastro; outros membros recebem aviso para chamar o responsável.
+- Ao concluir, os limites passam a ser o maior entre o que a organização tinha e o do plano Free.
+- O Google bloqueia login dentro de navegadores embutidos de alguns apps. Se o WhatsApp abrir o link no navegador
+  interno e o Google recusar, o cliente usa o código por e-mail (ou abre o link no navegador do celular). Testar em
+  Android e iPhone.
+- Ligar CAPTCHA em **Supabase → Authentication → Attack Protection** se aparecer abuso de envio de código.
+- O token do link não fica no histórico (`messages` guarda `/cadastro/[link]`), mas fica no payload do job de envio
+  em `outbox_jobs` até ele sair; vale 24 h e é de uso único.
+- `members.auth_user_id` não é único: hoje nada faz login por ele. Revisar antes de criar painel web do cliente.
+- Limitador de requisições do cadastro fica em memória (uma réplica da `api`).
+
 Termos e Privacidade: rascunhos em `internal/httpapi/web/termos.html` e `privacidade.html`, com campos entre colchetes
 (razão social, CNPJ, e-mail de contato, foro) para preencher e revisar com advogado. A versão aceita fica em `consents`.
 

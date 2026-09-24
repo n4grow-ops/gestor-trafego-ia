@@ -10,7 +10,8 @@ ALTER TABLE members
 CREATE INDEX members_auth_user_idx ON members (auth_user_id);
 CREATE INDEX members_email_idx ON members (lower(email));
 
--- Todas as organizações que já existem ficam pendentes: completam o cadastro na próxima mensagem.
+-- Organizações do cadastro automático ficam pendentes e completam o cadastro na próxima mensagem;
+-- as criadas pelo admin (clientes trazidos à mão) já contam como cadastradas.
 ALTER TABLE organizations
   ADD COLUMN registration_status text NOT NULL DEFAULT 'pending' CHECK (registration_status IN ('pending', 'complete')),
   ADD COLUMN registered_at timestamptz,
@@ -28,6 +29,7 @@ ALTER TABLE organizations
   ADD COLUMN has_meta_ad_account text,
   ADD COLUMN approver text,
   ADD COLUMN referral_source text;
+UPDATE organizations SET registration_status = 'complete', registered_at = now() WHERE signup_source = 'admin';
 
 CREATE TABLE signup_links (
   id bigserial PRIMARY KEY,

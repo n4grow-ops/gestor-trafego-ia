@@ -180,6 +180,9 @@
       }
       if (r.status === 401) { await sb.auth.signOut().catch(() => {}); msg("msg-email", "Confirme seu e-mail de novo, por favor.", true); show("passo-email"); return; }
       if (r.status === 410) { fail("Esse link expirou. Manda uma mensagem pra gente no WhatsApp que enviamos um novo."); return; }
+      if (r.status === 403) { fail("O cadastro da conta precisa ser feito pelo responsável. Peça pra ele mandar uma mensagem no WhatsApp."); return; }
+      if (r.status === 429) { msg("msg-plano", "Muitas tentativas seguidas. Espere um minuto e tente de novo.", true); return; }
+      if (r.status === 422 && body.error === "plano_indisponivel") { msg("msg-plano", "Esse plano ainda não está disponível. Siga com o Free.", true); return; }
       if (r.status === 422) { show("passo-dados"); markErrors(body.fields); msg("msg-dados", "Confira os campos marcados.", true); return; }
       msg("msg-plano", "Não deu certo agora. Tenta de novo em instantes.", true);
     } catch (_) {
@@ -192,8 +195,13 @@
   function bind() {
     $("btn-google").addEventListener("click", async () => {
       busy($("btn-google"), true);
-      const { error } = await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: location.origin + location.pathname } });
-      if (error) { busy($("btn-google"), false); msg("msg-email", "Não deu pra abrir o Google agora. Tente o código por e-mail.", true); }
+      try {
+        const { error } = await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: location.origin + location.pathname } });
+        if (error) throw error;
+      } catch (_) {
+        busy($("btn-google"), false);
+        msg("msg-email", "Não deu pra abrir o Google agora. Tente o código por e-mail.", true);
+      }
     });
 
     $("form-otp").addEventListener("submit", async (ev) => {
@@ -203,7 +211,12 @@
       const btn = ev.submitter;
       busy(btn, true);
       msg("msg-email", "Enviando código…");
-      const { error } = await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: true, emailRedirectTo: location.origin + location.pathname } });
+      let error = null;
+      try {
+        ({ error } = await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: true, emailRedirectTo: location.origin + location.pathname } }));
+      } catch (e) {
+        error = e;
+      }
       busy(btn, false);
       if (error) { msg("msg-email", "Não deu pra enviar o código. Espere um pouco e tente de novo.", true); return; }
       $("otp-destino").textContent = email;
@@ -219,9 +232,15 @@
       if (code.length !== 6) { msg("msg-email", "O código tem 6 dígitos.", true); return; }
       const btn = ev.submitter;
       busy(btn, true);
-      const { data, error } = await sb.auth.verifyOtp({ email: $("otp-destino").textContent, token: code, type: "email" });
+      let data = null;
+      let error = null;
+      try {
+        ({ data, error } = await sb.auth.verifyOtp({ email: $("otp-destino").textContent, token: code, type: "email" }));
+      } catch (e) {
+        error = e;
+      }
       busy(btn, false);
-      if (error || !data.session) { msg("msg-email", "Código inválido ou expirado.", true); return; }
+      if (error || !data || !data.session) { msg("msg-email", "Código inválido ou expirado.", true); return; }
       session = data.session;
       msg("msg-email", "");
       goDados();
@@ -286,8 +305,12 @@
       auth: { flowType: "pkce", detectSessionInUrl: true, persistSession: true },
     });
     bind();
-    const { data } = await sb.auth.getSession();
-    session = data.session;
+    try {
+      const { data } = await sb.auth.getSession();
+      session = data.session;
+    } catch (_) {
+      session = null;
+    }
     if (location.search.includes("code=") || location.hash.includes("access_token")) {
       history.replaceState(null, "", location.pathname);
     }

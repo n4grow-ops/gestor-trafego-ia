@@ -10,9 +10,20 @@ import (
 const signupBase = "https://cadastro.teste/cadastro"
 
 func newSignupHarness(t *testing.T) *harness {
-	h := newHarness(t, "owner")
+	return newSignupHarnessRole(t, "owner")
+}
+
+func newSignupHarnessRole(t *testing.T, role string) *harness {
+	h := newHarness(t, role)
 	h.eng.SignupBaseURL = signupBase
+	h.pending()
 	return h
+}
+
+func (h *harness) pending() {
+	h.t.Helper()
+	_, err := h.pool.Exec(ctx, `UPDATE organizations SET registration_status = 'pending'`)
+	h.must(err)
 }
 
 func (h *harness) complete() {
@@ -41,6 +52,32 @@ func TestPendingClientGetsSignupLink(t *testing.T) {
 	}
 	if n := h.count(`SELECT count(*) FROM messages WHERE direction = 'in' AND kind = 'skipped'`); n != 1 {
 		t.Fatalf("mensagem do cliente não gravada como ignorada: %d", n)
+	}
+	// O link não fica guardado no histórico (que vai para a IA e para quem lê o banco).
+	if n := h.count(`SELECT count(*) FROM messages WHERE body LIKE '%' || $1 || '%'`, token); n != 0 {
+		t.Fatal("token do link gravado no histórico")
+	}
+	if n := h.count(`SELECT count(*) FROM messages WHERE direction = 'out' AND body LIKE '%/cadastro/[link]%'`); n != 1 {
+		t.Fatal("mensagem do link não registrada de forma segura")
+	}
+}
+
+func TestNonOwnerIsAskedForOwner(t *testing.T) {
+	h := newSignupHarnessRole(t, "approver")
+	h.say("oi")
+	if h.count(`SELECT count(*) FROM signup_links`) != 0 || !strings.Contains(h.wa.last().Text, "responsável") {
+		t.Fatalf("aprovador recebeu link ou mensagem errada: %q", h.wa.last().Text)
+	}
+}
+
+func TestGateSkipsHumanAttendance(t *testing.T) {
+	h := newSignupHarness(t)
+	h.conv() // cria a conversa
+	_, err := h.pool.Exec(ctx, `UPDATE conversations SET state = 'needs_human'`)
+	h.must(err)
+	h.say("oi, é com a atendente")
+	if h.wa.count() != 0 || h.count(`SELECT count(*) FROM signup_links`) != 0 {
+		t.Fatal("atendimento humano não recebe link de cadastro")
 	}
 }
 
@@ -72,6 +109,7 @@ func TestCompleteClientTalksToAI(t *testing.T) {
 func TestPendingMessagesDoNotReachLaterBatch(t *testing.T) {
 	h, _ := newHumanHarness(t)
 	h.eng.SignupBaseURL = signupBase
+	h.pending()
 	h.say("oi")
 	h.drain()
 	h.complete()
@@ -84,9 +122,10 @@ func TestPendingMessagesDoNotReachLaterBatch(t *testing.T) {
 }
 
 func TestWelcomeJobIsHumanText(t *testing.T) {
-	spec := engine.WelcomeJob(7, "5511@c.us", "Ana Souza")
+	spec := engine.WelcomeJob(7, "5511@c.us", "Ana Souza", "ana@mail.com")
 	s, ok := spec.Payload.(engine.SendJob)
-	if spec.Kind != engine.JobSend || !ok || !s.Human || s.Voice || s.ConversationID != 7 || !strings.Contains(s.Text+strings.Join(s.Next, " "), "Ana") {
+	all := s.Text + " " + strings.Join(s.Next, " ")
+	if spec.Kind != engine.JobSend || !ok || !s.Human || s.Voice || s.ConversationID != 7 || !strings.Contains(all, "Ana") || !strings.Contains(all, "ana@mail.com") {
 		t.Fatalf("boas-vindas = %+v", spec)
 	}
 }
