@@ -27,16 +27,22 @@ func TestSignupLinkLifecycle(t *testing.T) {
 	if ident.RegistrationStatus != "pending" {
 		t.Fatalf("status inicial = %q", ident.RegistrationStatus)
 	}
-	if _, ok, err := st.LastSignupLinkAt(ctx, ident.ID); err != nil || ok {
+	if ok, err := st.SignupLinkSentWithin(ctx, ident.ID, 10*time.Minute); err != nil || ok {
 		t.Fatalf("sem link ainda: ok=%v err=%v", ok, err)
 	}
 	must(t, st.CreateSignupLink(ctx, ident.ID, "hash-ok", time.Now().Add(time.Hour)))
 	must(t, st.CreateSignupLink(ctx, ident.ID, "hash-old", time.Now().Add(-time.Minute)))
-	if at, ok, err := st.LastSignupLinkAt(ctx, ident.ID); err != nil || !ok || time.Since(at) > time.Minute {
-		t.Fatalf("último link: %v %v %v", at, ok, err)
+	if ok, err := st.SignupLinkSentWithin(ctx, ident.ID, 10*time.Minute); err != nil || !ok {
+		t.Fatalf("link recente: %v %v", ok, err)
 	}
+	_, err := pool.Exec(ctx, `UPDATE signup_links SET created_at = now() - interval '11 minutes'`)
+	must(t, err)
+	if ok, _ := st.SignupLinkSentWithin(ctx, ident.ID, 10*time.Minute); ok {
+		t.Fatal("link de 11 min atrás não é recente")
+	}
+	var p store.SignupPrefill
 	must(t, st.UpdateOrgProfile(ctx, ident.OrgID, contract.Profile{BusinessName: ptr("Pizzaria Boa"), City: ptr("Campinas")}))
-	p, err := st.SignupPrefill(ctx, "hash-ok")
+	p, err = st.SignupPrefill(ctx, "hash-ok")
 	must(t, err)
 	if p.Phone != "5511988887777" || p.BusinessName != "Pizzaria Boa" || p.City != "Campinas" {
 		t.Fatalf("pré-preenchimento = %+v", p)
@@ -47,7 +53,6 @@ func TestSignupLinkLifecycle(t *testing.T) {
 	if _, err := st.SignupPrefill(ctx, "nao-existe"); !errors.Is(err, store.ErrLinkInvalid) {
 		t.Fatalf("inexistente: %v", err)
 	}
-	_ = pool
 }
 
 func TestPlansSeeded(t *testing.T) {

@@ -27,14 +27,12 @@ func (s *Store) CreateSignupLink(ctx context.Context, identityID int64, tokenHas
 	return err
 }
 
-// LastSignupLinkAt é quando o último link da identidade foi criado (ok=false se nunca).
-func (s *Store) LastSignupLinkAt(ctx context.Context, identityID int64) (time.Time, bool, error) {
-	var at *time.Time
-	err := s.pool.QueryRow(ctx, `SELECT max(created_at) FROM signup_links WHERE identity_id = $1`, identityID).Scan(&at)
-	if err != nil || at == nil {
-		return time.Time{}, false, err
-	}
-	return *at, true, nil
+// SignupLinkSentWithin diz se a identidade recebeu link de cadastro dentro do intervalo (relógio do banco).
+func (s *Store) SignupLinkSentWithin(ctx context.Context, identityID int64, within time.Duration) (bool, error) {
+	var ok bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM signup_links
+		WHERE identity_id = $1 AND created_at > now() - $2 * interval '1 millisecond')`, identityID, within.Milliseconds()).Scan(&ok)
+	return ok, err
 }
 
 // SignupPrefill é o que a página mostra preenchido para o link.

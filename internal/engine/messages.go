@@ -27,4 +27,7 @@ const (
 	msgProjectNotFound        = "Não encontrei o projeto \"%s\"."
 	msgProjectAmbiguous       = "Achei mais de um projeto parecido: %s. Qual deles?"
 	msgNoProjects             = "Você ainda não tem projetos. É só me contar o que quer anunciar."
+
+	msgSignupLink = "Oi! Pra gente começar, faz seu cadastro rapidinho por aqui:\n\n%s\n\nLeva uns 2 minutos. Assim que terminar, a gente continua por aqui."
+	msgWelcome    = "Cadastro concluído, %s! Você está no plano Free.\n\nMe conta: o que você quer anunciar primeiro?"
 )

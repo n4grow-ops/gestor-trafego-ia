@@ -85,6 +85,9 @@ type Engine struct {
 	TTSModel string
 	TTSVoice string
 	Rand     func() float64 // variação dos tempos; trocada nos testes
+
+	// Cadastro: com URL, quem não concluiu o cadastro recebe o link em vez de falar com a IA.
+	SignupBaseURL string
 }
 
 func (e *Engine) now() time.Time {
@@ -148,6 +151,9 @@ func (e *Engine) HandleInbound(ctx context.Context, in whatsapp.Inbound) error {
 			return e.send(ctx, conv, msgDailyLimit)
 		}
 		return nil
+	}
+	if e.SignupBaseURL != "" && ident.RegistrationStatus != "complete" {
+		return e.signupGate(ctx, ident, conv, in)
 	}
 	text, err := e.inboundText(ctx, ident, &conv, in)
 	if errors.Is(err, errMediaFailed) {
