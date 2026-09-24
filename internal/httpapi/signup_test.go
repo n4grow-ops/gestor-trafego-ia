@@ -129,6 +129,26 @@ func TestSignupPageAndTerms(t *testing.T) {
 	}
 }
 
+func TestHomePage(t *testing.T) {
+	e := newSignupEnv(t)
+	rec := e.do("GET", "/", "", "")
+	body := rec.Body.String()
+	if rec.Code != 200 || !strings.Contains(body, "meuanuncio.io") || !strings.Contains(body, "https://wa.me/5511900000000?text=") || strings.Contains(body, "{{WHATSAPP}}") {
+		t.Fatalf("início: %d %s", rec.Code, body)
+	}
+	for _, p := range []string{"/static/logo.png", "/static/icon.png", "/favicon.ico"} {
+		if rec := e.do("GET", p, "", ""); rec.Code != 200 || rec.Header().Get("Content-Type") != "image/png" {
+			t.Errorf("%s: %d %q", p, rec.Code, rec.Header().Get("Content-Type"))
+		}
+	}
+	if !strings.Contains(body, `src="/static/logo.png"`) {
+		t.Error("início sem a logo")
+	}
+	if rec := e.do("GET", "/nao-existe", "", ""); rec.Code != 404 {
+		t.Fatalf("rota desconhecida: %d", rec.Code)
+	}
+}
+
 func TestSignupConfig(t *testing.T) {
 	e := newSignupEnv(t)
 	rec := e.do("GET", "/api/cadastro/"+e.token, "", "")

@@ -183,7 +183,7 @@ func TestDailyLimitKeepsLastAllowedMessage(t *testing.T) {
 		t.Fatalf("enviados = %s", got)
 	}
 	// dia seguinte: as mensagens de ontem saem da contagem do limite
-	_, err = h.pool.Exec(ctx, `UPDATE messages SET created_at = created_at - interval '2 days'`)
+	_, err = h.pool.Exec(ctx, `UPDATE messages SET created_at = '2000-01-01'`)
 	h.must(err)
 	h.say("bom dia")
 	h.drain()

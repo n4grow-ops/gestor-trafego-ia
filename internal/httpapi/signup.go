@@ -1,14 +1,17 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"encoding/json"
 	"errors"
+	"html"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/engine"
@@ -43,10 +46,15 @@ type Signup struct {
 }
 
 func (s *Signup) Register(mux *http.ServeMux) {
+	mux.HandleFunc("GET /{$}", s.home)
 	mux.HandleFunc("GET /cadastro/{token}", s.page("web/cadastro.html"))
 	mux.HandleFunc("GET /termos", s.page("web/termos.html"))
 	mux.HandleFunc("GET /privacidade", s.page("web/privacidade.html"))
 	mux.HandleFunc("GET /static/cadastro.css", s.asset("web/cadastro.css", "text/css; charset=utf-8"))
+	mux.HandleFunc("GET /static/logo.png", s.asset("web/logo.png", "image/png"))
+	mux.HandleFunc("GET /static/icon.png", s.asset("web/icon.png", "image/png"))
+	mux.HandleFunc("GET /static/favicon.png", s.asset("web/favicon.png", "image/png"))
+	mux.HandleFunc("GET /favicon.ico", s.asset("web/favicon.png", "image/png"))
 	mux.HandleFunc("GET /static/cadastro.js", s.asset("web/cadastro.js", "text/javascript; charset=utf-8"))
 	// supabase-js 2.117.1 (UMD) servido daqui: sem CDN de terceiros rodando na página do cadastro.
 	mux.HandleFunc("GET /static/supabase.js", s.asset("web/supabase.js", "text/javascript; charset=utf-8"))
@@ -65,6 +73,20 @@ func (s *Signup) page(name string) http.HandlerFunc {
 			"connect-src 'self' "+s.SupabaseURL+"; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 		s.serve(w, name, "text/html; charset=utf-8")
 	}
+}
+
+// home é a página inicial do meuanuncio.io, com o botão para começar no WhatsApp.
+func (s *Signup) home(w http.ResponseWriter, r *http.Request) {
+	b, err := web.ReadFile("web/inicio.html")
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	link := s.whatsappLink() + "?text=" + url.QueryEscape("Oi! Quero anunciar meu negócio.")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'none'; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'")
+	w.Write(bytes.ReplaceAll(b, []byte("{{WHATSAPP}}"), []byte(html.EscapeString(link))))
 }
 
 func (s *Signup) asset(name, contentType string) http.HandlerFunc {
