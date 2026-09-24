@@ -71,11 +71,14 @@ func run(log *slog.Logger) error {
 		TTSModel: cfg.TTSModel,
 		TTSVoice: cfg.TTSVoice,
 	}
+	if cfg.SignupEnabled() {
+		eng.SignupBaseURL = cfg.PublicBaseURL + "/cadastro"
+	}
 	if cfg.VoiceReplies && cfg.TTSModel != "" {
 		eng.Voice = router // voz só com modelo de TTS configurado
 	}
 	w := &worker.Worker{Store: st, WA: wa, Engine: eng, Log: log}
 	log.Info("worker iniciado", "atendente", cfg.AttendantModel, "gestor", cfg.ManagerModel,
-		"humano", cfg.Humanize, "voz", eng.Voice != nil)
+		"humano", cfg.Humanize, "voz", eng.Voice != nil, "cadastro", eng.SignupBaseURL != "")
 	return w.Run(ctx)
 }

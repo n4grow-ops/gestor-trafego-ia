@@ -33,6 +33,17 @@ type Config struct {
 	VoiceReplies  bool
 	TTSModel      string
 	TTSVoice      string
+
+	// Cadastro do cliente (página + Supabase Auth).
+	PublicBaseURL          string
+	SupabaseURL            string
+	SupabasePublishableKey string
+	BotWhatsAppNumber      string
+}
+
+// SignupEnabled diz se o cadastro está configurado: sem isso, ninguém é barrado pelo portão.
+func (c Config) SignupEnabled() bool {
+	return c.PublicBaseURL != "" && c.SupabaseURL != "" && c.SupabasePublishableKey != ""
 }
 
 func Load(getenv func(string) string) Config {
@@ -57,6 +68,11 @@ func Load(getenv func(string) string) Config {
 		VoiceReplies:      getenv("VOICE_REPLIES") != "false",
 		TTSModel:          getenv("TTS_MODEL"),
 		TTSVoice:          orDefault(getenv("TTS_VOICE"), "pt-BR-FranciscaNeural"),
+
+		PublicBaseURL:          strings.TrimRight(getenv("PUBLIC_BASE_URL"), "/"),
+		SupabaseURL:            strings.TrimRight(getenv("SUPABASE_URL"), "/"),
+		SupabasePublishableKey: getenv("SUPABASE_PUBLISHABLE_KEY"),
+		BotWhatsAppNumber:      getenv("BOT_WHATSAPP_NUMBER"),
 	}
 }
 

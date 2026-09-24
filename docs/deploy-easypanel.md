@@ -30,6 +30,35 @@ Atendente humana (opcional no `worker`): `HUMANIZE` (padrão `true`), `REPLY_DEB
 - Teste: mandar texto (visto, digitando, balões); mandar três mensagens seguidas (uma resposta só); mandar áudio (gravando, voz).
 - Custo do TTS: `SELECT sum(cost_usd), count(*) FROM llm_usage WHERE agent = 'tts';`
 
+## Cadastro do cliente
+
+Variáveis: `PUBLIC_BASE_URL`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` na `api` e no `worker`; `BOT_WHATSAPP_NUMBER` na `api`.
+Sem elas o cadastro fica desligado e ninguém é barrado.
+
+Fluxo: cliente sem cadastro manda mensagem → recebe `PUBLIC_BASE_URL/cadastro/<token>` (24 h, uso único, reenvio a cada 10 min)
+→ confirma o e-mail (Google ou código) → preenche dados → plano Free → volta ao WhatsApp com boas-vindas.
+
+Configuração única no Supabase e no Google:
+
+1. **Supabase → Authentication → URL Configuration**: Site URL = `PUBLIC_BASE_URL`; em Redirect URLs, adicionar
+   `PUBLIC_BASE_URL/cadastro/*`.
+2. **Google Cloud Console → APIs e serviços → Credenciais → Criar ID do cliente OAuth** (tipo "Aplicativo da Web"):
+   - URI de redirecionamento autorizado: `https://jsafyoqvypkzqdtefpzp.supabase.co/auth/v1/callback`;
+   - tela de consentimento: nome do app, e-mail de suporte, links de `PUBLIC_BASE_URL/termos` e `PUBLIC_BASE_URL/privacidade`;
+   - copiar ID e segredo para **Supabase → Authentication → Sign In / Providers → Google** e ativar.
+3. **Supabase → Authentication → Emails → Magic Link**: trocar o corpo para mostrar o código, por exemplo
+   `Seu código de acesso: {{ .Token }}` (o código vale por alguns minutos).
+4. **SMTP próprio** (Resend ou outro) em **Supabase → Authentication → Emails → SMTP Settings**: o envio padrão do
+   Supabase é limitado a poucos e-mails por hora e não serve para produção.
+5. Quando houver subdomínio: DNS apontando para a VPS (`2.25.215.158`), domínio no serviço `api` do Easypanel e
+   `PUBLIC_BASE_URL` atualizado nos dois serviços (e nas URLs do passo 1).
+
+Termos e Privacidade: rascunhos em `internal/httpapi/web/termos.html` e `privacidade.html`, com campos entre colchetes
+(razão social, CNPJ, e-mail de contato, foro) para preencher e revisar com advogado. A versão aceita fica em `consents`.
+
+Planos: tabela `plans` (Free disponível; Starter e Pro com valores provisórios e `available = false`). Assinatura em
+`subscriptions`; `payments` fica vazia até ligar o provedor de pagamento (Pix e cartão).
+
 ## Réplicas
 
 `worker` com 1 réplica. As conversas têm trava por conversa no banco, mas uma réplica só mantém a ordem das mensagens e o custo previsível.

@@ -78,3 +78,14 @@ func TestHumanizeConfig(t *testing.T) {
 		t.Fatalf("lidos = %+v", c)
 	}
 }
+
+func TestSignupConfig(t *testing.T) {
+	c := config.Load(env(map[string]string{"PUBLIC_BASE_URL": "https://cadastro.x.com/", "SUPABASE_URL": "https://ref.supabase.co/",
+		"SUPABASE_PUBLISHABLE_KEY": "pub", "BOT_WHATSAPP_NUMBER": "+55 11 90000-0000"}))
+	if c.PublicBaseURL != "https://cadastro.x.com" || c.SupabaseURL != "https://ref.supabase.co" || c.SupabasePublishableKey != "pub" || c.BotWhatsAppNumber != "+55 11 90000-0000" {
+		t.Fatalf("cadastro = %+v", c)
+	}
+	if c.SignupEnabled() != true || config.Load(env(nil)).SignupEnabled() {
+		t.Fatal("cadastro ligado só com PUBLIC_BASE_URL e Supabase")
+	}
+}

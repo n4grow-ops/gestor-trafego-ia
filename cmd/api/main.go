@@ -14,9 +14,13 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/config"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/db"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/httpapi"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/signup"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp/waha"
 )
+
+// termsVersion é a versão dos Termos e da Política de Privacidade gravada em cada aceite.
+const termsVersion = "2026-09-23"
 
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -43,15 +47,26 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
+	st := store.New(pool)
 	webhook := &httpapi.Webhook{
-		Store:  store.New(pool),
+		Store:  st,
 		WA:     waha.New(cfg.WAHAURL, cfg.WAHAAPIKey, cfg.WAHASession), // só o parse é usado aqui
 		Secret: cfg.WebhookSecret,
 		Log:    log,
 	}
+	var routes []func(*http.ServeMux)
+	if cfg.SignupEnabled() {
+		reg := &httpapi.Signup{
+			Store: st, Auth: signup.NewSupabaseAuth(cfg.SupabaseURL, cfg.SupabasePublishableKey), CNPJ: signup.NewBrasilAPI(),
+			SupabaseURL: cfg.SupabaseURL, SupabaseKey: cfg.SupabasePublishableKey, BotNumber: cfg.BotWhatsAppNumber,
+			TermsVersion: termsVersion, Log: log,
+		}
+		routes = append(routes, reg.Register)
+	}
+	log.Info("api configurada", "cadastro", cfg.SignupEnabled())
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.NewMux(pool, webhook),
+		Handler:           httpapi.NewMux(pool, webhook, routes...),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		WriteTimeout:      30 * time.Second,
