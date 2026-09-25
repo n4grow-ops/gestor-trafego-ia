@@ -94,6 +94,9 @@ type Engine struct {
 
 	// Relatório diário às 8 h para este número. Vazio = sem relatório.
 	ReportPhone string
+
+	// Conexão da conta Meta: base do link (…/m). Vazio = desligada.
+	MetaConnectBaseURL string
 }
 
 func (e *Engine) now() time.Time {
@@ -203,6 +206,9 @@ func (e *Engine) HandleInbound(ctx context.Context, in whatsapp.Inbound) error {
 // (a aprovação vale a mais nova que tiver código); batch são os ids do lote, fora do histórico
 // (nil = só a última mensagem gravada).
 func (e *Engine) dispatch(ctx context.Context, ident store.Identity, conv store.Conversation, text string, msgs []string, batch []int64) error {
+	if e.MetaConnectBaseURL != "" && conv.State != store.StateNeedsHuman && metaConnectAsk.MatchString(text) {
+		return e.sendMetaLink(ctx, ident, conv, "")
+	}
 	switch conv.State {
 	case store.StateNeedsHuman:
 		return nil
@@ -270,11 +276,16 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 		}
 	}
 	current := withDefaults(ident.Profile, conv.Fields)
+	metaState, err := e.metaStatus(ctx, ident.OrgID)
+	if err != nil {
+		return err
+	}
 	turn, usage, err := e.Attendant.Reply(ctx, attendant.Input{
 		OrgName: ident.OrgName, Niche: ident.Niche, State: conv.State,
 		Fields: current, Missing: current.Missing(), History: history, Message: text,
 		Profile: ident.Profile, ProjectName: activeName, Projects: names,
 		Voice: e.Voice != nil && voiceWanted(ctx),
+		Meta:  metaState,
 	})
 	e.recordUsage(ctx, ident.OrgID, "attendant", usage)
 	if err != nil {
@@ -308,6 +319,11 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 		return e.send(ctx, conv, listText(projects))
 	case contract.IntentProjectStatus:
 		return e.projectStatus(ctx, ident, conv, turn.Project, projects)
+	case contract.IntentConnectMeta:
+		if e.MetaConnectBaseURL == "" {
+			return e.speak(ctx, ident, conv, turn.Reply)
+		}
+		return e.sendMetaLink(ctx, ident, conv, turn.Reply)
 	case contract.IntentNewProject:
 		return e.startProject(ctx, ident, conv, turn, projects)
 	case contract.IntentSwitchProject:

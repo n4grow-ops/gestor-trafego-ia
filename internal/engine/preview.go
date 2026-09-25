@@ -67,7 +67,21 @@ func (e *Engine) sendPreview(ctx context.Context, j PreviewJob) error {
 			return err
 		}
 	}
-	return e.Store.AddMessage(ctx, conv.ID, "out", "image", "[prévia do anúncio no Instagram enviada]")
+	if err := e.Store.AddMessage(ctx, conv.ID, "out", "image", "[prévia do anúncio no Instagram enviada]"); err != nil {
+		return err
+	}
+	if e.MetaConnectBaseURL == "" {
+		return nil
+	}
+	// Projeto pronto sem conta conectada: já pede a conexão.
+	ident, err := e.Store.GetIdentity(ctx, conv.IdentityID)
+	if err != nil {
+		return err
+	}
+	if _, ok, err := e.Store.ActiveMeta(ctx, ident.OrgID); err != nil || ok {
+		return err
+	}
+	return e.sendMetaLink(ctx, ident, conv, "")
 }
 
 // pickPreview escolhe o anúncio do feed (imagem antes de vídeo) e o dos Stories.
