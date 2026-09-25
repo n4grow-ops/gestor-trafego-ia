@@ -143,3 +143,9 @@ func TestProposalValidateRejects(t *testing.T) {
 		}
 	}
 }
+
+func TestConnectMetaIntentIsValid(t *testing.T) {
+	if !contract.IntentConnectMeta.Valid() || contract.IntentConnectMeta != "connect_meta" {
+		t.Fatal("connect_meta precisa ser intent válida")
+	}
+}

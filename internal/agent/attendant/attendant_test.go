@@ -163,3 +163,25 @@ func TestPromptListsMissingBusinessData(t *testing.T) {
 		t.Fatalf("prompt sem o que falta do negócio:\n%s", p)
 	}
 }
+
+func TestPromptCarriesMetaConnection(t *testing.T) {
+	f := &llm.Fake{Responses: []string{`{"intent":"connect_meta","reply":"Te mando o link agora."}`, `{"intent":"question","reply":"oi"}`}}
+	a := &attendant.Agent{LLM: f, Model: "m"}
+	turn, _, err := a.Reply(ctx, attendant.Input{OrgName: "Loja", State: "idle", Message: "como publico?", Meta: "não conectada"})
+	if err != nil || turn.Intent != contract.IntentConnectMeta {
+		t.Fatalf("turn = %+v, %v", turn, err)
+	}
+	sys, user := f.Requests[0].Messages[0].Content, f.Requests[0].Messages[1].Content
+	if !strings.Contains(user, "Conta Meta: não conectada") {
+		t.Fatalf("prompt sem estado da conta: %s", user)
+	}
+	if !strings.Contains(sys, "connect_meta") || !strings.Contains(sys, "Conta Meta") {
+		t.Fatal("system prompt sem a regra da conexão")
+	}
+	if _, _, err := a.Reply(ctx, attendant.Input{OrgName: "Loja", State: "idle", Message: "oi"}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(f.Requests[1].Messages[1].Content, "Conta Meta") {
+		t.Fatal("função desligada não deve aparecer no prompt")
+	}
+}

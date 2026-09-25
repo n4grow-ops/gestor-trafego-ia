@@ -24,12 +24,13 @@ const (
 	IntentSwitchProject  Intent = "switch_project"
 	IntentListProjects   Intent = "list_projects"
 	IntentProjectStatus  Intent = "project_status"
+	IntentConnectMeta    Intent = "connect_meta"
 )
 
 func (i Intent) Valid() bool {
 	switch i {
 	case IntentCreateCampaign, IntentProvideInfo, IntentApprove, IntentReject, IntentQuestion, IntentHuman, IntentOther,
-		IntentNewProject, IntentSwitchProject, IntentListProjects, IntentProjectStatus:
+		IntentNewProject, IntentSwitchProject, IntentListProjects, IntentProjectStatus, IntentConnectMeta:
 		return true
 	}
 	return false
