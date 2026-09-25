@@ -45,7 +45,7 @@ Até o App Review, só quem tem papel no app conclui o login.
 ## Dados (migration 0010, schema `app`, RLS ligada)
 
 - `meta_connect_links`: `id`, `identity_id` FK, `token_hash` UNIQUE, `expires_at`, `used_at`, `created_at`.
-- `meta_connections`: `id`, `organization_id` FK, `connected_by` (identity FK), `meta_user_id`, `business_id`, `ad_account_id`, `ad_account_name`, `currency`, `timezone_name`, `account_status`, `page_id`, `page_name`, `instagram_id`, `instagram_username`, `page_whatsapp` (bool), `token_ciphertext` bytea, `scopes` text[], `candidates` jsonb (listas para a escolha), `status` CHECK (`pending`, `active`, `replaced`, `revoked`), `deletion_code`, `created_at`, `connected_at`, `revoked_at`. Índice único parcial: uma `active` por organização.
+- `meta_connections`: `id`, `organization_id` FK, `connected_by` (identity FK), `meta_user_id`, `business_id`, `ad_account_id`, `ad_account_name`, `currency`, `timezone_name`, `account_status`, `page_id`, `page_name`, `instagram_id`, `instagram_username`, `page_whatsapp` (bool), `token_ciphertext` bytea, `candidates` jsonb (listas para a escolha), `status` CHECK (`pending`, `active`, `replaced`, `revoked`), `deletion_code`, `created_at`, `connected_at`, `revoked_at`. Índice único parcial: uma `active` por organização.
 - `reset contato` (`scripts/resetcontato`) passa a apagar as duas tabelas.
 
 ## Segurança
