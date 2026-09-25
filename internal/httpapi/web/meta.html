@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Conectar conta de anúncios · meuanuncio.io</title>
+<link rel="icon" href="/static/favicon.png">
+<link rel="stylesheet" href="/static/cadastro.css?v=2">
+</head>
+<body>
+<main class="shell">
+  <header class="top">
+    <div class="brandbar"><img src="/static/logo.png?v=2" alt="meuanuncio.io" width="280" height="92"></div>
+  </header>
+  <section class="card">
+  {{if eq .State "start"}}
+    <h1>Conectar sua conta de anúncios</h1>
+    <p class="muted">Você entra com o seu Facebook e escolhe a conta de anúncios, a Página e o Instagram que o meuanuncio vai usar para publicar seus anúncios.</p>
+    <p><a class="btn" href="{{.LoginURL}}">Conectar com Facebook</a></p>
+    <p class="muted">A gente só cria e acompanha anúncios que você aprovar no WhatsApp. Dá para remover o acesso a qualquer momento nas configurações do Facebook.</p>
+  {{else if eq .State "choose"}}
+    <h1>Escolha a conta e a Página</h1>
+    <form method="post" action="/meta/escolha">
+      <input type="hidden" name="token" value="{{.Token}}">
+      <input type="hidden" name="nonce" value="{{.Nonce}}">
+      <fieldset class="field"><legend>Conta de anúncios</legend>
+        {{range $i, $a := .AdAccounts}}<label class="check"><input type="radio" name="ad_account" value="{{$a.ID}}"{{if eq $i 0}} checked{{end}}> <span>{{$a.Name}} ({{$a.Currency}})</span></label>{{end}}
+      </fieldset>
+      <fieldset class="field"><legend>Página</legend>
+        {{range $i, $p := .Pages}}<label class="check"><input type="radio" name="page" value="{{$p.ID}}"{{if eq $i 0}} checked{{end}}> <span>{{$p.Name}}{{if $p.InstagramUsername}} · @{{$p.InstagramUsername}}{{end}}</span></label>{{end}}
+      </fieldset>
+      <button class="btn" type="submit">Conectar</button>
+    </form>
+  {{else if eq .State "done"}}
+    <h1>Pronto, conta conectada ✅</h1>
+    <p class="muted">Pode voltar pro WhatsApp: já te mandei o resumo por lá.</p>
+    <p><a class="btn whatsapp" href="{{.WhatsApp}}">Voltar pro WhatsApp</a></p>
+  {{else}}
+    <h1>{{.Title}}</h1>
+    <p class="muted">{{.Message}}</p>
+    {{if .Retry}}<p><a class="btn" href="{{.Retry}}">Tentar de novo</a></p>{{end}}
+    <p><a class="btn whatsapp" href="{{.WhatsApp}}">Voltar pro WhatsApp</a></p>
+  {{end}}
+  </section>
+</main>
+</body>
+</html>
