@@ -14,6 +14,8 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/config"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/db"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/httpapi"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/meta"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/secretbox"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/signup"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp/waha"
@@ -66,7 +68,19 @@ func run(log *slog.Logger) error {
 		}
 		routes = append(routes, reg.Register)
 	}
-	log.Info("api configurada", "cadastro", cfg.SignupEnabled())
+	if cfg.MetaConnectEnabled() {
+		box, err := secretbox.New(cfg.MetaTokenKey)
+		if err != nil {
+			return err
+		}
+		mc := &httpapi.MetaConnect{
+			Store: st, Meta: meta.New(cfg.MetaAppID, cfg.MetaAppSecret, cfg.MetaLoginConfigID, cfg.PublicBaseURL+"/meta/callback"),
+			Box: box, AppSecret: cfg.MetaAppSecret, BaseURL: cfg.PublicBaseURL, BotNumber: cfg.BotWhatsAppNumber,
+			Log: log, Limiter: httpapi.NewLimiter(),
+		}
+		routes = append(routes, mc.Register)
+	}
+	log.Info("api configurada", "cadastro", cfg.SignupEnabled(), "conexao_meta", cfg.MetaConnectEnabled())
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           httpapi.NewMux(pool, webhook, routes...),

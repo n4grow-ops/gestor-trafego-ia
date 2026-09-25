@@ -72,6 +72,26 @@ Termos e Privacidade: rascunhos em `internal/httpapi/web/termos.html` e `privaci
 Planos: tabela `plans` (Free disponível; Starter e Pro com valores provisórios e `available = false`). Assinatura em
 `subscriptions`; `payments` fica vazia até ligar o provedor de pagamento (Pix e cartão).
 
+## Conexão da conta Meta
+
+Variáveis na `api` e no `worker` (com `PUBLIC_BASE_URL`):
+
+| Variável | O que é |
+|---|---|
+| `META_APP_ID` | ID do app `meuanuncio.io` no developers.facebook.com |
+| `META_APP_SECRET` | Chave secreta do app (confere `signed_request` e assina as chamadas com `appsecret_proof`) |
+| `META_LOGIN_CONFIG_ID` | ID da configuração do Facebook Login for Business |
+| `META_TOKEN_KEY` | 32 bytes em base64 que cifram os tokens dos clientes (`openssl rand -base64 32`). Trocar a chave invalida as conexões existentes |
+
+Sem as quatro, a conexão fica desligada (nenhuma rota `/m/` ou `/meta/*`, nenhum link no WhatsApp).
+
+No app Meta (Facebook Login for Business → Configurações):
+- URI de redirecionamento OAuth válido: `PUBLIC_BASE_URL/meta/callback` (modo estrito);
+- URL de retorno de desautorização: `PUBLIC_BASE_URL/meta/deauthorize`;
+- URL de solicitação de exclusão de dados: `PUBLIC_BASE_URL/meta/exclusao-dados`.
+
+Fluxo: o dono manda "conectar meta" (ou aceita a oferta da IA, ou termina a prévia do anúncio) → recebe `PUBLIC_BASE_URL/m/<token>` (24 h, uso único, reenvio a cada 10 min) → login no Facebook → escolhe conta e Página → confirmação com avisos no WhatsApp. Até o App Review, só quem tem papel no app conclui o login.
+
 ## Réplicas
 
 `worker` com 1 réplica. As conversas têm trava por conversa no banco, mas uma réplica só mantém a ordem das mensagens e o custo previsível.

@@ -75,6 +75,9 @@ func run(log *slog.Logger) error {
 	if cfg.SignupEnabled() {
 		eng.SignupBaseURL = cfg.PublicBaseURL + "/c"
 	}
+	if cfg.MetaConnectEnabled() {
+		eng.MetaConnectBaseURL = cfg.PublicBaseURL + "/m"
+	}
 	if cfg.VoiceReplies && cfg.TTSModel != "" {
 		eng.Voice = router // voz só com modelo de TTS configurado
 	}
@@ -93,6 +96,6 @@ func run(log *slog.Logger) error {
 	w := &worker.Worker{Store: st, WA: wa, Engine: eng, Log: log}
 	log.Info("worker iniciado", "atendente", cfg.AttendantModel, "gestor", cfg.ManagerModel,
 		"humano", cfg.Humanize, "voz", eng.Voice != nil, "cadastro", eng.SignupBaseURL != "",
-		"anuncios", eng.Storage != nil, "relatorio", eng.ReportPhone != "")
+		"anuncios", eng.Storage != nil, "relatorio", eng.ReportPhone != "", "conexao_meta", eng.MetaConnectBaseURL != "")
 	return w.Run(ctx)
 }
