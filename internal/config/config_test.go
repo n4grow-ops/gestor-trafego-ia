@@ -100,3 +100,20 @@ func TestCreativesAndReportConfig(t *testing.T) {
 		t.Fatalf("REPORT_PHONE tem prioridade: %q", c.ReportPhone)
 	}
 }
+
+func TestMetaConnectEnabled(t *testing.T) {
+	vars := map[string]string{"PUBLIC_BASE_URL": "https://cadastro.x/", "META_APP_ID": "1", "META_APP_SECRET": "s",
+		"META_LOGIN_CONFIG_ID": "c", "META_TOKEN_KEY": "k"}
+	c := config.Load(env(vars))
+	if !c.MetaConnectEnabled() || c.MetaAppID != "1" || c.MetaAppSecret != "s" || c.MetaLoginConfigID != "c" || c.MetaTokenKey != "k" {
+		t.Fatalf("config = %+v", c)
+	}
+	for _, k := range []string{"PUBLIC_BASE_URL", "META_APP_ID", "META_APP_SECRET", "META_LOGIN_CONFIG_ID", "META_TOKEN_KEY"} {
+		old := vars[k]
+		vars[k] = ""
+		if config.Load(env(vars)).MetaConnectEnabled() {
+			t.Errorf("ligado sem %s", k)
+		}
+		vars[k] = old
+	}
+}

@@ -43,11 +43,22 @@ type Config struct {
 	// Anúncios no Supabase Storage (só no worker) e relatório diário.
 	SupabaseServiceRoleKey string
 	ReportPhone            string
+
+	// Conexão da conta de anúncios do cliente (Facebook Login for Business).
+	MetaAppID         string
+	MetaAppSecret     string
+	MetaLoginConfigID string
+	MetaTokenKey      string // 32 bytes em base64: cifra os tokens dos clientes
 }
 
 // SignupEnabled diz se o cadastro está configurado: sem isso, ninguém é barrado pelo portão.
 func (c Config) SignupEnabled() bool {
 	return c.PublicBaseURL != "" && c.SupabaseURL != "" && c.SupabasePublishableKey != ""
+}
+
+// MetaConnectEnabled diz se a conexão da conta Meta está configurada.
+func (c Config) MetaConnectEnabled() bool {
+	return c.PublicBaseURL != "" && c.MetaAppID != "" && c.MetaAppSecret != "" && c.MetaLoginConfigID != "" && c.MetaTokenKey != ""
 }
 
 func Load(getenv func(string) string) Config {
@@ -79,6 +90,10 @@ func Load(getenv func(string) string) Config {
 		BotWhatsAppNumber:      getenv("BOT_WHATSAPP_NUMBER"),
 		SupabaseServiceRoleKey: getenv("SUPABASE_SERVICE_ROLE_KEY"),
 		ReportPhone:            orDefault(getenv("REPORT_PHONE"), getenv("OPERATOR_PHONE")),
+		MetaAppID:              getenv("META_APP_ID"),
+		MetaAppSecret:          getenv("META_APP_SECRET"),
+		MetaLoginConfigID:      getenv("META_LOGIN_CONFIG_ID"),
+		MetaTokenKey:           getenv("META_TOKEN_KEY"),
 	}
 }
 
