@@ -62,6 +62,12 @@ func (s *Store) SavePendingMeta(ctx context.Context, l MetaLink, metaUserID stri
 	if err != nil {
 		return 0, fmt.Errorf("store: %w", err)
 	}
+	// Login novo pelo mesmo link, ou pendentes de links vencidos: o token antigo não serve mais.
+	if _, err := s.pool.Exec(ctx, `UPDATE meta_connections SET status = 'replaced', token_ciphertext = NULL, candidates = '{}'
+		WHERE status = 'pending' AND (link_id = $1 OR link_id IN (SELECT id FROM meta_connect_links WHERE expires_at < now() OR used_at IS NOT NULL))`,
+		l.ID); err != nil {
+		return 0, err
+	}
 	var id int64
 	err = s.pool.QueryRow(ctx, `INSERT INTO meta_connections (organization_id, connected_by, link_id, meta_user_id, token_ciphertext, candidates)
 		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`, l.OrgID, l.IdentityID, l.ID, metaUserID, sealedToken, raw).Scan(&id)
@@ -121,8 +127,9 @@ func (s *Store) CompleteMeta(ctx context.Context, ch MetaChoice) (int64, error) 
 	if err != nil {
 		return 0, err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE meta_connections SET status = 'replaced', token_ciphertext = NULL
-		WHERE organization_id = $1 AND status = 'active'`, orgID); err != nil {
+	// A conexão ativa anterior e os logins pendentes da organização saem com o token apagado.
+	if _, err := tx.Exec(ctx, `UPDATE meta_connections SET status = 'replaced', token_ciphertext = NULL, candidates = '{}'
+		WHERE organization_id = $1 AND id <> $2 AND status IN ('active', 'pending')`, orgID, ch.ConnectionID); err != nil {
 		return 0, err
 	}
 	a, p := ch.Account, ch.Page
@@ -200,6 +207,14 @@ func (s *Store) RevokeMeta(ctx context.Context, metaUserID, deletionCode string,
 	if err != nil {
 		return 0, err
 	}
+	// Pedido de exclusão: vale também para o que já estava revogado ou substituído, e leva os dados da conta.
+	if deletionCode != "" {
+		if _, err := tx.Exec(ctx, `UPDATE meta_connections SET deletion_code = $2, token_ciphertext = NULL, candidates = '{}',
+				business_id = NULL, ad_account_name = NULL, page_name = NULL, instagram_id = NULL, instagram_username = NULL
+			WHERE meta_user_id = $1 AND status IN ('revoked', 'replaced')`, metaUserID, deletionCode); err != nil {
+			return 0, err
+		}
+	}
 	for _, v := range list {
 		if v.status != "active" || notify == nil {
 			continue
@@ -223,6 +238,6 @@ func (s *Store) RevokeMeta(ctx context.Context, metaUserID, deletionCode string,
 // MetaDeletionDone diz se o pedido de exclusão com esse código já foi atendido.
 func (s *Store) MetaDeletionDone(ctx context.Context, code string) (bool, error) {
 	var ok bool
-	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM meta_connections WHERE deletion_code = $1 AND status = 'revoked')`, code).Scan(&ok)
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM meta_connections WHERE deletion_code = $1 AND status IN ('revoked', 'replaced'))`, code).Scan(&ok)
 	return ok, err
 }

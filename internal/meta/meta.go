@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -127,10 +128,21 @@ func (c *Client) Assets(ctx context.Context, token string) (Assets, error) {
 		"fields": {"id,name,instagram_business_account{id,username}"}}), &pages); err != nil {
 		return a, err
 	}
-	for _, x := range pages.Data {
-		a.Pages = append(a.Pages, Page{ID: x.ID, Name: x.Name, InstagramID: x.Instagram.ID, InstagramUsername: x.Instagram.Username,
-			WhatsApp: c.pageWhatsApp(ctx, token, x.ID)})
+	a.Pages = make([]Page, len(pages.Data))
+	// WhatsApp de cada Página em paralelo (até 8 por vez): quem tem muitas Páginas não estoura o prazo do retorno.
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 8)
+	for i, x := range pages.Data {
+		a.Pages[i] = Page{ID: x.ID, Name: x.Name, InstagramID: x.Instagram.ID, InstagramUsername: x.Instagram.Username}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			a.Pages[i].WhatsApp = c.pageWhatsApp(ctx, token, x.ID)
+		}()
 	}
+	wg.Wait()
 	return a, nil
 }
 

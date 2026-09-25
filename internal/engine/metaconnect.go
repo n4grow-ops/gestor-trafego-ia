@@ -19,6 +19,17 @@ const (
 // metaConnectAsk reconhece o pedido direto de conexão, sem gastar IA.
 var metaConnectAsk = regexp.MustCompile(`(?i)\bconectar\s+(a\s+)?(meta|facebook|face|conta\s+de\s+an[uú]ncios?)\b`)
 
+// isMetaConnectCommand diz se a mensagem é o pedido direto de conexão: frase curta e fora das etapas
+// que tratam a mensagem de outro jeito (aprovação, anúncios, proposta, atendimento humano).
+func isMetaConnectCommand(state, text string) bool {
+	switch state {
+	case store.StateIdle, store.StateCollecting, store.StateOnboarding:
+	default:
+		return false
+	}
+	return len(strings.Fields(text)) <= 6 && metaConnectAsk.MatchString(text)
+}
+
 // sendMetaLink manda o link de conexão da conta de anúncios; lead é a resposta da IA que vem antes (pode ser vazia).
 func (e *Engine) sendMetaLink(ctx context.Context, ident store.Identity, conv store.Conversation, lead string) error {
 	if ident.Role != "owner" {

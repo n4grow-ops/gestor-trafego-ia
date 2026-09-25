@@ -206,7 +206,7 @@ func (e *Engine) HandleInbound(ctx context.Context, in whatsapp.Inbound) error {
 // (a aprovação vale a mais nova que tiver código); batch são os ids do lote, fora do histórico
 // (nil = só a última mensagem gravada).
 func (e *Engine) dispatch(ctx context.Context, ident store.Identity, conv store.Conversation, text string, msgs []string, batch []int64) error {
-	if e.MetaConnectBaseURL != "" && conv.State != store.StateNeedsHuman && metaConnectAsk.MatchString(text) {
+	if e.MetaConnectBaseURL != "" && isMetaConnectCommand(conv.State, text) {
 		return e.sendMetaLink(ctx, ident, conv, "")
 	}
 	switch conv.State {

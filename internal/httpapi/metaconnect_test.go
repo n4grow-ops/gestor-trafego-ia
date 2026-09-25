@@ -263,3 +263,48 @@ func TestMetaDeauthorizeAndDeletion(t *testing.T) {
 		t.Fatalf("exclusão: %d %s", rec.Code, rec.Body.String())
 	}
 }
+
+type slowMeta struct{ fakeMeta }
+
+func (s *slowMeta) Assets(ctx context.Context, _ string) (meta.Assets, error) {
+	<-ctx.Done()
+	return meta.Assets{}, ctx.Err()
+}
+
+func TestMetaCallbackHasDeadline(t *testing.T) {
+	e := newMetaEnv(t, meta.Assets{})
+	slow := &slowMeta{}
+	h := &httpapi.MetaConnect{Store: e.st, Meta: slow, Box: nil, AppSecret: appSecret, BaseURL: "https://cadastro.teste",
+		BotNumber: "5511900000000", Log: discard, Timeout: 50 * time.Millisecond}
+	e.mux = httpapi.NewMux(pingOK{}, http.NotFoundHandler(), h.Register)
+	nonce := e.start(t)
+	begin := time.Now()
+	rec := e.callback(nonce, "c1")
+	if rec.Code != 502 || time.Since(begin) > 5*time.Second {
+		t.Fatalf("sem prazo: %d em %s", rec.Code, time.Since(begin))
+	}
+}
+
+func TestMetaNoAssetsKeepsNoToken(t *testing.T) {
+	e := newMetaEnv(t, meta.Assets{UserID: "U1"})
+	e.callback(e.start(t), "c1")
+	if n := e.count(t, `SELECT count(*) FROM meta_connections WHERE token_ciphertext IS NOT NULL`); n != 0 {
+		t.Fatal("login sem ativos guardou token")
+	}
+}
+
+func TestMetaDeletionAfterDeauthorizeShowsStatus(t *testing.T) {
+	e := newMetaEnv(t, meta.Assets{UserID: "U1", AdAccounts: []meta.AdAccount{accA}, Pages: []meta.Page{pageA}})
+	e.callback(e.start(t), "c1")
+	e.req("POST", "/meta/deauthorize", "signed_request="+signedReq("U1", appSecret), "")
+	rec := e.req("POST", "/meta/exclusao-dados", "signed_request="+signedReq("U1", appSecret), "")
+	i := strings.Index(rec.Body.String(), "/meta/exclusao/")
+	if i < 0 {
+		t.Fatalf("sem url: %s", rec.Body.String())
+	}
+	path := rec.Body.String()[i:]
+	path = path[:strings.IndexAny(path, `"`)]
+	if st := e.req("GET", path, "", ""); st.Code != 200 || !strings.Contains(st.Body.String(), "Dados excluídos") {
+		t.Fatalf("status da exclusão: %d", st.Code)
+	}
+}

@@ -73,7 +73,14 @@ func (e *Engine) sendPreview(ctx context.Context, j PreviewJob) error {
 	if e.MetaConnectBaseURL == "" {
 		return nil
 	}
-	// Projeto pronto sem conta conectada: já pede a conexão.
+	// Projeto pronto sem conta conectada: já pede a conexão. Falha aqui não reenvia a prévia.
+	if err := e.askMetaAfterPreview(ctx, conv); err != nil {
+		e.Log.Error("falha ao pedir conexão meta depois da prévia", "conversation_id", conv.ID, "erro", err)
+	}
+	return nil
+}
+
+func (e *Engine) askMetaAfterPreview(ctx context.Context, conv store.Conversation) error {
 	ident, err := e.Store.GetIdentity(ctx, conv.IdentityID)
 	if err != nil {
 		return err

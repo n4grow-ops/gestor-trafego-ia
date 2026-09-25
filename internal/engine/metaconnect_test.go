@@ -166,3 +166,41 @@ func TestPreviewSkipsLinkWhenConnected(t *testing.T) {
 		t.Fatal("pediu conexão de quem já está conectado")
 	}
 }
+
+func TestConnectMetaShortcutDoesNotSwallowApproval(t *testing.T) {
+	h := newMetaHarness(t, "owner")
+	code := h.reachApproval()
+	h.att.Responses = append(h.att.Responses, `{"intent":"question","reply":"Primeiro aprova a proposta que eu já te mando o link."}`)
+	h.say("conectar facebook")
+	if h.count(`SELECT count(*) FROM meta_connect_links`) != 0 {
+		t.Fatal("atalho passou na frente da aprovação")
+	}
+	h.say("SIM " + code)
+	if h.conv().State == store.StateAwaitingApproval {
+		t.Fatalf("aprovação não andou: estado = %s", h.conv().State)
+	}
+}
+
+func TestConnectMetaShortcutIgnoresLongSentences(t *testing.T) {
+	h := newMetaHarness(t, "owner")
+	h.att.Responses = append(h.att.Responses, `{"intent":"question","reply":"Tudo bem!"}`)
+	h.say("agora não quero conectar meta, só tirar uma dúvida")
+	if h.count(`SELECT count(*) FROM meta_connect_links`) != 0 || h.att.Calls() != 1 {
+		t.Fatal("frase longa virou comando")
+	}
+}
+
+func TestPreviewNotResentWhenMetaLinkFails(t *testing.T) {
+	h, _ := newCreativeHarness(t)
+	h.eng.MetaConnectBaseURL = metaBase
+	h.say("SIM " + h.reachApproval())
+	h.sendFile(square)
+	h.say("pronto")
+	h.say("pronto")
+	_, err := h.pool.Exec(ctx, `ALTER TABLE meta_connect_links RENAME TO meta_connect_links_off`)
+	h.must(err)
+	h.runKind(engine.JobCreativesPreview)
+	if n := h.count(`SELECT count(*) FROM outbox_jobs WHERE kind = $1 AND status <> 'done'`, engine.JobCreativesPreview); n != 0 {
+		t.Fatalf("prévia vai ser reenviada: %d jobs não concluídos", n)
+	}
+}

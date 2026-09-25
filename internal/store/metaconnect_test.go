@@ -146,3 +146,40 @@ func TestRevokeMeta(t *testing.T) {
 		t.Fatalf("revogou de novo: %d", n)
 	}
 }
+
+func TestDeletionAfterDeauthorizeIsRecorded(t *testing.T) {
+	e := newMetaEnv(t)
+	l := e.link(t, "h1", time.Hour)
+	id, err := e.st.SavePendingMeta(ctx, l, "U9", []byte("cifrado"), metaOne)
+	must(t, err)
+	_, err = e.st.CompleteMeta(ctx, store.MetaChoice{ConnectionID: id, LinkID: l.ID, Account: metaAcc, Page: metaPage, Message: metaMsg})
+	must(t, err)
+	_, err = e.st.RevokeMeta(ctx, "U9", "", metaMsg)
+	must(t, err)
+	_, err = e.st.RevokeMeta(ctx, "U9", "COD9", metaMsg)
+	must(t, err)
+	done, err := e.st.MetaDeletionDone(ctx, "COD9")
+	if err != nil || !done {
+		t.Fatalf("exclusão depois da desautorização não registrada: %v %v", done, err)
+	}
+	if n := e.count(t, `SELECT count(*) FROM meta_connections WHERE ad_account_name IS NOT NULL OR page_name IS NOT NULL OR instagram_username IS NOT NULL`); n != 0 {
+		t.Fatal("exclusão manteve dados da conta")
+	}
+}
+
+func TestPendingTokensAreWiped(t *testing.T) {
+	e := newMetaEnv(t)
+	l := e.link(t, "h1", time.Hour)
+	_, err := e.st.SavePendingMeta(ctx, l, "U1", []byte("tentativa1"), metaOne)
+	must(t, err)
+	id2, err := e.st.SavePendingMeta(ctx, l, "U1", []byte("tentativa2"), metaOne)
+	must(t, err)
+	old := e.link(t, "h-velho", time.Hour)
+	_, err = e.st.SavePendingMeta(ctx, old, "U1", []byte("abandonada"), metaOne)
+	must(t, err)
+	_, err = e.st.CompleteMeta(ctx, store.MetaChoice{ConnectionID: id2, LinkID: l.ID, Account: metaAcc, Page: metaPage, Message: metaMsg})
+	must(t, err)
+	if n := e.count(t, `SELECT count(*) FROM meta_connections WHERE status <> 'active' AND token_ciphertext IS NOT NULL`); n != 0 {
+		t.Fatalf("%d tokens guardados fora da conexão ativa", n)
+	}
+}

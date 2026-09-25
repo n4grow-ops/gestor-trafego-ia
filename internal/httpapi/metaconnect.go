@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/engine"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/meta"
@@ -36,6 +37,8 @@ type MetaConnect struct {
 	BotNumber string
 	Log       *slog.Logger
 	Limiter   *Limiter // nil = sem limite (só em testes)
+	// Timeout é o prazo para falar com a Meta no retorno do login (padrão 20 s, abaixo do WriteTimeout da api).
+	Timeout time.Duration
 }
 
 // metaCookie guarda o nonce do state: o retorno do Facebook só vale no navegador que abriu o link.
@@ -108,14 +111,23 @@ func (m *MetaConnect) callback(w http.ResponseWriter, r *http.Request) {
 		m.fail(w, r, err, http.StatusGone, titleLinkGone, msgLinkGone, "")
 		return
 	}
-	token, err := m.Meta.ExchangeCode(r.Context(), q.Get("code"))
+	ctx, cancel := context.WithTimeout(r.Context(), m.timeout())
+	defer cancel()
+	token, err := m.Meta.ExchangeCode(ctx, q.Get("code"))
 	if err != nil {
 		m.fail(w, r, err, http.StatusBadGateway, "A Meta não respondeu", "Não consegui confirmar com o Facebook agora. "+msgTryLater, retry)
 		return
 	}
-	assets, err := m.Meta.Assets(r.Context(), token)
+	assets, err := m.Meta.Assets(ctx, token)
 	if err != nil {
 		m.fail(w, r, err, http.StatusBadGateway, "A Meta não respondeu", "Não consegui ler suas contas no Facebook agora. "+msgTryLater, retry)
+		return
+	}
+	if len(assets.AdAccounts) == 0 || len(assets.Pages) == 0 {
+		// Nada para conectar: o token nem é guardado.
+		m.render(w, http.StatusOK, metaView{State: "error", Title: "Faltou escolher no Facebook",
+			Message: "No login, marque pelo menos uma conta de anúncios e uma Página para o meuanuncio. Clique em tentar de novo e confira as opções.",
+			Retry:   retry})
 		return
 	}
 	sealed, err := m.Box.Seal([]byte(token))
@@ -127,12 +139,6 @@ func (m *MetaConnect) callback(w http.ResponseWriter, r *http.Request) {
 	connID, err := m.Store.SavePendingMeta(r.Context(), link, assets.UserID, sealed, cands)
 	if err != nil {
 		m.fail(w, r, err, http.StatusInternalServerError, "Algo deu errado", msgTryLater, retry)
-		return
-	}
-	if len(assets.AdAccounts) == 0 || len(assets.Pages) == 0 {
-		m.render(w, http.StatusOK, metaView{State: "error", Title: "Faltou escolher no Facebook",
-			Message: "No login, marque pelo menos uma conta de anúncios e uma Página para o meuanuncio. Clique em tentar de novo e confira as opções.",
-			Retry:   retry})
 		return
 	}
 	if len(assets.AdAccounts) == 1 && len(assets.Pages) == 1 {
@@ -282,6 +288,13 @@ func (m *MetaConnect) render(w http.ResponseWriter, status int, v metaView) {
 	if err := metaPage.Execute(w, v); err != nil {
 		m.Log.Error("falha ao montar página meta", "erro", err)
 	}
+}
+
+func (m *MetaConnect) timeout() time.Duration {
+	if m.Timeout > 0 {
+		return m.Timeout
+	}
+	return 20 * time.Second
 }
 
 func randomHex(n int) (string, error) {
