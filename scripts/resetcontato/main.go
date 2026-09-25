@@ -67,6 +67,8 @@ func main() {
 		{"messages", `DELETE FROM messages WHERE conversation_id IN (` + conv + `)`},
 		{"conversations", `DELETE FROM conversations WHERE id IN (` + conv + `)`},
 		{"projects", `DELETE FROM projects WHERE organization_id = ANY($1)`},
+		{"meta_connections", `DELETE FROM meta_connections WHERE organization_id = ANY($1)`},
+		{"meta_connect_links", `DELETE FROM meta_connect_links WHERE identity_id IN (SELECT w.id FROM whatsapp_identities w JOIN members m ON m.id = w.member_id WHERE m.organization_id = ANY($1))`},
 		{"signup_links", `DELETE FROM signup_links WHERE identity_id IN (SELECT w.id FROM whatsapp_identities w JOIN members m ON m.id = w.member_id WHERE m.organization_id = ANY($1))`},
 		{"whatsapp_identities", `DELETE FROM whatsapp_identities WHERE member_id IN (SELECT id FROM members WHERE organization_id = ANY($1))`},
 		{"members", `DELETE FROM members WHERE organization_id = ANY($1)`},
