@@ -21,7 +21,9 @@ Até o App Review, só quem tem papel no app conclui o login.
 ## Fluxo
 
 1. **Pedido do link (worker, `engine`).**
-   - Gatilhos: (a) o cliente escreve algo que casa com `conectar (a )?(meta|facebook|conta de an[uú]ncios?)`, tratado antes da IA; (b) depois que a prévia do anúncio é enviada (job `creatives.preview`), se a organização não tem conexão ativa.
+   - Gatilhos: (a) o cliente escreve algo que casa com `conectar (a )?(meta|facebook|conta de an[uú]ncios?)`, tratado antes da IA; (b) a IA (Atendente) devolve a intent nova `connect_meta` — o cliente pediu com outras palavras ou aceitou a oferta da IA; (c) depois que a prévia do anúncio é enviada (job `creatives.preview`), se a organização não tem conexão ativa.
+   - **IA sabe da conexão:** `attendant.Input` ganha `MetaConnected bool` e `MetaAccount string` (nome da conta e da Página, sem IDs nem token). O prompt instrui: sem conexão, quando o assunto for publicar, anunciar, prazo para ir ao ar ou status do projeto pronto, avisar em uma frase que falta conectar a conta de anúncios e oferecer o link; se o cliente aceitar ou pedir, devolver `connect_meta`. Não repetir a oferta em toda mensagem (no máximo uma vez a cada 6 turnos, conferido pelo histórico). Com conexão, pode citar a conta conectada quando perguntarem.
+   - Com `connect_meta`, o engine envia a resposta da IA e, em seguida, o link (a IA nunca escreve o link).
    - Só o `owner` recebe o link; outros membros recebem "peça ao responsável pela conta".
    - No máximo um link a cada 10 min por identidade (mesma regra do cadastro).
    - Link: `PUBLIC_BASE_URL/m/{token}`, token de 12 caracteres (`signup.NewToken`), só o hash no banco, validade 24 h, uso único. `redactLinks` passa a mascarar também `/m/`.
@@ -71,7 +73,8 @@ Novas variáveis (api e worker): `META_APP_ID`, `META_APP_SECRET`, `META_LOGIN_C
 - `meta`: `signed_request` válido e adulterado; parse das respostas com `httptest.Server`.
 - `store` (`testdb`): link expirado/usado; conclusão substitui a anterior; revogação apaga token; RLS nas tabelas novas.
 - `httpapi`: link inválido; `state` sem cookie → 400; callback com uma conta conclui e enfileira o job; com duas contas mostra a escolha; escolha fora da lista → 400; cancelamento; deauthorize com assinatura inválida → 400.
-- `engine`: "conectar meta" do owner gera link; de membro recebe aviso; reenvio em menos de 10 min não gera outro; após a prévia sem conexão pede a conexão; com conexão ativa não pede; mensagem com cada aviso.
+- `attendant`: prompt recebe o estado da conexão; `connect_meta` é intent válida.
+- `engine`: intent `connect_meta` envia resposta + link; "conectar meta" do owner gera link; de membro recebe aviso; reenvio em menos de 10 min não gera outro; após a prévia sem conexão pede a conexão; com conexão ativa não pede; mensagem com cada aviso.
 
 ## Validação ao vivo
 
