@@ -35,10 +35,15 @@ func newWame(cfg config.Config) *wame.Client {
 }
 
 // Parsers lê eventos de qualquer provedor já usado: na troca, o inbox ainda pode ter eventos do outro.
-// Só o parse é usado, então não precisa de credencial.
-func Parsers(cfg config.Config) map[string]whatsapp.Provider {
-	return map[string]whatsapp.Provider{
+// O provedor ativo entra com a mesma instância que envia: a Wame oficial guarda nela a última
+// mensagem de cada chat, usada no visto e no "digitando…".
+func Parsers(cfg config.Config, active whatsapp.Provider) map[string]whatsapp.Provider {
+	ps := map[string]whatsapp.Provider{
 		"waha": waha.New(cfg.WAHAURL, cfg.WAHAAPIKey, cfg.WAHASession),
 		"wame": newWame(cfg),
 	}
+	if active != nil {
+		ps[active.Name()] = active
+	}
+	return ps
 }

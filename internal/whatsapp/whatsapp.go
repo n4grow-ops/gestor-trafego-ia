@@ -69,6 +69,11 @@ type TemplateSender interface {
 	SendTemplate(ctx context.Context, chatID string, t Template) error
 }
 
+// Splitter é opcional: provedores que juntam várias mensagens num webhook. Cada parte vira um evento.
+type Splitter interface {
+	Split(body []byte) [][]byte
+}
+
 // ConnectionEvent é o aviso do provedor de que o número conectou ou caiu.
 type ConnectionEvent struct {
 	Connected bool

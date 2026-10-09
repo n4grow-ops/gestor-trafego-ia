@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp"
@@ -199,5 +200,15 @@ func TestSendTemplateWithoutParams(t *testing.T) {
 	must(t, c.SendTemplate(context.Background(), "5511999998888", whatsapp.Template{Name: "ola"}))
 	if _, has := (*calls)[0].Body["components"]; has {
 		t.Fatalf("sem variáveis não manda components: %+v", (*calls)[0].Body)
+	}
+}
+
+func TestSendTemplateTruncatesLongParams(t *testing.T) {
+	c, calls := server(t, 200, `{}`)
+	long := strings.Repeat("á", 2000)
+	must(t, c.SendTemplate(context.Background(), "5511999998888", whatsapp.Template{Name: "aviso_equipe", Params: []string{long}}))
+	p := (*calls)[0].Body["components"].([]any)[0].(map[string]any)["parameters"].([]any)[0].(map[string]any)["text"].(string)
+	if n := len([]rune(p)); n > 900 || !strings.HasSuffix(p, "…") {
+		t.Fatalf("variável com %d caracteres", n)
 	}
 }

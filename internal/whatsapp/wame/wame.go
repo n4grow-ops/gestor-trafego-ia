@@ -109,9 +109,12 @@ func (c *Client) ParseWebhook(body []byte) (whatsapp.Inbound, bool, error) {
 	return whatsapp.Inbound{}, false, nil
 }
 
+// ignoredTypes não são falas do cliente: reação, aviso do sistema, mensagem apagada ou que a API não lê.
+var ignoredTypes = map[string]bool{"reaction": true, "system": true, "unsupported": true, "ephemeral": true, "revoked": true}
+
 func toInbound(m message, raw []byte) (whatsapp.Inbound, bool) {
 	// A Cloud API não manda chat_type em conversa individual; só grupo vem marcado.
-	if m.ID == "" || m.FromMe || m.ChatType == "group" || strings.Contains(m.From, "@") {
+	if m.ID == "" || m.FromMe || m.ChatType == "group" || strings.Contains(m.From, "@") || ignoredTypes[m.Type] {
 		return whatsapp.Inbound{}, false
 	}
 	chat := whatsapp.Digits(m.From)
@@ -169,4 +172,46 @@ func (c *Client) ParseConnection(body []byte) (whatsapp.ConnectionEvent, bool) {
 		}, true
 	}
 	return whatsapp.ConnectionEvent{}, false
+}
+
+// Split separa um envelope com várias mensagens num envelope por mensagem, para cada uma ganhar
+// sua linha no inbox (o worker relê só a primeira de cada envelope). O resto passa intacto.
+func (c *Client) Split(body []byte) [][]byte {
+	var env map[string]json.RawMessage
+	var entries []struct {
+		ID      string `json:"id"`
+		Changes []struct {
+			Field string                     `json:"field"`
+			Value map[string]json.RawMessage `json:"value"`
+		} `json:"changes"`
+	}
+	if json.Unmarshal(body, &env) != nil || json.Unmarshal(env["entry"], &entries) != nil ||
+		len(entries) != 1 || len(entries[0].Changes) != 1 || entries[0].Changes[0].Field != "messages" {
+		return [][]byte{body}
+	}
+	ch := entries[0].Changes[0]
+	var msgs []json.RawMessage
+	if json.Unmarshal(ch.Value["messages"], &msgs) != nil || len(msgs) < 2 {
+		return [][]byte{body}
+	}
+	parts := make([][]byte, 0, len(msgs))
+	for _, m := range msgs {
+		value := make(map[string]json.RawMessage, len(ch.Value))
+		for k, v := range ch.Value {
+			value[k] = v
+		}
+		value["messages"] = json.RawMessage("[" + string(m) + "]")
+		entry := []map[string]any{{"id": entries[0].ID, "changes": []map[string]any{{"field": "messages", "value": value}}}}
+		out := make(map[string]any, len(env))
+		for k, v := range env {
+			out[k] = v
+		}
+		out["entry"] = entry
+		b, err := json.Marshal(out)
+		if err != nil {
+			return [][]byte{body}
+		}
+		parts = append(parts, b)
+	}
+	return parts
 }

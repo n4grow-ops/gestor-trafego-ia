@@ -124,10 +124,16 @@ func (c *Client) SendTemplate(ctx context.Context, chatID string, t whatsapp.Tem
 	return c.send(ctx, http.MethodPost, "/message/template", body)
 }
 
+// maxParam fica abaixo do limite da Meta para uma variável; acima disso o modelo é recusado.
+const maxParam = 900
+
 func templateParam(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
 	if s == "" {
 		return "-"
+	}
+	if r := []rune(s); len(r) > maxParam {
+		s = string(r[:maxParam-1]) + "…"
 	}
 	return s
 }

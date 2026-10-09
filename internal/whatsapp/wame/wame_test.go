@@ -102,3 +102,34 @@ func TestName(t *testing.T) {
 		t.Fatal(c.Name())
 	}
 }
+
+func TestParseIgnoresReactionsAndSystem(t *testing.T) {
+	for _, typ := range []string{"reaction", "system", "unsupported", "ephemeral", "revoked"} {
+		body := msg(`{"from":"5511999998888","id":"R","type":"` + typ + `","reaction":{"message_id":"W1","emoji":"👍"}}`)
+		if _, ok, err := c.ParseWebhook(body); ok || err != nil {
+			t.Errorf("%s: ok=%v err=%v", typ, ok, err)
+		}
+	}
+}
+
+// Split separa um envelope com várias mensagens em um envelope por mensagem, para cada uma ir ao inbox.
+func TestSplit(t *testing.T) {
+	two := msg(`{"from":"5511999998888","id":"A","type":"text","text":{"body":"um"}},{"from":"5511999998888","id":"B","type":"text","text":{"body":"dois"}}`)
+	parts := c.Split(two)
+	if len(parts) != 2 {
+		t.Fatalf("partes = %d", len(parts))
+	}
+	for i, want := range []string{"A", "B"} {
+		in, ok, err := c.ParseWebhook(parts[i])
+		if err != nil || !ok || in.ExternalID != want {
+			t.Errorf("parte %d: %+v ok=%v err=%v", i, in, ok, err)
+		}
+	}
+	one := msg(`{"from":"5511999998888","id":"A","type":"text","text":{"body":"um"}}`)
+	if parts := c.Split(one); len(parts) != 1 || string(parts[0]) != string(one) {
+		t.Fatalf("envelope simples deve passar intacto: %d", len(parts))
+	}
+	if parts := c.Split([]byte("{nope")); len(parts) != 1 {
+		t.Fatalf("inválido passa intacto para o parse acusar o erro: %d", len(parts))
+	}
+}

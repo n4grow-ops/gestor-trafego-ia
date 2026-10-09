@@ -160,3 +160,17 @@ func TestWebhookWameConnectionAndDuplicate(t *testing.T) {
 		t.Fatalf("segredo errado: %d", rec.Code)
 	}
 }
+
+func TestWebhookWameSplitsBatchedMessages(t *testing.T) {
+	pool := testdb.New(t)
+	wh := &httpapi.Webhook{Store: store.New(pool), WA: wame.New("http://nao-usado", "k", ""), Secret: "segredo", Log: discard}
+	two := `{"object":"wame","entry":[{"id":"x","changes":[{"field":"messages","value":{"messages":[` +
+		`{"from":"5511999998888","id":"A","type":"text","text":{"body":"um"}},` +
+		`{"from":"5511999998888","id":"B","type":"text","text":{"body":"dois"}}]}}]}]}`
+	if rec := post(wh, "/webhooks/whatsapp?token=segredo", two); rec.Code != 200 || !strings.Contains(rec.Body.String(), "queued") {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	if n := inboxCount(t, pool); n != 2 {
+		t.Fatalf("inbox = %d, want 2", n)
+	}
+}

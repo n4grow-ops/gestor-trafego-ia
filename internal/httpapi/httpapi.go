@@ -64,28 +64,36 @@ func (h *Webhook) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	in, ok, err := h.WA.ParseWebhook(body)
-	if err != nil {
-		h.Log.Warn("webhook inválido", "erro", err)
-		http.Error(w, "payload inválido", http.StatusBadRequest)
-		return
+	parts := [][]byte{body}
+	if sp, isSplitter := h.WA.(whatsapp.Splitter); isSplitter {
+		parts = sp.Split(body)
+	}
+	status := "ignored"
+	for _, part := range parts {
+		in, ok, err := h.WA.ParseWebhook(part)
+		if err != nil {
+			h.Log.Warn("webhook inválido", "erro", err)
+			http.Error(w, "payload inválido", http.StatusBadRequest)
+			return
+		}
+		if !ok {
+			continue
+		}
+		inserted, err := h.Store.InsertInbox(r.Context(), h.WA.Name(), in.ExternalID, part)
+		if err != nil {
+			h.Log.Error("falha ao gravar webhook", "erro", err)
+			http.Error(w, "erro interno", http.StatusInternalServerError)
+			return
+		}
+		switch {
+		case inserted:
+			status = "queued"
+		case status == "ignored":
+			status = "duplicate"
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
-	if !ok {
-		io.WriteString(w, `{"status":"ignored"}`)
-		return
-	}
-	inserted, err := h.Store.InsertInbox(r.Context(), h.WA.Name(), in.ExternalID, body)
-	if err != nil {
-		h.Log.Error("falha ao gravar webhook", "erro", err)
-		http.Error(w, "erro interno", http.StatusInternalServerError)
-		return
-	}
-	if !inserted {
-		io.WriteString(w, `{"status":"duplicate"}`)
-		return
-	}
-	io.WriteString(w, `{"status":"queued"}`)
+	io.WriteString(w, `{"status":"`+status+`"}`)
 }
 
 // connection grava o aviso de queda ou volta do número. O alerta ativo é do admin, que lê

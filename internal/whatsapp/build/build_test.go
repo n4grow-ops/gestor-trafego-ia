@@ -43,8 +43,21 @@ func TestProviderWameOfficial(t *testing.T) {
 }
 
 func TestParsersAlwaysHasBoth(t *testing.T) {
-	ps := build.Parsers(config.Config{})
+	ps := build.Parsers(config.Config{}, nil)
 	if ps["waha"] == nil || ps["wame"] == nil {
+		t.Fatalf("parsers: %v", ps)
+	}
+}
+
+// O worker relê os eventos com o parser do provedor; no ativo tem que ser a mesma instância que
+// envia, senão a Wame oficial não acha a última mensagem do chat para o visto e o "digitando…".
+func TestParsersReuseActiveInstance(t *testing.T) {
+	cfg := config.Config{WhatsAppProvider: "wame", WameKey: "k", WameOfficial: true}
+	wa, err := build.Provider(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ps := build.Parsers(cfg, wa); ps["wame"] != wa || ps["waha"] == nil {
 		t.Fatalf("parsers: %v", ps)
 	}
 }
