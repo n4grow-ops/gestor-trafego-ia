@@ -56,6 +56,18 @@ type Provider interface {
 	ChatIDForPhone(phone string) string
 }
 
+// ConnectionEvent é o aviso do provedor de que o número conectou ou caiu.
+type ConnectionEvent struct {
+	Connected bool
+	Code      int
+	Reason    string
+}
+
+// ConnectionParser é opcional: provedores que avisam a queda do número pelo webhook.
+type ConnectionParser interface {
+	ParseConnection(body []byte) (ConnectionEvent, bool)
+}
+
 var nonDigits = regexp.MustCompile(`\D`)
 
 // NormalizePhone deixa só dígitos e insere o nono dígito em celular brasileiro que chega sem ele
