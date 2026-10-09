@@ -20,7 +20,13 @@ type Config struct {
 	WAHAURL           string
 	WAHAAPIKey        string
 	WAHASession       string
-	OperatorPhone     string
+	// Provedor do WhatsApp: "waha" (padrão) ou "wame". Wame oficial = instância da Cloud API.
+	WhatsAppProvider string
+	WameBaseURL      string
+	WameKey          string
+	WameToken        string
+	WameOfficial     bool
+	OperatorPhone    string
 
 	// Cadastro automático de número novo.
 	AutoSignup       bool
@@ -74,6 +80,11 @@ func Load(getenv func(string) string) Config {
 		WAHAURL:           strings.TrimRight(getenv("WAHA_URL"), "/"),
 		WAHAAPIKey:        getenv("WAHA_API_KEY"),
 		WAHASession:       orDefault(getenv("WAHA_SESSION"), "default"),
+		WhatsAppProvider:  orDefault(strings.ToLower(strings.TrimSpace(getenv("WHATSAPP_PROVIDER"))), "waha"),
+		WameBaseURL:       strings.TrimRight(orDefault(getenv("WAME_BASE_URL"), "https://server.wame.api.br"), "/"),
+		WameKey:           getenv("WAME_KEY"),
+		WameToken:         getenv("WAME_TOKEN"),
+		WameOfficial:      getenv("WAME_OFFICIAL") == "true",
 		OperatorPhone:     getenv("OPERATOR_PHONE"),
 		AutoSignup:        getenv("AUTO_SIGNUP") == "true",
 		SignupMaxBudget:   positiveFloat(getenv("AUTO_SIGNUP_MAX_BUDGET"), 50),
@@ -108,6 +119,7 @@ func (c Config) Require(names ...string) error {
 		"TRANSCRIBE_MODEL":   c.TranscribeModel,
 		"WAHA_URL":           c.WAHAURL,
 		"WAHA_API_KEY":       c.WAHAAPIKey,
+		"WAME_KEY":           c.WameKey,
 	}
 	var missing []string
 	for _, n := range names {

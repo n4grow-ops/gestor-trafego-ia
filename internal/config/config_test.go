@@ -117,3 +117,17 @@ func TestMetaConnectEnabled(t *testing.T) {
 		vars[k] = old
 	}
 }
+
+func TestLoadWhatsAppProvider(t *testing.T) {
+	c := config.Load(env(map[string]string{}))
+	if c.WhatsAppProvider != "waha" || c.WameBaseURL != "https://server.wame.api.br" || c.WameOfficial {
+		t.Fatalf("padrões: %q %q %v", c.WhatsAppProvider, c.WameBaseURL, c.WameOfficial)
+	}
+	c = config.Load(env(map[string]string{"WHATSAPP_PROVIDER": " Wame ", "WAME_KEY": "k", "WAME_TOKEN": "t", "WAME_BASE_URL": "https://x/", "WAME_OFFICIAL": "true"}))
+	if c.WhatsAppProvider != "wame" || c.WameKey != "k" || c.WameToken != "t" || c.WameBaseURL != "https://x" || !c.WameOfficial {
+		t.Fatalf("%+v", c)
+	}
+	if err := c.Require("WAME_KEY"); err != nil {
+		t.Fatal(err)
+	}
+}

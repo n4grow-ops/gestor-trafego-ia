@@ -140,3 +140,26 @@ func TestTickWithoutWork(t *testing.T) {
 		t.Fatalf("did = %v err = %v", did, err)
 	}
 }
+
+// Depois da troca de provedor, eventos ainda pendentes do provedor antigo são lidos pelo parser dele.
+func TestTickUsesParserOfEventProvider(t *testing.T) {
+	wa := &fakeWA{parse: func([]byte) (whatsapp.Inbound, bool, error) {
+		t.Fatal("parser do provedor ativo usado para evento do antigo")
+		return whatsapp.Inbound{}, false, nil
+	}}
+	legacy := &fakeWA{parse: func([]byte) (whatsapp.Inbound, bool, error) {
+		return whatsapp.Inbound{ExternalID: "e1", ChatID: "5511911112222@c.us", Phone: "5511911112222", Kind: whatsapp.KindText, Text: "oi"}, true, nil
+	}}
+	w, st, pool := setup(t, wa)
+	w.Parsers = map[string]whatsapp.Provider{"legado": legacy}
+	st.InsertInbox(ctx, "legado", "e1", []byte(`{}`))
+	if _, err := w.Tick(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if status, _, lastErr := eventStatus(t, pool); status != "done" {
+		t.Fatalf("status = %s erro = %s", status, lastErr)
+	}
+	if len(wa.sent) != 1 {
+		t.Fatalf("resposta deve sair pelo provedor ativo: %v", wa.sent)
+	}
+}

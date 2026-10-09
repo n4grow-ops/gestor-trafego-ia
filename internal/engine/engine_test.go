@@ -389,3 +389,22 @@ func TestGiveUpDuringCollectionResets(t *testing.T) {
 		t.Errorf("conversa = %+v resposta = %q", c, h.wa.last().Text)
 	}
 }
+
+// renamedWA é o mesmo fake com outro nome de provedor (ex.: troca do WAHA pela Wame).
+type renamedWA struct{ *fakeWA }
+
+func (renamedWA) Name() string { return "wame" }
+
+func TestIdentityProviderSurvivesProviderSwap(t *testing.T) {
+	h := newHarness(t, "owner")
+	h.eng.WA = renamedWA{h.wa}
+	h.eng.IdentityProvider = "openwa"
+	h.att.Responses = []string{`{"intent":"question","reply":"Oi, Ana!"}`}
+	h.say("oi")
+	if got := h.wa.last(); strings.Contains(got.Text, "não está liberado") {
+		t.Fatalf("cliente cadastrado tratado como desconhecido: %+v", got)
+	}
+	if n := h.count(`SELECT count(*) FROM whatsapp_identities`); n != 1 {
+		t.Fatalf("identidades = %d, want 1", n)
+	}
+}

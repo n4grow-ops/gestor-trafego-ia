@@ -63,15 +63,18 @@ type ReplyJob struct {
 }
 
 type Engine struct {
-	Store           *store.Store
-	WA              whatsapp.Provider
-	Attendant       *attendant.Agent
-	Manager         *manager.Agent
-	Transcriber     llm.Provider
-	TranscribeModel string
-	OperatorPhone   string
-	Now             func() time.Time
-	Log             *slog.Logger
+	Store *store.Store
+	WA    whatsapp.Provider
+	// IdentityProvider é o namespace de whatsapp_identities. Fica "waha" mesmo com a Wame,
+	// para os clientes atuais continuarem cadastrados. Vazio = WA.Name().
+	IdentityProvider string
+	Attendant        *attendant.Agent
+	Manager          *manager.Agent
+	Transcriber      llm.Provider
+	TranscribeModel  string
+	OperatorPhone    string
+	Now              func() time.Time
+	Log              *slog.Logger
 
 	// Cadastro automático de número novo, com limites de custo.
 	AutoSignup       bool
@@ -99,6 +102,13 @@ type Engine struct {
 	MetaConnectBaseURL string
 }
 
+func (e *Engine) identityProvider() string {
+	if e.IdentityProvider != "" {
+		return e.IdentityProvider
+	}
+	return e.WA.Name()
+}
+
 func (e *Engine) now() time.Time {
 	if e.Now != nil {
 		return e.Now()
@@ -108,14 +118,14 @@ func (e *Engine) now() time.Time {
 
 // HandleInbound processa uma mensagem recebida do cliente.
 func (e *Engine) HandleInbound(ctx context.Context, in whatsapp.Inbound) error {
-	ident, err := e.Store.FindIdentity(ctx, e.WA.Name(), in.Phone)
+	ident, err := e.Store.FindIdentity(ctx, e.identityProvider(), in.Phone)
 	newClient := false
 	if errors.Is(err, store.ErrNotFound) {
 		if !e.AutoSignup {
-			e.Log.Info("telefone não cadastrado", "provider", e.WA.Name())
+			e.Log.Info("telefone não cadastrado", "provider", e.identityProvider())
 			return e.WA.SendText(ctx, in.ChatID, msgUnknown)
 		}
-		if ident, err = e.Store.AutoSignup(ctx, e.WA.Name(), in.Phone, e.SignupMaxBudget, e.SignupDailyLimit); err != nil {
+		if ident, err = e.Store.AutoSignup(ctx, e.identityProvider(), in.Phone, e.SignupMaxBudget, e.SignupDailyLimit); err != nil {
 			return err
 		}
 		newClient = true

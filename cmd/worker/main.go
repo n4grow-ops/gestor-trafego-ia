@@ -17,7 +17,7 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/storage"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp"
-	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp/waha"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp/build"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/worker"
 )
 
@@ -32,7 +32,7 @@ func main() {
 func run(log *slog.Logger) error {
 	cfg := config.Load(os.Getenv)
 	if err := cfg.Require("DATABASE_URL", "OPENROUTER_API_KEY", "ATTENDANT_MODEL", "MANAGER_MODEL",
-		"TRANSCRIBE_MODEL", "WAHA_URL", "WAHA_API_KEY"); err != nil {
+		"TRANSCRIBE_MODEL"); err != nil {
 		return err
 	}
 	// Sem normalizar: o aviso precisa ir ao número exatamente como está no WhatsApp do operador.
@@ -51,17 +51,22 @@ func run(log *slog.Logger) error {
 	}
 
 	st := store.New(pool)
-	wa := waha.New(cfg.WAHAURL, cfg.WAHAAPIKey, cfg.WAHASession)
+	wa, err := build.Provider(cfg)
+	if err != nil {
+		return err
+	}
 	router := llm.NewOpenRouter(cfg.OpenRouterBaseURL, cfg.OpenRouterAPIKey)
 	eng := &engine.Engine{
-		Store:           st,
-		WA:              wa,
-		Attendant:       &attendant.Agent{LLM: router, Model: cfg.AttendantModel},
-		Manager:         &manager.Agent{LLM: router, Model: cfg.ManagerModel},
-		Transcriber:     router,
-		TranscribeModel: cfg.TranscribeModel,
-		OperatorPhone:   operator,
-		Log:             log,
+		Store: st,
+		WA:    wa,
+		// Namespace histórico das identidades: não muda com a troca de provedor.
+		IdentityProvider: "waha",
+		Attendant:        &attendant.Agent{LLM: router, Model: cfg.AttendantModel},
+		Manager:          &manager.Agent{LLM: router, Model: cfg.ManagerModel},
+		Transcriber:      router,
+		TranscribeModel:  cfg.TranscribeModel,
+		OperatorPhone:    operator,
+		Log:              log,
 
 		AutoSignup:       cfg.AutoSignup,
 		SignupMaxBudget:  cfg.SignupMaxBudget,
@@ -93,8 +98,8 @@ func run(log *slog.Logger) error {
 	if err := eng.EnsureDailyReport(ctx); err != nil {
 		log.Error("falha ao agendar relatório diário", "erro", err)
 	}
-	w := &worker.Worker{Store: st, WA: wa, Engine: eng, Log: log}
-	log.Info("worker iniciado", "atendente", cfg.AttendantModel, "gestor", cfg.ManagerModel,
+	w := &worker.Worker{Store: st, WA: wa, Parsers: build.Parsers(cfg), Engine: eng, Log: log}
+	log.Info("worker iniciado", "whatsapp", wa.Name(), "atendente", cfg.AttendantModel, "gestor", cfg.ManagerModel,
 		"humano", cfg.Humanize, "voz", eng.Voice != nil, "cadastro", eng.SignupBaseURL != "",
 		"anuncios", eng.Storage != nil, "relatorio", eng.ReportPhone != "", "conexao_meta", eng.MetaConnectBaseURL != "")
 	return w.Run(ctx)

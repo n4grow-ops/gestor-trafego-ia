@@ -13,8 +13,10 @@ import (
 )
 
 type Worker struct {
-	Store   *store.Store
-	WA      whatsapp.Provider
+	Store *store.Store
+	WA    whatsapp.Provider
+	// Parsers lê eventos gravados por outro provedor (troca WAHA ↔ Wame). Sem entrada, usa WA.
+	Parsers map[string]whatsapp.Provider
 	Engine  *engine.Engine
 	Log     *slog.Logger
 	Idle    time.Duration // espera quando não há trabalho (padrão 1 s)
@@ -62,7 +64,11 @@ func (w *Worker) inbox(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	procErr := w.safely(ctx, func(ctx context.Context) error {
-		in, keep, err := w.WA.ParseWebhook(ev.Payload)
+		parser := w.WA
+		if p, ok := w.Parsers[ev.Provider]; ok && p != nil {
+			parser = p
+		}
+		in, keep, err := parser.ParseWebhook(ev.Payload)
 		if err != nil || !keep {
 			return err
 		}

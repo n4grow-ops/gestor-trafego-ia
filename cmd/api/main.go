@@ -18,7 +18,7 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/secretbox"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/signup"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
-	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp/waha"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp/build"
 )
 
 // termsVersion é a versão dos Termos e da Política de Privacidade gravada em cada aceite.
@@ -50,9 +50,13 @@ func run(log *slog.Logger) error {
 	}
 
 	st := store.New(pool)
+	wa, err := build.Provider(cfg)
+	if err != nil {
+		return err
+	}
 	webhook := &httpapi.Webhook{
 		Store:  st,
-		WA:     waha.New(cfg.WAHAURL, cfg.WAHAAPIKey, cfg.WAHASession), // só o parse é usado aqui
+		WA:     wa, // só o parse é usado aqui
 		Secret: cfg.WebhookSecret,
 		Log:    log,
 	}
