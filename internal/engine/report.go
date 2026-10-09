@@ -3,10 +3,12 @@ package engine
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp"
 )
 
 const (
@@ -51,9 +53,14 @@ func (e *Engine) dailyReport(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	cost := strings.Replace(fmt.Sprintf("%.2f", s.CostUSD), ".", ",", 1)
 	text := fmt.Sprintf(msgDailyReport, s.NewContacts, s.Registered, s.PendingWithLink, s.Inbound,
-		s.Proposals, s.Approved, s.Creatives, strings.Replace(fmt.Sprintf("%.2f", s.CostUSD), ".", ",", 1))
-	if err := e.Store.Enqueue(ctx, sendJob(0, e.WA.ChatIDForPhone(e.ReportPhone), text)); err != nil {
+		s.Proposals, s.Approved, s.Creatives, cost)
+	tpl := &whatsapp.Template{Name: TplDailyReport, Params: []string{
+		strconv.Itoa(s.NewContacts), strconv.Itoa(s.Registered), strconv.Itoa(s.PendingWithLink), strconv.Itoa(s.Inbound),
+		strconv.Itoa(s.Proposals), strconv.Itoa(s.Approved), strconv.Itoa(s.Creatives), cost,
+	}}
+	if err := e.Store.Enqueue(ctx, systemSendJob(0, e.WA.ChatIDForPhone(e.ReportPhone), text, tpl)); err != nil {
 		return err
 	}
 	return e.enqueueReport(ctx)

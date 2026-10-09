@@ -3,6 +3,7 @@ package store_test
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/contract"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
@@ -60,5 +61,30 @@ func TestRecentMessagesOldestFirst(t *testing.T) {
 	}
 	if len(msgs) != 2 || msgs[0] != want[0] || msgs[1] != want[1] {
 		t.Errorf("msgs = %+v", msgs)
+	}
+}
+
+func TestLastInboundAt(t *testing.T) {
+	st, pool := newStore(t)
+	ident := seedIdentity(t, st, "owner", "5511988887777")
+	c, err := st.GetOrCreateConversation(ctx, ident.ID, "a@c.us")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := st.LastInboundAt(ctx, c.ID); ok || err != nil {
+		t.Fatalf("sem mensagem: ok=%v err=%v", ok, err)
+	}
+	if _, err := st.AddInbound(ctx, c.ID, "text", "oi"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE messages SET created_at = now() - interval '30 hours'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddMessage(ctx, c.ID, "out", "text", "resposta mais nova não conta"); err != nil {
+		t.Fatal(err)
+	}
+	at, ok, err := st.LastInboundAt(ctx, c.ID)
+	if !ok || err != nil || time.Since(at) < 29*time.Hour {
+		t.Fatalf("at=%v ok=%v err=%v", at, ok, err)
 	}
 }

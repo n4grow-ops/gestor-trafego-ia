@@ -54,6 +54,8 @@ type SendJob struct {
 	Voice          bool     `json:"voice,omitempty"` // tenta mandar como mensagem de voz
 	Next           []string `json:"next,omitempty"`  // balões seguintes, enviados em jobs encadeados
 	Typed          bool     `json:"typed,omitempty"` // "digitando…" já apareceu: agora é entregar
+	// Template: modelo aprovado usado no lugar do texto fora da janela de 24 h (Cloud API).
+	Template *whatsapp.Template `json:"template,omitempty"`
 }
 
 // ReplyJob responde as mensagens seguidas de uma conversa depois do debounce.
@@ -462,7 +464,8 @@ func (e *Engine) escalate(ctx context.Context, ident store.Identity, conv store.
 	jobs := []store.JobSpec{sendJob(conv.ID, conv.ChatID, clientMsg)}
 	if e.OperatorPhone != "" {
 		note := fmt.Sprintf(msgOperator, ident.MemberName, ident.OrgName, ident.Phone, reason)
-		jobs = append(jobs, sendJob(0, e.WA.ChatIDForPhone(e.OperatorPhone), note))
+		jobs = append(jobs, systemSendJob(0, e.WA.ChatIDForPhone(e.OperatorPhone), note,
+			TeamAlertTemplate(ident.MemberName, ident.OrgName, ident.Phone, reason)))
 	}
 	if err := e.Store.SetStateAndEnqueue(ctx, conv.ID, store.StateNeedsHuman, conv.Fields, jobs...); err != nil {
 		return err

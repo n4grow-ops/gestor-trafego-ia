@@ -56,6 +56,19 @@ type Provider interface {
 	ChatIDForPhone(phone string) string
 }
 
+// Template é um modelo aprovado pela Meta, com os valores das variáveis {{1}}, {{2}}… do corpo.
+type Template struct {
+	Name   string   `json:"name"`
+	Params []string `json:"params,omitempty"`
+}
+
+// TemplateSender é opcional: na Cloud API, fora de 24 h desde a última mensagem do cliente,
+// só modelo aprovado entra. NeedsTemplates diz se o provedor está sujeito a essa janela.
+type TemplateSender interface {
+	NeedsTemplates() bool
+	SendTemplate(ctx context.Context, chatID string, t Template) error
+}
+
 // ConnectionEvent é o aviso do provedor de que o número conectou ou caiu.
 type ConnectionEvent struct {
 	Connected bool

@@ -9,6 +9,7 @@ import (
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/signup"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp"
 )
 
 const (
@@ -90,11 +91,20 @@ func (e *Engine) remind(ctx context.Context, r RemindJob) error {
 		msg = msgSignupReminder2
 	}
 	e.audit(ctx, ident.OrgID, "system", "signup_reminder_sent", map[string]any{"identity_id": ident.ID, "attempt": r.Attempt})
-	if err := e.send(ctx, conv, fmt.Sprintf(msg, link)); err != nil {
+	if err := e.sendReminder(ctx, conv, fmt.Sprintf(msg, link), link); err != nil {
 		return err
 	}
 	if r.Attempt == 1 {
 		return e.enqueueReminder(ctx, RemindJob{IdentityID: r.IdentityID, ConversationID: r.ConversationID, Attempt: 2}, secondReminderAfter)
 	}
 	return nil
+}
+
+// sendReminder: na Cloud API vai pela fila com o modelo aprovado, que entra se o cliente estiver
+// calado há mais de 23 h; nos outros provedores segue como mensagem fixa.
+func (e *Engine) sendReminder(ctx context.Context, conv store.Conversation, text, link string) error {
+	if _, ok := e.templateSender(); !ok {
+		return e.send(ctx, conv, text)
+	}
+	return e.Store.Enqueue(ctx, systemSendJob(conv.ID, conv.ChatID, text, &whatsapp.Template{Name: TplSignupReminder, Params: []string{link}}))
 }

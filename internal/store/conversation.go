@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -126,6 +127,17 @@ func (s *Store) LatestInboundID(ctx context.Context, convID int64) (int64, error
 	err := s.pool.QueryRow(ctx, `SELECT coalesce(max(id), 0) FROM messages
 		WHERE conversation_id = $1 AND direction = 'in' AND kind <> 'skipped'`, convID).Scan(&id)
 	return id, err
+}
+
+// LastInboundAt é quando o cliente escreveu pela última vez (base da janela de 24 h da Cloud API).
+func (s *Store) LastInboundAt(ctx context.Context, convID int64) (time.Time, bool, error) {
+	var at *time.Time
+	err := s.pool.QueryRow(ctx, `SELECT max(created_at) FROM messages
+		WHERE conversation_id = $1 AND direction = 'in'`, convID).Scan(&at)
+	if err != nil || at == nil {
+		return time.Time{}, false, err
+	}
+	return *at, true, nil
 }
 
 // HasPendingSends diz se a conversa ainda tem envios na fila (balões de uma resposta anterior).

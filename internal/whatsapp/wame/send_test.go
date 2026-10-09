@@ -16,6 +16,7 @@ import (
 var (
 	_ whatsapp.Provider         = (*wame.Client)(nil)
 	_ whatsapp.ConnectionParser = (*wame.Client)(nil)
+	_ whatsapp.TemplateSender   = (*wame.Client)(nil)
 )
 
 type call struct {
@@ -166,5 +167,37 @@ func TestDownloadMediaError(t *testing.T) {
 func TestChatIDForPhone(t *testing.T) {
 	if got := wame.New("", "K", "").ChatIDForPhone("5511999998888"); got != "5511999998888" {
 		t.Fatal(got)
+	}
+}
+
+func TestSendTemplate(t *testing.T) {
+	c, calls := server(t, 200, `{}`)
+	if c.NeedsTemplates() {
+		t.Fatal("instância QR não usa modelos")
+	}
+	c.Official = true
+	if !c.NeedsTemplates() {
+		t.Fatal("instância oficial usa modelos")
+	}
+	must(t, c.SendTemplate(context.Background(), "5511999998888@c.us", whatsapp.Template{Name: "aviso_equipe", Params: []string{"Ana\nSilva", "", "a    b"}}))
+	got := (*calls)[0]
+	if got.Path != "/KEY/message/template" || got.Body["to"] != "5511999998888" || got.Body["name"] != "aviso_equipe" || got.Body["language"] != "pt_BR" {
+		t.Fatalf("%+v", got)
+	}
+	comps := got.Body["components"].([]any)
+	params := comps[0].(map[string]any)["parameters"].([]any)
+	want := []string{"Ana Silva", "-", "a b"}
+	for i, p := range params {
+		if p.(map[string]any)["text"] != want[i] || p.(map[string]any)["type"] != "text" {
+			t.Errorf("param %d = %v, want %q", i, p, want[i])
+		}
+	}
+}
+
+func TestSendTemplateWithoutParams(t *testing.T) {
+	c, calls := server(t, 200, `{}`)
+	must(t, c.SendTemplate(context.Background(), "5511999998888", whatsapp.Template{Name: "ola"}))
+	if _, has := (*calls)[0].Body["components"]; has {
+		t.Fatalf("sem variáveis não manda components: %+v", (*calls)[0].Body)
 	}
 }

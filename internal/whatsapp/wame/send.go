@@ -107,6 +107,31 @@ func (c *Client) DownloadMedia(ctx context.Context, in whatsapp.Inbound) ([]byte
 
 func (c *Client) ChatIDForPhone(phone string) string { return phone }
 
+// NeedsTemplates: só a instância oficial (Cloud API) tem a janela de 24 h.
+func (c *Client) NeedsTemplates() bool { return c.Official }
+
+// SendTemplate manda um modelo aprovado (pt_BR). A Meta recusa variável vazia, com quebra de
+// linha, tab ou mais de 4 espaços seguidos, então os valores são limpos antes.
+func (c *Client) SendTemplate(ctx context.Context, chatID string, t whatsapp.Template) error {
+	body := map[string]any{"to": to(chatID), "name": t.Name, "language": "pt_BR"}
+	if len(t.Params) > 0 {
+		params := make([]map[string]string, len(t.Params))
+		for i, p := range t.Params {
+			params[i] = map[string]string{"type": "text", "text": templateParam(p)}
+		}
+		body["components"] = []map[string]any{{"type": "body", "parameters": params}}
+	}
+	return c.send(ctx, http.MethodPost, "/message/template", body)
+}
+
+func templateParam(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if s == "" {
+		return "-"
+	}
+	return s
+}
+
 func (c *Client) send(ctx context.Context, method, path string, payload any) error {
 	var body io.Reader
 	if payload != nil {

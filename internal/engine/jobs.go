@@ -29,7 +29,7 @@ func (e *Engine) HandleJob(ctx context.Context, job store.Job) error {
 		if s.Human {
 			return e.sendHuman(ctx, s)
 		}
-		if err := e.WA.SendText(ctx, s.ChatID, s.Text); err != nil {
+		if err := e.deliver(ctx, s); err != nil {
 			return err
 		}
 		if s.ConversationID == 0 {
