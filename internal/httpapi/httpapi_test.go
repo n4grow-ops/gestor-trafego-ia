@@ -16,6 +16,7 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/testdb"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp/waha"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp/wame"
 )
 
 const msg = `{"id":"evt","timestamp":1,"session":"default","engine":"GOWS","event":"message","payload":{"id":"m1","from":"5511988887777@c.us","body":"oi"},"environment":{}}`
@@ -125,5 +126,37 @@ func TestMuxRoutesWebhookOnlyOnPost(t *testing.T) {
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/webhooks/whatsapp?token=segredo", nil))
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("GET: %d", rec.Code)
+	}
+}
+
+func TestWebhookWameConnectionAndDuplicate(t *testing.T) {
+	pool := testdb.New(t)
+	st := store.New(pool)
+	wh := &httpapi.Webhook{Store: st, WA: wame.New("http://nao-usado", "k", ""), Secret: "segredo", Log: discard}
+	conn := `{"object":"wame","entry":[{"changes":[{"field":"connection","value":{"connection":{"status":"close","code":1004,"reason":"disconnected"}}}]}]}`
+	rec := post(wh, "/webhooks/whatsapp?token=segredo", conn)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "connection") {
+		t.Fatalf("conexão: %d %s", rec.Code, rec.Body)
+	}
+	s, err := st.WhatsAppStatus(context.Background(), "wame")
+	if err != nil || s.Connected || s.Code != 1004 {
+		t.Fatalf("estado: %+v %v", s, err)
+	}
+	if n := inboxCount(t, pool); n != 0 {
+		t.Fatalf("aviso de conexão não vai para o inbox: %d", n)
+	}
+	m := `{"object":"wame","entry":[{"changes":[{"field":"messages","value":{"messages":[{"from":"5511999998888","chat_type":"individual","id":"W1","type":"text","text":{"body":"oi"}}]}}]}]}`
+	if rec := post(wh, "/webhooks/whatsapp?token=segredo", m); !strings.Contains(rec.Body.String(), "queued") {
+		t.Fatalf("1ª: %s", rec.Body)
+	}
+	if rec := post(wh, "/webhooks/whatsapp?token=segredo", m); !strings.Contains(rec.Body.String(), "duplicate") {
+		t.Fatalf("2ª: %s", rec.Body)
+	}
+	status := `{"object":"wame","entry":[{"changes":[{"field":"messages","value":{"statuses":[{"id":"W1","status":"read"}]}}]}]}`
+	if rec := post(wh, "/webhooks/whatsapp?token=segredo", status); !strings.Contains(rec.Body.String(), "ignored") {
+		t.Fatalf("status de entrega: %s", rec.Body)
+	}
+	if rec := post(wh, "/webhooks/whatsapp?token=errado", conn); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("segredo errado: %d", rec.Code)
 	}
 }

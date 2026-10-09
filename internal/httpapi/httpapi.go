@@ -58,6 +58,12 @@ func (h *Webhook) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "corpo inválido", http.StatusBadRequest)
 		return
 	}
+	if cp, isCP := h.WA.(whatsapp.ConnectionParser); isCP {
+		if ev, isConn := cp.ParseConnection(body); isConn {
+			h.connection(w, r, ev)
+			return
+		}
+	}
 	in, ok, err := h.WA.ParseWebhook(body)
 	if err != nil {
 		h.Log.Warn("webhook inválido", "erro", err)
@@ -80,4 +86,23 @@ func (h *Webhook) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	io.WriteString(w, `{"status":"queued"}`)
+}
+
+// connection grava o aviso de queda ou volta do número. O alerta ativo é do admin, que lê
+// whatsapp_status: avisar pelo WhatsApp não adianta quando é ele que caiu.
+func (h *Webhook) connection(w http.ResponseWriter, r *http.Request, ev whatsapp.ConnectionEvent) {
+	changed, err := h.Store.SetWhatsAppStatus(r.Context(), h.WA.Name(), ev)
+	if err != nil {
+		h.Log.Error("falha ao gravar estado do WhatsApp", "erro", err)
+		http.Error(w, "erro interno", http.StatusInternalServerError)
+		return
+	}
+	switch {
+	case changed && !ev.Connected:
+		h.Log.Warn("WhatsApp do bot desconectado", "provider", h.WA.Name(), "codigo", ev.Code, "motivo", ev.Reason)
+	case changed:
+		h.Log.Info("WhatsApp do bot conectado", "provider", h.WA.Name())
+	}
+	w.Header().Set("Content-Type", "application/json")
+	io.WriteString(w, `{"status":"connection"}`)
 }
