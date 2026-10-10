@@ -61,7 +61,9 @@ func scanTeam(row pgx.Row) (TeamMember, error) {
 	return m, notFound(err)
 }
 
-// EnsureAdmins garante os e-mails como administradores ativos (ADMIN_EMAILS). Ignora os inválidos.
+// EnsureAdmins cria como administradores os e-mails de ADMIN_EMAILS que ainda não estão na equipe.
+// Quem já existe fica como está: rebaixar ou desativar à mão não é desfeito a cada partida.
+// Ignora os inválidos.
 func (s *Store) EnsureAdmins(ctx context.Context, emails []string) error {
 	for _, raw := range emails {
 		e, ok := NormalizeEmail(raw)
@@ -69,7 +71,7 @@ func (s *Store) EnsureAdmins(ctx context.Context, emails []string) error {
 			continue
 		}
 		if _, err := s.pool.Exec(ctx, `INSERT INTO team_members (email, role, added_by) VALUES ($1, 'admin', 'ADMIN_EMAILS')
-			ON CONFLICT (email) DO UPDATE SET role = 'admin', active = true`, e); err != nil {
+			ON CONFLICT (email) DO NOTHING`, e); err != nil {
 			return err
 		}
 	}
@@ -110,10 +112,33 @@ func (s *Store) AddTeamMember(ctx context.Context, email, name, role, addedBy st
 	if len([]rune(name)) > 80 {
 		name = string([]rune(name)[:80])
 	}
-	return scanTeam(s.pool.QueryRow(ctx, `INSERT INTO team_members (email, name, role, added_by) VALUES ($1, $2, $3, nullif($4, ''))
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return TeamMember{}, err
+	}
+	defer tx.Rollback(ctx)
+	// Mesma trava do RemoveTeamMember: rebaixar não pode deixar a equipe sem administrador ativo.
+	if _, err := tx.Exec(ctx, `LOCK TABLE team_members IN SHARE ROW EXCLUSIVE MODE`); err != nil {
+		return TeamMember{}, err
+	}
+	if role != RoleAdmin {
+		var lastAdmin bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM team_members WHERE email = $1 AND role = 'admin' AND active)
+			AND NOT EXISTS (SELECT 1 FROM team_members WHERE email <> $1 AND role = 'admin' AND active)`, e).Scan(&lastAdmin); err != nil {
+			return TeamMember{}, err
+		}
+		if lastAdmin {
+			return TeamMember{}, ErrLastAdmin
+		}
+	}
+	m, err := scanTeam(tx.QueryRow(ctx, `INSERT INTO team_members (email, name, role, added_by) VALUES ($1, $2, $3, nullif($4, ''))
 		ON CONFLICT (email) DO UPDATE SET role = EXCLUDED.role, active = true,
 		  name = CASE WHEN EXCLUDED.name = '' THEN team_members.name ELSE EXCLUDED.name END
 		RETURNING `+teamCols, e, name, role, addedBy))
+	if err != nil {
+		return TeamMember{}, err
+	}
+	return m, tx.Commit(ctx)
 }
 
 // RemoveTeamMember tira a pessoa da equipe; recusa tirar o último administrador ativo.

@@ -27,7 +27,7 @@ func TestNormalizeEmail(t *testing.T) {
 }
 
 func TestTeamMembers(t *testing.T) {
-	st := store.New(testdb.New(t))
+	st, pool := newStore(t)
 	ctx := context.Background()
 
 	if err := st.EnsureAdmins(ctx, []string{" Dono@MeuAnuncio.io", "", "invalido"}); err != nil {
@@ -37,16 +37,39 @@ func TestTeamMembers(t *testing.T) {
 	if err != nil || owner.Role != "admin" || !owner.Active {
 		t.Fatalf("bootstrap: %+v %v", owner, err)
 	}
-	// Rodar de novo não duplica e reativa quem tinha sido rebaixado.
+	// O único administrador não pode ser rebaixado.
+	if _, err := st.AddTeamMember(ctx, "dono@meuanuncio.io", "Dono", "staff", "teste"); !errors.Is(err, store.ErrLastAdmin) {
+		t.Fatalf("rebaixar o último admin: %v", err)
+	}
+	if owner, _ = st.TeamMemberByEmail(ctx, "dono@meuanuncio.io"); owner.Role != "admin" {
+		t.Fatalf("último admin rebaixado: %+v", owner)
+	}
+	// Com outro administrador, rebaixa; e o bootstrap não desfaz o que foi feito à mão.
+	if _, err := st.AddTeamMember(ctx, "socio@meuanuncio.io", "Sócio", "admin", "dono@meuanuncio.io"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := st.AddTeamMember(ctx, "dono@meuanuncio.io", "Dono", "staff", "teste"); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.EnsureAdmins(ctx, []string{"dono@meuanuncio.io"}); err != nil {
+	if _, err := pool.Exec(ctx, `UPDATE team_members SET active = false WHERE email = 'socio@meuanuncio.io'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.EnsureAdmins(ctx, []string{"dono@meuanuncio.io", "socio@meuanuncio.io"}); err != nil {
 		t.Fatal(err)
 	}
 	owner, _ = st.TeamMemberByEmail(ctx, "dono@meuanuncio.io")
-	if owner.Role != "admin" || owner.Name != "Dono" {
-		t.Fatalf("bootstrap deve garantir admin e manter o nome: %+v", owner)
+	if owner.Role != "staff" || owner.Name != "Dono" {
+		t.Fatalf("bootstrap promoveu de novo quem foi rebaixado: %+v", owner)
+	}
+	if socio, _ := st.TeamMemberByEmail(ctx, "socio@meuanuncio.io"); socio.Active {
+		t.Fatalf("bootstrap reativou quem foi desativado: %+v", socio)
+	}
+	// Volta ao estado inicial para o resto do teste.
+	if _, err := st.AddTeamMember(ctx, "dono@meuanuncio.io", "Dono", "admin", "teste"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `DELETE FROM team_members WHERE email = 'socio@meuanuncio.io'`); err != nil {
+		t.Fatal(err)
 	}
 
 	staff, err := st.AddTeamMember(ctx, "Marina@MeuAnuncio.io", "Marina", "staff", "dono@meuanuncio.io")

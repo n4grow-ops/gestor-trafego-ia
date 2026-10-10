@@ -366,6 +366,13 @@ func TestAdminPermissions(t *testing.T) {
 		t.Errorf("admin deve ver mais ações: %d x %d", len(all.body["entries"].([]any)), len(mine.body["entries"].([]any)))
 	}
 
+	// O único admin não se rebaixa pelo formulário da equipe.
+	if r := e.do("POST", "/api/team", admin, map[string]string{"email": "dono@meuanuncio.io", "role": "staff"}); r.code != http.StatusConflict || r.body["error"] != "ultimo_admin" {
+		t.Fatalf("rebaixar o último admin = %d %s", r.code, r.raw)
+	}
+	if r := e.do("GET", "/api/team", admin, nil); r.code != 200 {
+		t.Fatalf("admin perdeu o acesso: %d", r.code)
+	}
 	// Equipe: o admin adiciona e remove; não remove a si mesmo.
 	r := e.do("POST", "/api/team", admin, map[string]string{"email": "Pedro@MeuAnuncio.io", "name": "Pedro", "role": "staff"})
 	if r.code != http.StatusCreated || r.body["email"] != "pedro@meuanuncio.io" {
