@@ -131,3 +131,32 @@ func TestLoadWhatsAppProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestAdminConfig(t *testing.T) {
+	c := config.Load(env(nil))
+	if c.AdminHost != "admin.meuanuncio.io" || c.USDBRL != 5.5 || c.AdminMode() != "" {
+		t.Fatalf("padrões: host=%q cotação=%v modo=%q", c.AdminHost, c.USDBRL, c.AdminMode())
+	}
+	key := "0123456789abcdef0123456789abcdef"
+	c = config.Load(env(map[string]string{
+		"ADMIN_SESSION_KEY": key, "ADMIN_EMAILS": " dono@x.io, ,Outro@X.io ", "ADMIN_HOST": "Painel.Exemplo.com",
+		"SUPABASE_URL": "https://p.supabase.co", "SUPABASE_PUBLISHABLE_KEY": "pub", "USD_BRL": "5,1",
+	}))
+	if c.AdminMode() != "otp" || len(c.AdminEmails) != 2 || c.AdminEmails[1] != "Outro@X.io" || c.AdminHost != "painel.exemplo.com" || c.USDBRL != 5.1 {
+		t.Fatalf("produção: %+v modo=%q", c, c.AdminMode())
+	}
+	// Chave curta desliga o painel em produção.
+	c = config.Load(env(map[string]string{"ADMIN_SESSION_KEY": "curta", "SUPABASE_URL": "https://p.supabase.co", "SUPABASE_PUBLISHABLE_KEY": "pub"}))
+	if c.AdminMode() != "" {
+		t.Fatalf("chave curta: %q", c.AdminMode())
+	}
+	// Login de desenvolvimento só sem Supabase; com Supabase configurado ele é ignorado.
+	c = config.Load(env(map[string]string{"ADMIN_DEV_LOGIN": "true"}))
+	if c.AdminMode() != "dev" {
+		t.Fatalf("dev: %q", c.AdminMode())
+	}
+	c = config.Load(env(map[string]string{"ADMIN_DEV_LOGIN": "true", "ADMIN_SESSION_KEY": key, "SUPABASE_URL": "https://p.supabase.co", "SUPABASE_PUBLISHABLE_KEY": "pub"}))
+	if c.AdminMode() != "otp" {
+		t.Fatalf("dev com Supabase: %q", c.AdminMode())
+	}
+}

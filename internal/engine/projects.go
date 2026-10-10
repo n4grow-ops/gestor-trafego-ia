@@ -9,6 +9,7 @@ import (
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/contract"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/campaign"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/mia"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 )
 
@@ -37,10 +38,15 @@ var stageLabels = map[string]string{
 	store.StageArchived:          "arquivado",
 }
 
-func missingText(f contract.Fields) string {
+// missingText lista o que falta para a proposta, com os campos obrigatórios configurados na Mia.
+func missingText(cfg mia.Config, f contract.Fields) string {
 	var parts []string
-	for _, m := range f.Missing() {
-		parts = append(parts, fieldLabels[m])
+	for _, m := range cfg.CampaignMissing(f) {
+		l, ok := fieldLabels[m]
+		if !ok {
+			l = cfg.Label(m)
+		}
+		parts = append(parts, l)
 	}
 	return strings.Join(parts, ", ")
 }
@@ -135,7 +141,7 @@ func (e *Engine) startProject(ctx context.Context, ident store.Identity, conv st
 	}
 	conv.ActiveProjectID, conv.State, conv.Fields = &p.ID, store.StateCollecting, fields
 	e.audit(ctx, ident.OrgID, member(ident), "project_started", map[string]any{"project_id": p.ID, "created": created})
-	if len(fields.Missing()) == 0 {
+	if len(e.miaConfig(ctx).CampaignMissing(fields)) == 0 {
 		return e.requestProposal(ctx, ident, conv, fields, "", fmt.Sprintf(msgProjectReady, p.Name), true)
 	}
 	if err := e.Store.UpdateConversation(ctx, conv.ID, store.StateCollecting, fields); err != nil {
@@ -145,7 +151,7 @@ func (e *Engine) startProject(ctx context.Context, ident store.Identity, conv st
 	if created {
 		verb = "Criei"
 	}
-	return e.send(ctx, conv, fmt.Sprintf(msgProjectStarted, verb, p.Name, missingText(fields)))
+	return e.send(ctx, conv, fmt.Sprintf(msgProjectStarted, verb, p.Name, missingText(e.miaConfig(ctx), fields)))
 }
 
 // switchProject retoma um projeto existente escolhido pelo nome.
@@ -156,7 +162,7 @@ func (e *Engine) switchProject(ctx context.Context, ident store.Identity, conv s
 	}
 	switch len(found) {
 	case 0:
-		return e.send(ctx, conv, fmt.Sprintf(msgProjectNotFound, turn.Project)+"\n\n"+listText(projects))
+		return e.send(ctx, conv, fmt.Sprintf(msgProjectNotFound, turn.Project)+"\n\n"+listText(e.miaConfig(ctx), projects))
 	case 1:
 	default:
 		var names []string
@@ -181,13 +187,13 @@ func (e *Engine) switchProject(ctx context.Context, ident store.Identity, conv s
 	}
 	conv.ActiveProjectID, conv.State, conv.Fields = &target.ID, store.StateCollecting, fields
 	e.audit(ctx, ident.OrgID, member(ident), "project_resumed", map[string]any{"project_id": target.ID})
-	if len(fields.Missing()) == 0 {
+	if len(e.miaConfig(ctx).CampaignMissing(fields)) == 0 {
 		return e.send(ctx, conv, fmt.Sprintf(msgProjectResumedComplete, target.Name))
 	}
-	return e.send(ctx, conv, fmt.Sprintf(msgProjectStarted, "Retomei", target.Name, missingText(fields)))
+	return e.send(ctx, conv, fmt.Sprintf(msgProjectStarted, "Retomei", target.Name, missingText(e.miaConfig(ctx), fields)))
 }
 
-func listText(projects []store.Project) string {
+func listText(cfg mia.Config, projects []store.Project) string {
 	if len(projects) == 0 {
 		return msgNoProjects
 	}
@@ -196,7 +202,7 @@ func listText(projects []store.Project) string {
 	for i, p := range projects {
 		fmt.Fprintf(&b, "\n%d. *%s* — %s", i+1, p.Name, stageLabels[p.Stage])
 		if p.Stage == store.StageCollecting {
-			if m := missingText(p.Fields); m != "" {
+			if m := missingText(cfg, p.Fields); m != "" {
 				fmt.Fprintf(&b, " (falta: %s)", m)
 			}
 		}
@@ -231,7 +237,7 @@ func (e *Engine) projectStatus(ctx context.Context, ident store.Identity, conv s
 		}
 	}
 	if target == nil {
-		return e.send(ctx, conv, fmt.Sprintf(msgProjectNotFound, name)+"\n\n"+listText(projects))
+		return e.send(ctx, conv, fmt.Sprintf(msgProjectNotFound, name)+"\n\n"+listText(e.miaConfig(ctx), projects))
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "*%s*\nSituação: %s", target.Name, stageLabels[target.Stage])
@@ -248,7 +254,7 @@ func (e *Engine) projectStatus(ctx context.Context, ident store.Identity, conv s
 	if f.DailyBudgetBRL != nil {
 		fmt.Fprintf(&b, "\nOrçamento: %s por dia", campaign.BRL(*f.DailyBudgetBRL))
 	}
-	if m := missingText(f); m != "" && target.Stage == store.StageCollecting {
+	if m := missingText(e.miaConfig(ctx), f); m != "" && target.Stage == store.StageCollecting {
 		fmt.Fprintf(&b, "\nFalta: %s", m)
 	}
 	d, ok, err := e.Store.LatestProjectDraft(ctx, target.ID)

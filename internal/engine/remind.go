@@ -3,10 +3,10 @@ package engine
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/mia"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/signup"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp"
@@ -86,12 +86,12 @@ func (e *Engine) remind(ctx context.Context, r RemindJob) error {
 		return err
 	}
 	link := strings.TrimRight(e.SignupBaseURL, "/") + "/" + raw
-	msg := msgSignupReminder1
+	key := mia.TextReminder1
 	if r.Attempt > 1 {
-		msg = msgSignupReminder2
+		key = mia.TextReminder2
 	}
 	e.audit(ctx, ident.OrgID, "system", "signup_reminder_sent", map[string]any{"identity_id": ident.ID, "attempt": r.Attempt})
-	if err := e.sendReminder(ctx, conv, fmt.Sprintf(msg, link), link); err != nil {
+	if err := e.sendReminder(ctx, conv, e.miaConfig(ctx).Text(key, map[string]string{"link": link}), link); err != nil {
 		return err
 	}
 	if r.Attempt == 1 {

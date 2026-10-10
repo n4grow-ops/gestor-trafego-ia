@@ -1,6 +1,7 @@
 package signup
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -166,4 +167,70 @@ func (a *SupabaseAuth) GetUser(ctx context.Context, accessToken string) (User, e
 		name = body.Meta.Name
 	}
 	return User{ID: body.ID, Email: strings.ToLower(strings.TrimSpace(body.Email)), Name: name, VerifiedAt: *body.ConfirmedAt}, nil
+}
+
+// SendOTP pede ao Supabase Auth o código de login por e-mail (painel da equipe). Quem chama já
+// conferiu que o e-mail é da equipe; por isso o usuário pode ser criado no Auth no primeiro login.
+func (a *SupabaseAuth) SendOTP(ctx context.Context, email string) error {
+	res, err := a.post(ctx, "/auth/v1/otp", map[string]any{"email": email, "create_user": true})
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("signup: supabase otp status %d", res.StatusCode)
+	}
+	return nil
+}
+
+// VerifyOTP confere o código digitado e devolve o usuário (e-mail confirmado pelo próprio código).
+func (a *SupabaseAuth) VerifyOTP(ctx context.Context, email, code string) (User, error) {
+	if email == "" || code == "" {
+		return User{}, ErrUnauthorized
+	}
+	res, err := a.post(ctx, "/auth/v1/verify", map[string]any{"type": "email", "email": email, "token": code})
+	if err != nil {
+		return User{}, err
+	}
+	defer res.Body.Close()
+	switch res.StatusCode {
+	case http.StatusOK:
+	case http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusUnprocessableEntity:
+		return User{}, ErrUnauthorized
+	default:
+		return User{}, fmt.Errorf("signup: supabase verify status %d", res.StatusCode)
+	}
+	var body struct {
+		User struct {
+			ID          string     `json:"id"`
+			Email       string     `json:"email"`
+			ConfirmedAt *time.Time `json:"email_confirmed_at"`
+		} `json:"user"`
+	}
+	if err := json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&body); err != nil {
+		return User{}, fmt.Errorf("signup: supabase verify: %w", err)
+	}
+	u := body.User
+	if u.ID == "" || u.Email == "" || u.ConfirmedAt == nil || u.ConfirmedAt.IsZero() {
+		return User{}, ErrUnauthorized
+	}
+	return User{ID: u.ID, Email: strings.ToLower(strings.TrimSpace(u.Email)), VerifiedAt: *u.ConfirmedAt}, nil
+}
+
+func (a *SupabaseAuth) post(ctx context.Context, path string, body any) (*http.Response, error) {
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("signup: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.URL+path, bytes.NewReader(raw))
+	if err != nil {
+		return nil, fmt.Errorf("signup: %w", err)
+	}
+	req.Header.Set("apikey", a.Key)
+	req.Header.Set("Content-Type", "application/json")
+	res, err := a.HTTP.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("signup: supabase auth: %w", err)
+	}
+	return res, nil
 }

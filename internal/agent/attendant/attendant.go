@@ -12,6 +12,7 @@ import (
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/contract"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/llm"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/mia"
 )
 
 var ErrInvalidOutput = errors.New("attendant: resposta inválida do modelo")
@@ -36,6 +37,16 @@ type Input struct {
 	Voice       bool // a resposta vai virar mensagem de voz
 	// Meta: estado da conta de anúncios ("não conectada" ou "conectada: …"); vazio = conexão desligada.
 	Meta string
+	// Config é a Mia configurada no painel (nil = padrão do código); Segment, o módulo do segmento do cliente.
+	Config  *mia.Config
+	Segment *mia.Segment
+}
+
+func (in Input) config() mia.Config {
+	if in.Config != nil {
+		return *in.Config
+	}
+	return mia.Defaults()
 }
 
 type Agent struct {
@@ -45,7 +56,7 @@ type Agent struct {
 
 func (a *Agent) Reply(ctx context.Context, in Input) (contract.AttendantTurn, llm.Usage, error) {
 	msgs := []llm.Message{
-		{Role: "system", Content: systemPrompt},
+		{Role: "system", Content: in.config().AttendantSystem(in.State, in.Fields, in.Segment)},
 		{Role: "user", Content: userPrompt(in)},
 	}
 	var usage llm.Usage
@@ -94,7 +105,7 @@ func userPrompt(in Input) string {
 		projects = strings.Join(in.Projects, ", ")
 	}
 	business := "nenhum"
-	if m := in.Profile.Missing(); len(m) > 0 {
+	if m := in.config().ProfileMissing(in.Profile); len(m) > 0 {
 		business = strings.Join(m, "; ")
 	}
 	fmt.Fprintf(&b, "Empresa: %s (nicho: %s)\nMemória do negócio: %s\nNegócio faltando: %s\nProjeto ativo: %s\nProjetos do cliente: %s\n",

@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -11,13 +12,17 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/attendant"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/config"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/db"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/httpapi"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/llm"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/meta"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/mia"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/secretbox"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/signup"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp/build"
 )
 
@@ -60,12 +65,23 @@ func run(log *slog.Logger) error {
 		Secret: cfg.WebhookSecret,
 		Log:    log,
 	}
+	// Mia: a versão 1 é o padrão do código; o painel grava as seguintes.
+	if seeded, err := st.EnsureMiaSeed(ctx, mia.Defaults()); err != nil {
+		return err
+	} else if seeded {
+		log.Info("configuração da Mia semeada com o padrão do código")
+	}
+	miaCache := &mia.Cache{TTL: 30 * time.Second, Load: func(ctx context.Context) (mia.Config, error) {
+		c, _, err := st.MiaCurrent(ctx)
+		return c, err
+	}, OnError: func(err error) { log.Error("configuração da Mia indisponível; segue a última boa", "erro", err) }}
+
 	var routes []func(*http.ServeMux)
 	if cfg.SignupEnabled() {
 		reg := &httpapi.Signup{
 			Store: st, Auth: signup.NewSupabaseAuth(cfg.SupabaseURL, cfg.SupabasePublishableKey), CNPJ: signup.NewBrasilAPI(),
 			SupabaseURL: cfg.SupabaseURL, SupabaseKey: cfg.SupabasePublishableKey, BotNumber: cfg.BotWhatsAppNumber,
-			TermsVersion: termsVersion, Log: log, Limiter: httpapi.NewLimiter(),
+			TermsVersion: termsVersion, Log: log, Limiter: httpapi.NewLimiter(), Mia: miaCache,
 		}
 		if cfg.BotWhatsAppNumber == "" {
 			log.Warn("BOT_WHATSAPP_NUMBER vazio: o botão de voltar ao WhatsApp fica sem número")
@@ -84,10 +100,21 @@ func run(log *slog.Logger) error {
 		}
 		routes = append(routes, mc.Register)
 	}
-	log.Info("api configurada", "cadastro", cfg.SignupEnabled(), "conexao_meta", cfg.MetaConnectEnabled())
+	adminMode := cfg.AdminMode()
+	if adminMode != "" {
+		admin, err := newAdmin(ctx, cfg, st, pool, wa, log, miaCache)
+		if err != nil {
+			return err
+		}
+		routes = append(routes, admin.Register)
+	} else {
+		log.Warn("painel desligado: falta ADMIN_SESSION_KEY (32+ caracteres) com SUPABASE_URL e SUPABASE_PUBLISHABLE_KEY")
+	}
+	log.Info("api configurada", "cadastro", cfg.SignupEnabled(), "conexao_meta", cfg.MetaConnectEnabled(),
+		"painel", adminMode, "painel_host", cfg.AdminHost)
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.NewMux(pool, webhook, routes...),
+		Handler:           httpapi.WithAdminHost(cfg.AdminHost, httpapi.NewMux(pool, webhook, routes...)),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -108,4 +135,43 @@ func run(log *slog.Logger) error {
 	shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return srv.Shutdown(shutdown)
+}
+
+// newAdmin monta o painel da equipe e garante os administradores de ADMIN_EMAILS.
+func newAdmin(ctx context.Context, cfg config.Config, st *store.Store, pool httpapi.Pinger, wa whatsapp.Provider, log *slog.Logger, miaCache *mia.Cache) (*httpapi.Admin, error) {
+	if err := st.EnsureAdmins(ctx, cfg.AdminEmails); err != nil {
+		return nil, err
+	}
+	a := &httpapi.Admin{
+		Store: st, DB: pool, Mode: cfg.AdminMode(), SessionKey: []byte(cfg.AdminSessionKey), Secure: true,
+		ChatIDForPhone: wa.ChatIDForPhone, BotNumber: cfg.BotWhatsAppNumber, Provider: wa.Name(),
+		WindowLimited: cfg.WhatsAppProvider == "wame" && cfg.WameOfficial, USDBRL: cfg.USDBRL,
+		Limiter: httpapi.NewLimiter(), Log: log, Mia: miaCache,
+	}
+	// "Testar a Mia" e "ouvir amostra" usam a mesma IA e o mesmo TTS do worker, se a api tiver as chaves.
+	if cfg.OpenRouterAPIKey != "" {
+		router := llm.NewOpenRouter(cfg.OpenRouterBaseURL, cfg.OpenRouterAPIKey)
+		if cfg.AttendantModel != "" {
+			a.MiaTest = &attendant.Agent{LLM: router, Model: cfg.AttendantModel}
+		}
+		if cfg.TTSModel != "" {
+			a.MiaVoice = &httpapi.MiaSpeaker{Speaker: router, Model: cfg.TTSModel, DefaultVoice: cfg.TTSVoice}
+		}
+	}
+	if cfg.PublicBaseURL != "" {
+		a.SignupBaseURL = cfg.PublicBaseURL + "/c"
+	}
+	switch a.Mode {
+	case "otp":
+		a.Auth = signup.NewSupabaseAuth(cfg.SupabaseURL, cfg.SupabasePublishableKey)
+	case "dev":
+		// Só sem Supabase (config.AdminMode garante): http local, sem Secure, chave nova a cada partida se faltar.
+		log.Warn("painel em MODO DE DESENVOLVIMENTO: login só com e-mail; nunca use em produção")
+		a.Secure = false
+		if len(a.SessionKey) < 32 {
+			a.SessionKey = make([]byte, 32)
+			rand.Read(a.SessionKey)
+		}
+	}
+	return a, nil
 }

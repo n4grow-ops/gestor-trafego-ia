@@ -35,6 +35,9 @@ func (e *Engine) HandleJob(ctx context.Context, job store.Job) error {
 		if s.ConversationID == 0 {
 			return nil // aviso ao operador: fora de conversa
 		}
+		if s.Author != "" {
+			return e.Store.AddStaffMessage(ctx, s.ConversationID, redactLinks(s.Text), s.Author)
+		}
 		return e.Store.AddMessage(ctx, s.ConversationID, "out", "text", redactLinks(s.Text))
 	case JobReply:
 		var r ReplyJob
@@ -176,7 +179,8 @@ func (e *Engine) propose(ctx context.Context, p ProposeJob) error {
 	b.Adjustment = p.Adjustment
 	b.Business = ident.Profile
 
-	prop, usage, err := e.Manager.Propose(ctx, b)
+	cfg := e.miaConfig(ctx)
+	prop, usage, err := e.Manager.ProposeWith(ctx, b, cfg.ManagerContext(cfg.SegmentFor(ident.Segment, ident.Niche)))
 	e.recordUsage(ctx, ident.OrgID, "manager", usage)
 	if errors.Is(err, manager.ErrInvalidProposal) {
 		e.audit(ctx, ident.OrgID, "manager", "proposal_invalid", map[string]any{"conversation_id": conv.ID, "error": err.Error()})

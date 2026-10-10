@@ -16,6 +16,7 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/campaign"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/humanize"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/llm"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/mia"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp"
 )
@@ -56,6 +57,14 @@ type SendJob struct {
 	Typed          bool     `json:"typed,omitempty"` // "digitando…" já apareceu: agora é entregar
 	// Template: modelo aprovado usado no lugar do texto fora da janela de 24 h (Cloud API).
 	Template *whatsapp.Template `json:"template,omitempty"`
+	// Author: nome de quem da equipe escreveu pelo painel; a mensagem é gravada como "staff".
+	Author string `json:"author,omitempty"`
+}
+
+// StaffSendJob é a mensagem que alguém da equipe escreveu no painel durante o atendimento humano.
+// Sai como texto simples (sem "digitando…" nem voz) e é gravada com o nome de quem escreveu.
+func StaffSendJob(convID int64, chatID, text, author string) store.JobSpec {
+	return store.JobSpec{Kind: JobSend, Payload: SendJob{ConversationID: convID, ChatID: chatID, Text: text, Author: author}, MaxAttempts: sendAttempts}
 }
 
 // ReplyJob responde as mensagens seguidas de uma conversa depois do debounce.
@@ -105,6 +114,10 @@ type Engine struct {
 
 	// Relatório diário às 8 h para este número. Vazio = sem relatório.
 	ReportPhone string
+
+	// Mia configurada no painel (textos, campos, persona, funil, segmentos e voz), lida do banco
+	// com cache curto. nil = padrão do código.
+	Mia *mia.Cache
 
 	// Conexão da conta Meta: base do link (…/m). Vazio = desligada.
 	MetaConnectBaseURL string
@@ -297,16 +310,18 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 		}
 	}
 	current := withDefaults(ident.Profile, conv.Fields)
+	cfg := e.miaConfig(ctx)
 	metaState, err := e.metaStatus(ctx, ident.OrgID)
 	if err != nil {
 		return err
 	}
 	turn, usage, err := e.Attendant.Reply(ctx, attendant.Input{
 		OrgName: ident.OrgName, Niche: ident.Niche, State: conv.State,
-		Fields: current, Missing: current.Missing(), History: history, Message: text,
+		Fields: current, Missing: cfg.CampaignMissing(current), History: history, Message: text,
 		Profile: ident.Profile, ProjectName: activeName, Projects: names,
-		Voice: e.Voice != nil && voiceWanted(ctx),
-		Meta:  metaState,
+		Voice:  e.voiceOn(cfg) && voiceWanted(ctx),
+		Meta:   metaState,
+		Config: &cfg, Segment: cfg.SegmentFor(ident.Segment, ident.Niche),
 	})
 	e.recordUsage(ctx, ident.OrgID, "attendant", usage)
 	if err != nil {
@@ -323,7 +338,7 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 		}
 	}
 	if conv.State == store.StateOnboarding {
-		if !ident.Profile.Complete() {
+		if !cfg.ProfileComplete(ident.Profile) {
 			return e.speak(ctx, ident, conv, turn.Reply)
 		}
 		conv.State = store.StateIdle
@@ -337,7 +352,7 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 
 	switch turn.Intent {
 	case contract.IntentListProjects:
-		return e.send(ctx, conv, listText(projects))
+		return e.send(ctx, conv, listText(e.miaConfig(ctx), projects))
 	case contract.IntentProjectStatus:
 		return e.projectStatus(ctx, ident, conv, turn.Project, projects)
 	case contract.IntentConnectMeta:
@@ -402,7 +417,7 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 	if !campaignTalk && conv.State != store.StateCollecting {
 		return e.speak(ctx, ident, conv, turn.Reply)
 	}
-	if len(merged.Missing()) == 0 {
+	if len(cfg.CampaignMissing(merged)) == 0 {
 		return e.requestProposal(ctx, ident, conv, merged, "", turn.Reply, false)
 	}
 	if err := e.Store.UpdateConversation(ctx, conv.ID, store.StateCollecting, merged); err != nil {
@@ -507,7 +522,21 @@ func (e *Engine) speak(ctx context.Context, ident store.Identity, conv store.Con
 
 // voiceFor diz se a resposta da Atendente vai em voz.
 func (e *Engine) voiceFor(ctx context.Context, text string) bool {
-	return e.Voice != nil && voiceWanted(ctx) && humanize.ShouldVoice(text)
+	return e.voiceOn(e.miaConfig(ctx)) && voiceWanted(ctx) && humanize.ShouldVoice(text)
+}
+
+// miaConfig é a configuração da Mia em vigor (cache do banco; padrão do código sem configuração).
+func (e *Engine) miaConfig(ctx context.Context) mia.Config { return e.Mia.Get(ctx) }
+
+// voiceOn: há TTS configurado e a voz está ligada no painel.
+func (e *Engine) voiceOn(cfg mia.Config) bool { return e.Voice != nil && cfg.Voice.Enabled }
+
+// ttsVoice é a voz escolhida no painel, ou TTS_VOICE.
+func (e *Engine) ttsVoice(cfg mia.Config) string {
+	if cfg.Voice.Name != "" {
+		return cfg.Voice.Name
+	}
+	return e.TTSVoice
 }
 
 func (e *Engine) recordUsage(ctx context.Context, orgID int64, agent string, u llm.Usage) {
