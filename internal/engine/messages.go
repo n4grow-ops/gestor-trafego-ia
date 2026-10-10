@@ -28,7 +28,6 @@ const (
 	msgProjectAmbiguous       = "Achei mais de um projeto parecido: %s. Qual deles?"
 	msgNoProjects             = "Você ainda não tem projetos. É só me contar o que quer anunciar."
 
-	msgSignupLink           = "Oi! Pra gente começar, faz seu cadastro rapidinho por aqui:\n\n%s\n\nLeva uns 2 minutos. Assim que terminar, a gente continua por aqui."
 	msgMetaLink             = "Pra eu publicar seus anúncios, conecta sua conta de anúncios do Facebook/Instagram por aqui:\n\n%s\n\nVocê entra com o seu Facebook e escolhe a conta e a Página. Leva 1 minuto e o link vale por 24 horas."
 	msgMetaLinkRecent       = "Te mandei o link de conexão há pouco, é só abrir ele 🙂 Se não achar, me pede de novo daqui a uns minutos."
 	msgMetaOwnerOnly        = "Quem conecta a conta de anúncios é o responsável pela conta aqui no meuanuncio. Pede pra ele me mandar \"conectar meta\" 🙂"
@@ -37,7 +36,6 @@ const (
 	msgMetaWarnLocale       = "⚠️ Essa conta está em %s e no fuso %s. Funciona, mas a cobrança e os relatórios ficam nessa moeda e nesse horário. Se preferir reais e horário de Brasília, dá pra criar uma conta nova e conectar de novo."
 	msgMetaWarnWA           = "⚠️ Sua Página ainda não tem WhatsApp vinculado, e anúncio que leva pro WhatsApp precisa disso. No WhatsApp Business: Configurações → Ferramentas comerciais → Facebook e Instagram → entra com o Facebook e escolhe a Página. Depois me avisa aqui."
 	msgMetaRevoked          = "Sua conta de anúncios foi desconectada do meuanuncio (o acesso foi removido no Facebook). Se quiser conectar de novo, é só me mandar \"conectar meta\"."
-	msgWelcome              = "Cadastro concluído, %s! Você está no plano Free (e-mail %s; se não foi você, é só avisar aqui).\n\nPra completar seu cadastro, preciso conhecer bem o seu negócio. São umas perguntas rápidas e é isso que deixa seus anúncios certeiros.\n\nPra começar: o que a sua empresa faz? Me conta os principais produtos ou serviços."
 	msgApprovedAskCreatives = "Campanha aprovada! ✅\n\nPróxima etapa: os anúncios. Agora eu preciso das imagens ou vídeos que vão aparecer pras pessoas no Instagram e no Facebook. É isso que eu vou subir na Meta junto com a sua campanha.\n\nO ideal é mandar pelo menos:\n• 1 quadrada ou em pé (4:5), pro feed\n• 1 vertical de tela cheia (9:16), pros Stories e Reels\n\nPode ser foto do produto, do espaço, da equipe ou um vídeo curto (até 60 segundos), até 5 no total. Quando terminar, é só escrever PRONTO."
 	msgCreativesWaiting     = "Tô esperando as imagens ou vídeos dos seus anúncios 🙂 Pode mandar aqui mesmo. Quando terminar, escreve PRONTO."
 	msgCreativesNeedOne     = "Preciso de pelo menos uma imagem ou vídeo pra montar o anúncio na Meta. Pode mandar aqui?"
@@ -52,9 +50,6 @@ const (
 	msgPreviewFeed          = "Prévia de como seu anúncio aparece no feed do Instagram 👆\n\nÉ uma ilustração: na publicação, a Meta pode ajustar um pouco o corte e o texto."
 	msgPreviewStory         = "E assim nos Stories e Reels 👆"
 	msgPreviewStoryOnly     = "Prévia de como seu anúncio aparece nos Stories e Reels do Instagram 👆\n\nÉ uma ilustração: na publicação, a Meta pode ajustar um pouco o corte e o texto."
-
-	msgSignupReminder1 = "Oi! Faltou pouquinho pro seu cadastro no meuanuncio.io 🙂 Leva uns 2 minutos e aí a gente já começa a montar seus anúncios:\n\n%s"
-	msgSignupReminder2 = "Passando pra lembrar: seu cadastro ainda está aberto. Se quiser continuar, é só tocar aqui:\n\n%s\n\nQualquer dúvida, me chama por aqui mesmo."
 
 	msgDailyReport = "📊 meuanuncio.io — resumo das últimas 24 h\n\n👤 Contatos novos: %d\n✅ Cadastros concluídos: %d\n⏳ Cadastros pendentes (com link): %d\n💬 Mensagens recebidas: %d\n📝 Propostas geradas: %d\n👍 Propostas aprovadas: %d\n🖼️ Anúncios recebidos: %d\n💸 Custo de IA: US$ %s"
 

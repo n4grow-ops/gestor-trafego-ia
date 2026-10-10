@@ -130,10 +130,22 @@ func TestReplyGivesBusinessMemoryAndProjects(t *testing.T) {
 		}
 	}
 	system := fake.Requests[0].Messages[0].Content
-	for _, want := range []string{"new_project", "switch_project", "list_projects", "project_status", "profile", "onboarding"} {
+	for _, want := range []string{"new_project", "switch_project", "list_projects", "project_status", "profile"} {
 		if !strings.Contains(system, want) {
 			t.Errorf("prompt de sistema sem %q", want)
 		}
+	}
+	// A regra do onboarding é instrução da etapa: só entra quando a conversa está nesse estado.
+	if strings.Contains(system, "PRIMEIRA REGRA") {
+		t.Error("regra do onboarding fora do onboarding")
+	}
+	fake = &llm.Fake{Responses: []string{validTurn}}
+	a = attendant.Agent{LLM: fake, Model: "flash"}
+	if _, _, err := a.Reply(ctx, attendant.Input{State: "onboarding", Message: "oi"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(fake.Requests[0].Messages[0].Content, "PRIMEIRA REGRA") {
+		t.Error("regra do onboarding ausente no onboarding")
 	}
 }
 

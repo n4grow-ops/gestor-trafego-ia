@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/engine"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/mia"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 )
 
@@ -60,7 +61,7 @@ func TestResendSignupLink(t *testing.T) {
 	ident, err := h.st.FindIdentity(ctx, "openwa", phone)
 	h.must(err)
 	// Cliente trazido à mão, que ainda não escreveu: o destino sai do telefone.
-	err = engine.ResendSignupLink(ctx, h.st, signupBase, ident, phone+"@c.us", h.now)
+	err = engine.ResendSignupLink(ctx, h.st, mia.Defaults(), signupBase, ident, phone+"@c.us", h.now)
 	h.must(err)
 	h.runJobs()
 	last := h.wa.last()
@@ -79,10 +80,10 @@ func TestResendSignupLink(t *testing.T) {
 
 	h.complete()
 	ident, _ = h.st.FindIdentity(ctx, "openwa", phone)
-	if err := engine.ResendSignupLink(ctx, h.st, signupBase, ident, chatID, h.now); !errors.Is(err, store.ErrAlreadyRegistered) {
+	if err := engine.ResendSignupLink(ctx, h.st, mia.Defaults(), signupBase, ident, chatID, h.now); !errors.Is(err, store.ErrAlreadyRegistered) {
 		t.Fatalf("cadastro concluído: %v", err)
 	}
-	if err := engine.ResendSignupLink(ctx, h.st, "", ident, chatID, h.now); err == nil {
+	if err := engine.ResendSignupLink(ctx, h.st, mia.Defaults(), "", ident, chatID, h.now); err == nil {
 		t.Fatal("sem URL de cadastro deve falhar")
 	}
 }

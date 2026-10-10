@@ -3,11 +3,11 @@ package engine
 import (
 	"context"
 	"errors"
-	"fmt"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/mia"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/signup"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp"
@@ -57,10 +57,11 @@ func (e *Engine) inviteSignup(ctx context.Context, ident store.Identity, conv st
 	if err := e.scheduleFirstReminder(ctx, ident.ID, conv.ID); err != nil {
 		return err
 	}
-	if e.sendSignupFlow(ctx, conv, raw, msgSignupFlow) {
+	cfg := e.miaConfig(ctx)
+	if e.sendSignupFlow(ctx, conv, raw, cfg.Text(mia.TextFirstMessage, nil)) {
 		return nil
 	}
-	return e.send(ctx, conv, fmt.Sprintf(msgSignupLink, strings.TrimRight(e.SignupBaseURL, "/")+"/"+raw))
+	return e.send(ctx, conv, cfg.Text(mia.TextSignupLink, map[string]string{"link": strings.TrimRight(e.SignupBaseURL, "/") + "/" + raw}))
 }
 
 var signupLink = regexp.MustCompile(`/(cadastro|c|m)/[A-Za-z0-9_-]{10,}`)
@@ -69,22 +70,29 @@ var signupLink = regexp.MustCompile(`/(cadastro|c|m)/[A-Za-z0-9_-]{10,}`)
 // (ou a IA, que recebe o histórico) não consegue usar o link.
 func redactLinks(text string) string { return signupLink.ReplaceAllString(text, "/$1/[link]") }
 
-// WelcomeJob é a mensagem de boas-vindas depois do cadastro, enfileirada pela api na conclusão.
-// Mostra o e-mail usado, para o cliente perceber se alguém cadastrou por ele.
+// WelcomeJob é a mensagem de boas-vindas padrão depois do cadastro.
 func WelcomeJob(convID int64, chatID, fullName, email string) store.JobSpec {
-	first := strings.Fields(fullName)
-	name := fullName
-	if len(first) > 0 {
-		name = first[0]
+	return WelcomeJobFor(mia.Defaults())(convID, chatID, fullName, email)
+}
+
+// WelcomeJobFor monta as boas-vindas com o texto configurado na Mia. Mostra o e-mail usado, para o
+// cliente perceber se alguém cadastrou por ele.
+func WelcomeJobFor(cfg mia.Config) func(convID int64, chatID, fullName, email string) store.JobSpec {
+	return func(convID int64, chatID, fullName, email string) store.JobSpec {
+		first := strings.Fields(fullName)
+		name := fullName
+		if len(first) > 0 {
+			name = first[0]
+		}
+		conv := store.Conversation{ID: convID, ChatID: chatID}
+		return humanJob(0, conv, cfg.Text(mia.TextWelcome, map[string]string{"nome": name, "email": email}), false)
 	}
-	conv := store.Conversation{ID: convID, ChatID: chatID}
-	return humanJob(0, conv, fmt.Sprintf(msgWelcome, name, email), false)
 }
 
 // ResendSignupLink manda um link novo de cadastro pedido pela equipe no painel. chatID é o destino
 // quando o cliente ainda não tem conversa (trazido à mão). Na Cloud API, fora da janela de 24 h,
 // vai o modelo aprovado do lembrete.
-func ResendSignupLink(ctx context.Context, st *store.Store, baseURL string, ident store.Identity, chatID string, now time.Time) error {
+func ResendSignupLink(ctx context.Context, st *store.Store, cfg mia.Config, baseURL string, ident store.Identity, chatID string, now time.Time) error {
 	if baseURL == "" {
 		return errors.New("engine: cadastro desligado (sem PUBLIC_BASE_URL)")
 	}
@@ -104,7 +112,7 @@ func ResendSignupLink(ctx context.Context, st *store.Store, baseURL string, iden
 	}
 	link := strings.TrimRight(baseURL, "/") + "/" + raw
 	tpl := &whatsapp.Template{Name: TplSignupReminder, Params: []string{link}}
-	if err := st.Enqueue(ctx, systemSendJob(conv.ID, conv.ChatID, fmt.Sprintf(msgSignupLink, link), tpl)); err != nil {
+	if err := st.Enqueue(ctx, systemSendJob(conv.ID, conv.ChatID, cfg.Text(mia.TextSignupLink, map[string]string{"link": link}), tpl)); err != nil {
 		return err
 	}
 	return st.Audit(ctx, ident.OrgID, "admin", "signup_link_sent", map[string]any{"identity_id": ident.ID})

@@ -141,7 +141,7 @@ func (e *Engine) sendVoice(ctx context.Context, s SendJob) error {
 	}
 	e.presence(ctx, s.ChatID, whatsapp.PresenceRecording)
 	tctx, cancel := context.WithTimeout(ctx, ttsTimeout)
-	sp, err := e.Voice.Speak(tctx, e.TTSModel, e.TTSVoice, humanize.SpeechText(s.Text))
+	sp, err := e.Voice.Speak(tctx, e.TTSModel, e.ttsVoice(e.miaConfig(ctx)), humanize.SpeechText(s.Text))
 	cancel()
 	if s.OrgID != 0 {
 		e.recordUsage(ctx, s.OrgID, "tts", sp.Usage)

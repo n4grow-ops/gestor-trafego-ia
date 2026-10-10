@@ -177,7 +177,8 @@ func (e *Engine) propose(ctx context.Context, p ProposeJob) error {
 	b.Adjustment = p.Adjustment
 	b.Business = ident.Profile
 
-	prop, usage, err := e.Manager.Propose(ctx, b)
+	cfg := e.miaConfig(ctx)
+	prop, usage, err := e.Manager.ProposeWith(ctx, b, cfg.ManagerContext(cfg.SegmentFor(ident.Segment, ident.Niche)))
 	e.recordUsage(ctx, ident.OrgID, "manager", usage)
 	if errors.Is(err, manager.ErrInvalidProposal) {
 		e.audit(ctx, ident.OrgID, "manager", "proposal_invalid", map[string]any{"conversation_id": conv.ID, "error": err.Error()})

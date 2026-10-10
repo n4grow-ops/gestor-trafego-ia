@@ -52,6 +52,7 @@ type adminEnv struct {
 	staffID int64
 	convID  int64
 	orgID   int64
+	admin   *httpapi.Admin
 }
 
 const adminHost = "admin.meuanuncio.io"
@@ -98,6 +99,7 @@ func newAdminEnv(t *testing.T, mode string) *adminEnv {
 	if mode == "otp" {
 		a.Auth = e.otp
 	}
+	e.admin = a
 	e.h = httpapi.WithAdminHost(adminHost, httpapi.NewMux(pool, http.NotFoundHandler(), a.Register))
 	return e
 }

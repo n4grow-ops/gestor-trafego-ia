@@ -3,21 +3,18 @@ package engine
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sort"
 	"strings"
 
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/mia"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/signup"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp"
 )
 
 const (
-	msgSignupFlow      = "Oi! Eu sou a Mia, do Meu Anúncio. Antes de montarmos seus anúncios, preciso do seu cadastro, que é feito aqui mesmo no WhatsApp e leva uns 2 minutos. Assim que terminar, seguimos a conversa."
-	msgSignupFlowFix   = "Quase lá! Só falta ajustar: %s. Toca no botão de novo pra corrigir."
-	msgSignupFlowRetry = "Não consegui ler seu cadastro. Toca no botão abaixo pra preencher de novo, por favor."
-	msgSignupDone      = "Seu cadastro já está concluído 🙂 Pode seguir por aqui."
-	signupFlowCTA      = "Fazer meu cadastro"
+	msgSignupDone = "Seu cadastro já está concluído 🙂 Pode seguir por aqui."
+	signupFlowCTA = "Fazer meu cadastro"
 )
 
 // fieldNames traduz os campos do cadastro para a mensagem de correção.
@@ -75,7 +72,7 @@ func (e *Engine) signupFlowAnswer(ctx context.Context, ident store.Identity, con
 	}
 	_, err = e.Store.CompleteRegistration(ctx, store.Registration{
 		TokenHash: signup.HashToken(sub.Token), Email: sub.Email, Form: form, PlanCode: "free",
-		TermsVersion: e.TermsVersion, UserAgent: "whatsapp-flow", Welcome: WelcomeJob,
+		TermsVersion: e.TermsVersion, UserAgent: "whatsapp-flow", Welcome: WelcomeJobFor(e.miaConfig(ctx)),
 	})
 	switch {
 	case errors.Is(err, store.ErrAlreadyRegistered):
@@ -102,7 +99,7 @@ func (e *Engine) askSignupFix(ctx context.Context, conv store.Conversation, toke
 		}
 	}
 	sort.Strings(names)
-	msg := fmt.Sprintf(msgSignupFlowFix, strings.Join(names, ", "))
+	msg := e.miaConfig(ctx).Text(mia.TextFlowFix, map[string]string{"campos": strings.Join(names, ", ")})
 	if token != "" && e.sendSignupFlow(ctx, conv, token, msg) {
 		return nil
 	}
@@ -121,8 +118,9 @@ func (e *Engine) resendSignup(ctx context.Context, ident store.Identity, conv st
 	if err := e.Store.CreateSignupLink(ctx, ident.ID, hash, e.now().Add(signupLinkTTL)); err != nil {
 		return err
 	}
-	if e.sendSignupFlow(ctx, conv, raw, msgSignupFlowRetry) {
+	cfg := e.miaConfig(ctx)
+	if e.sendSignupFlow(ctx, conv, raw, cfg.Text(mia.TextFlowRetry, nil)) {
 		return nil
 	}
-	return e.send(ctx, conv, fmt.Sprintf(msgSignupLink, strings.TrimRight(e.SignupBaseURL, "/")+"/"+raw))
+	return e.send(ctx, conv, cfg.Text(mia.TextSignupLink, map[string]string{"link": strings.TrimRight(e.SignupBaseURL, "/") + "/" + raw}))
 }

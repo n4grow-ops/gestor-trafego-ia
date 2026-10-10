@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/engine"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/mia"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/signup"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 )
@@ -42,7 +43,8 @@ type Signup struct {
 	BotNumber    string // número do WhatsApp para o botão de voltar
 	TermsVersion string
 	Log          *slog.Logger
-	Limiter      *Limiter // nil = sem limite (só em testes)
+	Limiter      *Limiter   // nil = sem limite (só em testes)
+	Mia          *mia.Cache // texto das boas-vindas; nil = padrão
 }
 
 func (s *Signup) Register(mux *http.ServeMux) {
@@ -215,7 +217,7 @@ func (s *Signup) submit(w http.ResponseWriter, r *http.Request) {
 	_, err = s.Store.CompleteRegistration(r.Context(), store.Registration{
 		TokenHash: signup.HashToken(r.PathValue("token")), AuthUserID: user.ID, Email: user.Email,
 		EmailVerifiedAt: user.VerifiedAt, Form: form, PlanCode: body.Plan, TermsVersion: s.TermsVersion,
-		IP: clientIP(r), UserAgent: truncate(r.UserAgent(), 300), Welcome: engine.WelcomeJob,
+		IP: clientIP(r), UserAgent: truncate(r.UserAgent(), 300), Welcome: engine.WelcomeJobFor(s.Mia.Get(r.Context())),
 	})
 	if errors.Is(err, store.ErrNotOwner) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "somente_responsavel"})

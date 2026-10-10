@@ -169,9 +169,10 @@ func (s *Store) ApproveDraft(ctx context.Context, draftID, memberID int64, codeH
 	return tx.Commit(ctx)
 }
 
+// RecordUsage grava o custo de IA; orgID 0 = uso da equipe no painel (testar a Mia, amostra de voz).
 func (s *Store) RecordUsage(ctx context.Context, orgID int64, agent string, u llm.Usage) error {
 	_, err := s.pool.Exec(ctx, `INSERT INTO llm_usage (organization_id, agent, model, input_tokens, output_tokens, cost_usd)
-		VALUES ($1, $2, $3, $4, $5, $6)`, orgID, agent, u.Model, u.InputTokens, u.OutputTokens, u.CostUSD)
+		VALUES (nullif($1, 0), $2, $3, $4, $5, $6)`, orgID, agent, u.Model, u.InputTokens, u.OutputTokens, u.CostUSD)
 	return err
 }
 

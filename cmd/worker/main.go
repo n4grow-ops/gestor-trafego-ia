@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/attendant"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/manager"
@@ -14,6 +15,7 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/db"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/engine"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/llm"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/mia"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/signup"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/storage"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
@@ -78,6 +80,9 @@ func run(log *slog.Logger) error {
 		TTSModel: cfg.TTSModel,
 		TTSVoice: cfg.TTSVoice,
 	}
+	// Mia configurada no painel: relida do banco a cada 30 s; sem configuração, o padrão do código.
+	eng.Mia = &mia.Cache{TTL: 30 * time.Second, Load: miaLoader(st),
+		OnError: func(err error) { log.Error("configuração da Mia indisponível; segue a última boa", "erro", err) }}
 	if cfg.SignupEnabled() {
 		eng.SignupBaseURL = cfg.PublicBaseURL + "/c"
 		eng.SignupFlowID = cfg.SignupFlowID
@@ -107,4 +112,12 @@ func run(log *slog.Logger) error {
 		"humano", cfg.Humanize, "voz", eng.Voice != nil, "cadastro", eng.SignupBaseURL != "", "formulario_cadastro", eng.SignupFlowID != "",
 		"anuncios", eng.Storage != nil, "relatorio", eng.ReportPhone != "", "conexao_meta", eng.MetaConnectBaseURL != "")
 	return w.Run(ctx)
+}
+
+// miaLoader lê a versão em vigor da configuração da Mia.
+func miaLoader(st *store.Store) func(ctx context.Context) (mia.Config, error) {
+	return func(ctx context.Context) (mia.Config, error) {
+		c, _, err := st.MiaCurrent(ctx)
+		return c, err
+	}
 }

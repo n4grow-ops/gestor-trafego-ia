@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/mia"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/signup"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 )
@@ -38,6 +39,11 @@ type Admin struct {
 	Provider       string // provedor do WhatsApp (estado da conexão)
 	WindowLimited  bool   // Cloud API: texto livre só até 24 h depois da última mensagem do cliente
 	USDBRL         float64
+
+	// Mia: configuração em vigor (cache) e o que a aba Mia usa para testar e ouvir amostra.
+	Mia      *mia.Cache
+	MiaTest  MiaTester   // nil = "testar a Mia" desligado (sem OPENROUTER_API_KEY/ATTENDANT_MODEL na api)
+	MiaVoice *MiaSpeaker // nil = "ouvir amostra" desligado (sem TTS_MODEL na api)
 
 	Limiter *Limiter
 	Log     *slog.Logger
@@ -91,11 +97,12 @@ func (a *Admin) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/api/team", a.only(true, a.addMember))
 	mux.HandleFunc("DELETE /admin/api/team/{id}", a.only(true, a.removeMember))
 	mux.HandleFunc("GET /admin/api/audit", a.only(false, a.audit))
+	a.registerMia(mux)
 }
 
 // adminCSP: nada de script ou estilo inline, nada de terceiros; a API é a mesma origem.
 const adminCSP = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; " +
-	"connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'"
+	"connect-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'"
 
 func adminHeaders(w http.ResponseWriter) {
 	w.Header().Set("Content-Security-Policy", adminCSP)
@@ -156,7 +163,11 @@ func hostOnly(h string) string {
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
-	dec := json.NewDecoder(io.LimitReader(r.Body, 32<<10))
+	return decodeJSONLimit(w, r, v, 32<<10)
+}
+
+func decodeJSONLimit(w http.ResponseWriter, r *http.Request, v any, limit int64) bool {
+	dec := json.NewDecoder(io.LimitReader(r.Body, limit))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "corpo_invalido"})

@@ -120,7 +120,7 @@ func (a *Admin) resendSignup(w http.ResponseWriter, r *http.Request, m store.Tea
 	if a.ChatIDForPhone != nil {
 		chatID = a.ChatIDForPhone(ident.Phone)
 	}
-	if err := engine.ResendSignupLink(r.Context(), a.Store, a.SignupBaseURL, ident, chatID, a.now()); a.storeError(w, err) {
+	if err := engine.ResendSignupLink(r.Context(), a.Store, a.Mia.Get(r.Context()), a.SignupBaseURL, ident, chatID, a.now()); a.storeError(w, err) {
 		return
 	}
 	a.log(r, m, "client_signup_link", "organization", orgTarget(id), row.Name, nil)
