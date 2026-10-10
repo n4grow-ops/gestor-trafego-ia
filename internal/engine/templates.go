@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
@@ -46,9 +47,25 @@ var TemplateDefinitions = []TemplateDefinition{
 	},
 }
 
+// maxTemplateParam é o tamanho de cada parâmetro do aviso à equipe (a Meta recusa parâmetro longo,
+// com quebra de linha ou tabulação).
+const maxTemplateParam = 200
+
 // TeamAlertTemplate é o aviso de atendimento humano para a equipe.
 func TeamAlertTemplate(name, org, phone, reason string) *whatsapp.Template {
-	return &whatsapp.Template{Name: TplTeamAlert, Params: []string{name, org, phone, reason}}
+	return &whatsapp.Template{Name: TplTeamAlert, Params: []string{templateParam(name), templateParam(org), templateParam(phone), templateParam(reason)}}
+}
+
+// templateParam deixa o parâmetro numa linha só, sem espaços repetidos e cortado em maxTemplateParam runas.
+func templateParam(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if s == "" {
+		return "-"
+	}
+	if r := []rune(s); len(r) > maxTemplateParam {
+		s = string(r[:maxTemplateParam-1]) + "…"
+	}
+	return s
 }
 
 // systemSendJob é um envio iniciado pelo sistema: leva o modelo para o caso de cair fora da janela.
@@ -77,11 +94,24 @@ func (e *Engine) outsideWindow(ctx context.Context, convID int64) (bool, error) 
 	return e.now().Sub(at) > serviceWindow, nil
 }
 
+// chatOutsideWindow mede a janela de 24 h pelo chat do destino: avisos fora de conversa (equipe,
+// relatório) vão em texto completo quando aquele número escreveu ao bot há menos de 23 h.
+func (e *Engine) chatOutsideWindow(ctx context.Context, chatID string) (bool, error) {
+	at, ok, err := e.Store.LastInboundByChat(ctx, chatID)
+	if err != nil || !ok {
+		return true, err
+	}
+	return e.now().Sub(at) > serviceWindow, nil
+}
+
 // deliver manda o texto, ou o modelo aprovado quando a Cloud API exige.
 func (e *Engine) deliver(ctx context.Context, s SendJob) error {
 	if s.Template != nil {
 		if ts, ok := e.templateSender(); ok {
 			out, err := e.outsideWindow(ctx, s.ConversationID)
+			if s.ConversationID == 0 {
+				out, err = e.chatOutsideWindow(ctx, s.ChatID)
+			}
 			if err != nil {
 				return err
 			}
