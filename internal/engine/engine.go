@@ -157,8 +157,10 @@ type Engine struct {
 	ParseProfile func(text string) (meta.ProfileRef, bool)
 	ResolveShare func(ctx context.Context, url string) (string, error)
 	// Instagram baixa o post do link que o cliente manda na etapa dos anúncios. nil = link segue como texto.
-	Instagram    InstagramFetcher
-	igPermWarned atomic.Bool // aviso de falta de instagram_basic sai uma vez só
+	Instagram InstagramFetcher
+	// InstagramBudget: prazo total dos downloads de um post. 0 = InstagramBudget (3 min).
+	InstagramBudget time.Duration
+	igPermWarned    atomic.Bool // aviso de falta de instagram_basic sai uma vez só
 }
 
 func (e *Engine) identityProvider() string {

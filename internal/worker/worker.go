@@ -24,7 +24,7 @@ type Worker struct {
 }
 
 // Prazos próprios por tipo de job: a publicação na Meta sobe vídeos e espera a Meta processar (até ~10 min);
-// o post do Instagram baixa vídeo de até 300 MB.
+// o post do Instagram baixa por até 3 min (vídeo de até 100 MB) e grava com contexto próprio.
 // A trava do job no store (ClaimJob) é maior que esses prazos.
 var jobTimeouts = map[string]time.Duration{
 	engine.JobMetaPublish:    engine.PublishTimeout,

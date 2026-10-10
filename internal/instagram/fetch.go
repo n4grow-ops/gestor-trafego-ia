@@ -19,9 +19,10 @@ import (
 )
 
 const (
-	// Limites de cada arquivo baixado: lidos em memória com corte, nunca mais que isso.
+	// Limites de cada arquivo baixado: lidos em memória com corte, nunca mais que isso. Só um item fica
+	// em memória por vez (Sink.Save guarda e solta antes do próximo download).
 	DefaultImageLimit = 15 << 20
-	DefaultVideoLimit = 300 << 20
+	DefaultVideoLimit = 100 << 20
 	pageLimit         = 4 << 20
 
 	defaultPageTimeout  = 15 * time.Second
@@ -46,6 +47,8 @@ var (
 	ErrHostNotAllowed = errors.New("instagram: endereço fora do Instagram")
 	// ErrNoGraph: sem cliente da Graph API (publicação na Meta desligada no worker).
 	ErrNoGraph = errors.New("instagram: Graph API desligada")
+	// ErrStop: devolvido pelo Sink.Save para encerrar a busca sem erro (ex.: limite de anúncios).
+	ErrStop = errors.New("instagram: busca encerrada")
 )
 
 // Item é uma imagem ou vídeo baixado do post.
@@ -60,8 +63,19 @@ type Post struct {
 	MediaID   string
 	Permalink string
 	Caption   string
-	Items     []Item
-	Total     int // itens que o post tem (carrossel pode ter mais do que os baixados)
+	Items     []Item // só com o Sink vazio (testes); com Save, os bytes não ficam aqui
+	Total     int    // itens que o post tem (carrossel pode ter mais do que os baixados)
+	Got       int    // itens entregues (Save sem erro)
+	Skipped   int    // itens que o Skip pulou (já guardados)
+}
+
+// Sink recebe os itens um a um. pos é a posição do item no post (0..Total-1), estável entre tentativas.
+// Skip (opcional): item já guardado, não baixa nem conta no máximo. Save: guarda o item; os bytes são
+// soltos antes do próximo download. Erro do Save encerra a busca (ErrStop = sem erro). Sink vazio junta
+// os itens em Post.Items.
+type Sink struct {
+	Skip func(p Post, pos int) bool
+	Save func(p Post, pos int, it Item) error
 }
 
 // Graph é a parte da Graph API usada aqui. *meta.Client implementa.
@@ -102,8 +116,8 @@ func AllowedHost(host string) bool {
 	return false
 }
 
-// Own procura o post na conta do Instagram do cliente e baixa até max itens.
-func (f *Fetcher) Own(ctx context.Context, token, igUserID string, l Link, max int) (Post, error) {
+// Own procura o post na conta do Instagram do cliente e entrega até max itens ao sink, um por vez.
+func (f *Fetcher) Own(ctx context.Context, token, igUserID string, l Link, max int, sink Sink) (Post, error) {
 	if f.Graph == nil {
 		return Post{}, ErrNoGraph
 	}
@@ -116,15 +130,14 @@ func (f *Fetcher) Own(ctx context.Context, token, igUserID string, l Link, max i
 	case err != nil:
 		return Post{}, err
 	}
-	type src struct{ kind, url string }
-	var srcs []src
+	var srcs []source
 	add := func(mediaType, mediaURL string) {
 		kind := "image"
 		if strings.EqualFold(mediaType, "VIDEO") {
 			kind = "video"
 		}
 		if mediaURL != "" {
-			srcs = append(srcs, src{kind, mediaURL})
+			srcs = append(srcs, source{kind, mediaURL})
 		}
 	}
 	if len(m.Children) > 0 {
@@ -135,27 +148,11 @@ func (f *Fetcher) Own(ctx context.Context, token, igUserID string, l Link, max i
 		add(m.MediaType, m.MediaURL)
 	}
 	p := Post{MediaID: m.ID, Permalink: firstNonEmpty(m.Permalink, l.URL), Caption: clip(m.Caption), Total: len(srcs)}
-	for _, s := range srcs {
-		if max > 0 && len(p.Items) >= max {
-			break
-		}
-		it, err := f.download(ctx, s.url, s.kind)
-		if err != nil {
-			if errors.Is(err, ErrTooLarge) && len(srcs) == 1 {
-				return Post{}, err
-			}
-			continue // item que não baixa fica de fora; os outros seguem
-		}
-		p.Items = append(p.Items, it)
-	}
-	if len(p.Items) == 0 {
-		return Post{}, fmt.Errorf("%w: nenhum item do post baixou", ErrUnavailable)
-	}
-	return p, nil
+	return f.collect(ctx, p, srcs, max, sink)
 }
 
 // Public baixa o post pela página pública de incorporação (melhor esforço, sem login).
-func (f *Fetcher) Public(ctx context.Context, l Link, max int) (Post, error) {
+func (f *Fetcher) Public(ctx context.Context, l Link, max int, sink Sink) (Post, error) {
 	pctx, cancel := context.WithTimeout(ctx, f.pageTimeout())
 	defer cancel()
 	page, err := f.fetch(pctx, f.embedBase()+"/p/"+neturl.PathEscape(l.Shortcode)+"/embed/captioned/", pageLimit, "")
@@ -163,27 +160,46 @@ func (f *Fetcher) Public(ctx context.Context, l Link, max int) (Post, error) {
 		return Post{}, fmt.Errorf("%w: %v", ErrUnavailable, err)
 	}
 	videos, images, caption := parseEmbed(string(page.data))
+	page.data = nil
 	if len(videos) == 0 && (l.Kind == KindReel || l.Kind == KindTV) {
 		// reel sem o endereço do vídeo na página: a imagem seria só a capa, não o anúncio que o cliente mandou
 		return Post{}, fmt.Errorf("%w: reel sem vídeo na página pública", ErrUnavailable)
 	}
-	type src struct{ kind, url string }
-	var srcs []src
+	var srcs []source
 	for _, v := range videos {
-		srcs = append(srcs, src{"video", v})
+		srcs = append(srcs, source{"video", v})
 	}
 	if len(videos) == 0 {
 		for _, i := range images {
-			srcs = append(srcs, src{"image", i})
+			srcs = append(srcs, source{"image", i})
 		}
 	}
 	if len(srcs) == 0 {
 		return Post{}, fmt.Errorf("%w: página sem mídia (privado ou login exigido)", ErrUnavailable)
 	}
-	p := Post{Permalink: l.URL, Caption: caption, Total: len(srcs)}
+	return f.collect(ctx, Post{Permalink: l.URL, Caption: caption, Total: len(srcs)}, srcs, max, sink)
+}
+
+type source struct{ kind, url string }
+
+// collect baixa as fontes uma a uma e entrega cada item ao sink antes de baixar o próximo: só um arquivo
+// fica em memória. Item que não baixa fica de fora e os outros seguem; prazo do ctx esgotado encerra e
+// fica com o que já foi entregue.
+func (f *Fetcher) collect(ctx context.Context, p Post, srcs []source, max int, sink Sink) (Post, error) {
 	var firstErr error
-	for _, s := range srcs {
-		if max > 0 && len(p.Items) >= max {
+	stopped := false
+	for pos, s := range srcs {
+		if max > 0 && p.Got >= max {
+			break
+		}
+		if sink.Skip != nil && sink.Skip(p, pos) {
+			p.Skipped++
+			continue
+		}
+		if ctx.Err() != nil {
+			if firstErr == nil {
+				firstErr = ctx.Err()
+			}
 			break
 		}
 		it, err := f.download(ctx, s.url, s.kind)
@@ -193,13 +209,25 @@ func (f *Fetcher) Public(ctx context.Context, l Link, max int) (Post, error) {
 			}
 			continue
 		}
-		p.Items = append(p.Items, it)
+		if sink.Save == nil {
+			p.Items = append(p.Items, it)
+			p.Got++
+			continue
+		}
+		// o item não sai daqui: depois do Save os bytes ficam livres antes do próximo download
+		if err := sink.Save(p, pos, it); errors.Is(err, ErrStop) {
+			stopped = true
+			break
+		} else if err != nil {
+			return p, err
+		}
+		p.Got++
 	}
-	if len(p.Items) == 0 {
+	if p.Got == 0 && p.Skipped == 0 && !stopped {
 		if errors.Is(firstErr, ErrTooLarge) {
 			return Post{}, firstErr
 		}
-		return Post{}, fmt.Errorf("%w: %v", ErrUnavailable, firstErr)
+		return Post{}, fmt.Errorf("%w: nenhum item do post baixou (%v)", ErrUnavailable, firstErr)
 	}
 	return p, nil
 }
@@ -327,7 +355,7 @@ func (f *Fetcher) fetch(ctx context.Context, rawURL string, limit int64, kind st
 	if resp.ContentLength > limit {
 		return fetched{}, ErrTooLarge
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	data, err := readBody(resp.Body, limit, resp.ContentLength)
 	if err != nil {
 		if ctx.Err() != nil {
 			return fetched{}, ctx.Err()
@@ -345,6 +373,30 @@ func (f *Fetcher) fetch(ctx context.Context, rawURL string, limit int64, kind st
 		return fetched{}, fmt.Errorf("%w: arquivo %q não é %s", ErrUnavailable, mt, kind)
 	}
 	return fetched{data: data, mime: mt}, nil
+}
+
+// readBody lê no máximo limit+1 bytes. Com o tamanho declarado (Content-Length) o buffer já nasce do
+// tamanho certo: sem isso, crescer dobrando chega a quase o dobro do arquivo em memória.
+func readBody(r io.Reader, limit, size int64) ([]byte, error) {
+	capHint := int64(512)
+	if size > 0 && size <= limit {
+		capHint = size + 1 // +1: a leitura do fim (EOF) cabe sem realocar
+	}
+	buf := make([]byte, 0, capHint)
+	lr := io.LimitReader(r, limit+1)
+	for {
+		if len(buf) == cap(buf) {
+			buf = append(buf, 0)[:len(buf)] // cresce só sem tamanho declarado (ou se ele mentiu)
+		}
+		n, err := lr.Read(buf[len(buf):cap(buf)])
+		buf = buf[:len(buf)+n]
+		if err == io.EOF {
+			return buf, nil
+		}
+		if err != nil {
+			return buf, err
+		}
+	}
 }
 
 // mediaType usa o tipo do cabeçalho e, se não for imagem nem vídeo, o que os primeiros bytes dizem.

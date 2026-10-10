@@ -190,7 +190,7 @@ func TestPublishJobHasLongerTimeout(t *testing.T) {
 	if got := w.TimeoutFor(engine.JobMetaPublish); got != 15*time.Minute {
 		t.Fatalf("prazo da publicação = %v", got)
 	}
-	if got := w.TimeoutFor(engine.JobInstagramFetch); got != 4*time.Minute {
+	if got := w.TimeoutFor(engine.JobInstagramFetch); got != 5*time.Minute {
 		t.Fatalf("prazo do post do instagram = %v", got)
 	}
 	if got := w.TimeoutFor(engine.JobSend); got != 2*time.Minute {
@@ -199,5 +199,30 @@ func TestPublishJobHasLongerTimeout(t *testing.T) {
 	w.Timeout = time.Minute
 	if got := w.TimeoutFor(engine.JobMetaPublish); got != 15*time.Minute {
 		t.Fatalf("prazo da publicação com Timeout curto = %v", got)
+	}
+}
+
+// A trava do job (ClaimJob) cobre o prazo do tipo com folga: outro worker não pega o mesmo job no meio.
+func TestJobLockCoversTimeout(t *testing.T) {
+	wa := &fakeWA{parse: func([]byte) (whatsapp.Inbound, bool, error) { return whatsapp.Inbound{}, false, nil }}
+	w, st, pool := setup(t, wa)
+	for _, kind := range []string{engine.JobInstagramFetch, engine.JobMetaPublish, engine.JobSend} {
+		if _, err := pool.Exec(ctx, `INSERT INTO outbox_jobs (kind, payload) VALUES ($1, '{}')`, kind); err != nil {
+			t.Fatal(err)
+		}
+		job, ok, err := st.ClaimJob(ctx)
+		if err != nil || !ok {
+			t.Fatalf("claim %s: %v %v", kind, ok, err)
+		}
+		var lock time.Duration
+		if err := pool.QueryRow(ctx, `SELECT extract(epoch FROM locked_until - now()) * interval '1 second' FROM outbox_jobs WHERE id = $1`, job.ID).Scan(&lock); err != nil {
+			t.Fatal(err)
+		}
+		if lock < w.TimeoutFor(kind)+time.Minute {
+			t.Fatalf("%s: trava %v não cobre o prazo %v com folga", kind, lock, w.TimeoutFor(kind))
+		}
+		if _, err := st.FinishJob(ctx, job.ID, nil); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

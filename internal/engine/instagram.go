@@ -20,8 +20,18 @@ import (
 // JobInstagramFetch baixa o post do link que o cliente mandou.
 const JobInstagramFetch = "instagram.fetch"
 
-// InstagramTimeout é o prazo do job no worker: vídeo de até 300 MB (a trava do job é de 5 min).
-const InstagramTimeout = 4 * time.Minute
+const (
+	// InstagramBudget é o prazo total dos downloads de um job (API, página e arquivos). Esgotou, para e
+	// fica com o que já baixou.
+	InstagramBudget = 3 * time.Minute
+	// igUploadTimeout e igWriteTimeout: subir um item no Storage e gravar/travar/avisar, com contexto
+	// próprio (o do job pode ter acabado).
+	igUploadTimeout = time.Minute
+	igWriteTimeout  = 30 * time.Second
+	// InstagramTimeout é o prazo do job no worker: orçamento + gravação do último item + aviso, com folga.
+	// A trava do job no store (ClaimJob) é maior.
+	InstagramTimeout = 5 * time.Minute
+)
 
 type InstagramJob struct {
 	ConversationID int64  `json:"conversation_id"`
@@ -29,10 +39,11 @@ type InstagramJob struct {
 	Link           string `json:"link"`
 }
 
-// InstagramFetcher baixa o post. *instagram.Fetcher implementa; os testes trocam.
+// InstagramFetcher baixa o post e entrega os itens um a um ao sink. *instagram.Fetcher implementa; os
+// testes trocam.
 type InstagramFetcher interface {
-	Own(ctx context.Context, token, igUserID string, l instagram.Link, max int) (instagram.Post, error)
-	Public(ctx context.Context, l instagram.Link, max int) (instagram.Post, error)
+	Own(ctx context.Context, token, igUserID string, l instagram.Link, max int, sink instagram.Sink) (instagram.Post, error)
+	Public(ctx context.Context, l instagram.Link, max int, sink instagram.Sink) (instagram.Post, error)
 }
 
 // enqueueInstagram agenda a busca de cada post do texto. ok=false: o texto não tem link de post.
@@ -50,8 +61,10 @@ func (e *Engine) enqueueInstagram(ctx context.Context, conv store.Conversation, 
 	return len(links) > 0, nil
 }
 
-// fetchInstagram baixa o post e guarda como anúncio. Erro devolvido = o outbox tenta de novo (banco);
-// falha do Instagram vira mensagem ao cliente, sem nova tentativa.
+// fetchInstagram baixa o post e guarda como anúncio, um item por vez. Erro devolvido = o outbox tenta de
+// novo (banco); falha do Instagram vira mensagem ao cliente, sem nova tentativa. Os downloads têm um prazo
+// total (InstagramBudget); gravações, trava e aviso usam contexto próprio e curto, para o prazo do job
+// não descartar o que já baixou.
 func (e *Engine) fetchInstagram(ctx context.Context, j InstagramJob) error {
 	if e.Instagram == nil || e.Storage == nil {
 		return nil
@@ -75,79 +88,153 @@ func (e *Engine) fetchInstagram(ctx context.Context, j InstagramJob) error {
 		}
 		return e.send(ctx, conv, join(msgInstagramFull, creativesStatus(list)))
 	}
+	f := &igFetch{e: e, ctx: ctx, job: j, link: link}
+	budget, cancel := context.WithTimeout(ctx, e.instagramBudget())
+	defer cancel()
 	// A busca roda fora da trava da conversa: o cliente pode seguir mandando mensagens enquanto baixa.
-	post, origin, err := e.downloadInstagram(ctx, ident, link, maxCreatives-n)
-	if err != nil {
-		e.Log.Warn("post do instagram não baixou", "conversation_id", conv.ID, "erro", err)
-		e.audit(ctx, ident.OrgID, "system", "instagram_fetch_failed", map[string]any{"draft_id": d.ID, "error": err.Error()})
-		return e.send(ctx, conv, msgInstagramFailed)
+	post, origin, err := e.downloadInstagram(budget, ident, link, maxCreatives-n, f)
+	if f.fatal != nil {
+		return f.fatal // banco fora: o outbox tenta de novo
 	}
 
-	unlock, err := e.Store.LockConversation(ctx, conv.ID)
+	wctx, wcancel := writeCtx(ctx, igWriteTimeout)
+	defer wcancel()
+	if err != nil && f.saved == 0 {
+		e.Log.Warn("post do instagram não baixou", "conversation_id", conv.ID, "erro", err)
+		e.audit(wctx, ident.OrgID, "system", "instagram_fetch_failed", map[string]any{"draft_id": d.ID, "error": err.Error()})
+		return e.notifyInstagram(wctx, conv, msgInstagramFailed)
+	}
+	if f.gone {
+		return nil // a conversa seguiu (PRONTO, atendimento humano): o post é descartado
+	}
+	e.audit(wctx, ident.OrgID, member(ident), "instagram_post_saved", map[string]any{"draft_id": d.ID, "origin": origin,
+		"saved": f.saved, "total": post.Total, "ig_media_id": post.MediaID})
+	list, err := e.Store.ListCreatives(wctx, d.ID)
 	if err != nil {
-		return err
-	}
-	defer unlock()
-	// A conversa pode ter seguido enquanto baixava (PRONTO, atendimento humano): aí o post é descartado.
-	if conv, ident, d, ok, err = e.instagramTarget(ctx, j); err != nil || !ok {
-		return err
-	}
-	if n, err = e.Store.CountCreatives(ctx, d.ID); err != nil {
-		return err
-	}
-	pending := origin == store.OriginInstagramPublic
-	var warnings, rejected []string
-	saved, failed := 0, false
-	for i, it := range post.Items {
-		if n+saved >= maxCreatives {
-			break
-		}
-		mark := e.keepCreative(ctx, ident, conv.ID, d, creativeFile{data: it.Data, mime: it.Mime, kind: it.Kind,
-			name: fmt.Sprintf("ig%s%d", safeName(link.Shortcode), i+1), origin: origin, igMediaID: post.MediaID,
-			rightsPending: pending, sourceURL: firstText(post.Permalink, link.URL), caption: post.Caption})
-		switch {
-		case strings.HasPrefix(mark, creativeWarned):
-			warnings = append(warnings, strings.TrimSuffix(strings.TrimPrefix(mark, creativeWarned), "]"))
-			saved++
-		case strings.HasPrefix(mark, creativeSaved):
-			saved++
-		case strings.HasPrefix(mark, creativeRejected):
-			rejected = append(rejected, strings.TrimSuffix(strings.TrimPrefix(mark, creativeRejected), "]"))
-		default:
-			failed = true
-		}
-	}
-	e.audit(ctx, ident.OrgID, member(ident), "instagram_post_saved", map[string]any{"draft_id": d.ID, "origin": origin,
-		"saved": saved, "total": post.Total, "ig_media_id": post.MediaID})
-	list, err := e.Store.ListCreatives(ctx, d.ID)
-	if err != nil {
-		return err
+		e.Log.Error("post do instagram guardado, mas a lista dos anúncios não leu", "conversation_id", conv.ID, "erro", err)
+		return nil // já guardou: refazer baixaria tudo de novo
 	}
 	var parts []string
-	for _, r := range rejected {
+	for _, r := range f.rejected {
 		parts = append(parts, fmt.Sprintf(msgCreativeRejected, r))
 	}
-	if failed {
+	if f.failed {
 		parts = append(parts, msgCreativeFailed)
 	}
-	if saved == 0 {
-		return e.send(ctx, conv, join(append(parts, creativesStatus(list))...))
+	if f.saved == 0 {
+		return e.notifyInstagram(wctx, conv, join(append(parts, creativesStatus(list))...))
 	}
+	pending := origin == store.OriginInstagramPublic
 	ack := msgInstagramOwnSaved
 	if pending {
 		ack = msgInstagramPublicSaved + " " + msgInstagramRightsQuestion
 	}
-	for _, w := range warnings {
+	for _, w := range f.warnings {
 		ack += "\n⚠️ " + upperFirst(w) + "."
 	}
 	parts = append([]string{ack}, parts...)
-	if post.Total > saved && len(rejected) == 0 && !failed {
-		parts = append(parts, fmt.Sprintf(msgInstagramPartial, post.Total, saved, maxCreatives))
+	if post.Total > f.saved && len(f.rejected) == 0 && !f.failed {
+		parts = append(parts, fmt.Sprintf(msgInstagramPartial, post.Total, f.saved, maxCreatives))
 	}
 	if !pending {
 		parts = append(parts, creativesStatus(list))
 	}
-	return e.send(ctx, conv, join(parts...))
+	return e.notifyInstagram(wctx, conv, join(parts...))
+}
+
+// notifyInstagram avisa o cliente. Falha no envio não faz o job baixar tudo de novo: fica no log.
+func (e *Engine) notifyInstagram(ctx context.Context, conv store.Conversation, text string) error {
+	if err := e.send(ctx, conv, text); err != nil {
+		e.Log.Error("aviso do post do instagram não saiu", "conversation_id", conv.ID, "erro", err)
+	}
+	return nil
+}
+
+// writeCtx: contexto próprio e curto para gravar e avisar, mesmo com o do job vencido ou cancelado.
+func writeCtx(ctx context.Context, d time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), d)
+}
+
+func (e *Engine) instagramBudget() time.Duration {
+	if e.InstagramBudget > 0 {
+		return e.InstagramBudget
+	}
+	return InstagramBudget
+}
+
+// igFetch guarda os itens do post conforme chegam e anota o resultado.
+type igFetch struct {
+	e    *Engine
+	ctx  context.Context // do job: só a origem dos contextos próprios de gravação
+	job  InstagramJob
+	link instagram.Link
+
+	saved              int
+	warnings, rejected []string
+	failed             bool
+	gone               bool  // a conversa não espera mais os anúncios deste rascunho
+	fatal              error // banco fora
+}
+
+// sink é o destino dos itens de uma origem (conta conectada ou página pública).
+func (f *igFetch) sink(origin string) instagram.Sink {
+	return instagram.Sink{Save: func(p instagram.Post, pos int, it instagram.Item) error { return f.save(origin, p, pos, it) }}
+}
+
+// stopped: a busca não deve tentar outra origem (já guardou algo, a conversa seguiu ou o banco caiu).
+func (f *igFetch) stopped() bool { return f.saved > 0 || f.gone || f.fatal != nil }
+
+// save guarda um item: trava a conversa só durante a gravação e confere de novo se ela ainda espera os
+// anúncios do mesmo rascunho.
+func (f *igFetch) save(origin string, p instagram.Post, pos int, it instagram.Item) error {
+	e := f.e
+	ctx, cancel := writeCtx(f.ctx, igUploadTimeout+igWriteTimeout)
+	defer cancel()
+	conv, ident, d, ok, err := e.instagramTarget(ctx, f.job)
+	if err != nil {
+		f.fatal = err
+		return err
+	}
+	if !ok {
+		f.gone = true
+		return instagram.ErrStop
+	}
+	unlock, err := e.Store.LockConversation(ctx, conv.ID)
+	if err != nil {
+		f.fatal = err
+		return err
+	}
+	defer unlock()
+	if conv, ident, d, ok, err = e.instagramTarget(ctx, f.job); err != nil {
+		f.fatal = err
+		return err
+	} else if !ok {
+		f.gone = true
+		return instagram.ErrStop
+	}
+	n, err := e.Store.CountCreatives(ctx, d.ID)
+	if err != nil {
+		f.fatal = err
+		return err
+	}
+	if n >= maxCreatives {
+		return instagram.ErrStop
+	}
+	mark := e.keepCreative(ctx, ident, conv.ID, d, creativeFile{data: it.Data, mime: it.Mime, kind: it.Kind,
+		name: fmt.Sprintf("ig%s%d", safeName(f.link.Shortcode), pos+1), origin: origin, igMediaID: p.MediaID,
+		rightsPending: origin == store.OriginInstagramPublic, sourceURL: firstText(p.Permalink, f.link.URL), caption: p.Caption})
+	switch {
+	case strings.HasPrefix(mark, creativeWarned):
+		f.warnings = append(f.warnings, strings.TrimSuffix(strings.TrimPrefix(mark, creativeWarned), "]"))
+		f.saved++
+	case strings.HasPrefix(mark, creativeSaved):
+		f.saved++
+	case strings.HasPrefix(mark, creativeRejected):
+		f.rejected = append(f.rejected, strings.TrimSuffix(strings.TrimPrefix(mark, creativeRejected), "]"))
+	default:
+		f.failed = true
+	}
+	return nil
 }
 
 // instagramTarget confere se a conversa ainda espera os anúncios do mesmo rascunho.
@@ -171,13 +258,16 @@ func (e *Engine) instagramTarget(ctx context.Context, j InstagramJob) (store.Con
 }
 
 // downloadInstagram tenta a conta conectada (Graph API) e, se o post não é dela ou falta permissão,
-// a página pública.
-func (e *Engine) downloadInstagram(ctx context.Context, ident store.Identity, link instagram.Link, max int) (instagram.Post, string, error) {
+// a página pública. Prazo esgotado, arquivo grande demais ou item já guardado não tentam a outra origem.
+func (e *Engine) downloadInstagram(ctx context.Context, ident store.Identity, link instagram.Link, max int, f *igFetch) (instagram.Post, string, error) {
 	if token, igUser, ok := e.instagramAccount(ctx, ident.OrgID); ok {
-		post, err := e.Instagram.Own(ctx, token, igUser, link, max)
+		post, err := e.Instagram.Own(ctx, token, igUser, link, max, f.sink(store.OriginInstagramOwn))
 		switch {
-		case err == nil:
-			return post, store.OriginInstagramOwn, nil
+		case err == nil || f.stopped() || ctx.Err() != nil:
+			return post, store.OriginInstagramOwn, err
+		case errors.Is(err, instagram.ErrTooLarge):
+			// o arquivo é o mesmo na página pública: baixar de novo só gastaria o prazo
+			return post, store.OriginInstagramOwn, err
 		case errors.Is(err, instagram.ErrPermission):
 			if e.igPermWarned.CompareAndSwap(false, true) {
 				e.Log.Warn("sem permissão para ler os posts do Instagram do cliente; usando a página pública. "+
@@ -190,7 +280,7 @@ func (e *Engine) downloadInstagram(ctx context.Context, ident store.Identity, li
 			e.Log.Warn("post da conta do cliente não baixou; tentando a página pública", "org_id", ident.OrgID, "erro", err)
 		}
 	}
-	post, err := e.Instagram.Public(ctx, link, max)
+	post, err := e.Instagram.Public(ctx, link, max, f.sink(store.OriginInstagramPublic))
 	return post, store.OriginInstagramPublic, err
 }
 

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/media/mediatest"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/meta"
@@ -138,7 +139,7 @@ func TestPublicCarouselImages(t *testing.T) {
 	c := newCDN(t, false)
 	f := testFetcher(c.srv.URL)
 	l, _ := ParseLink("https://www.instagram.com/p/CAROSSEL1/")
-	p, err := f.Public(ctx, l, 0)
+	p, err := f.Public(ctx, l, 0, Sink{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +153,7 @@ func TestPublicCarouselImages(t *testing.T) {
 		t.Fatalf("post = %+v", p)
 	}
 	// respeita o máximo pedido
-	p, err = f.Public(ctx, l, 1)
+	p, err = f.Public(ctx, l, 1, Sink{})
 	if err != nil || len(p.Items) != 1 || p.Total != 2 {
 		t.Fatalf("max 1: %v %d", err, len(p.Items))
 	}
@@ -161,7 +162,7 @@ func TestPublicCarouselImages(t *testing.T) {
 func TestPublicVideo(t *testing.T) {
 	c := newCDN(t, true)
 	f := testFetcher(c.srv.URL)
-	p, err := f.Public(ctx, Link{Shortcode: "REEL1", Kind: KindReel, URL: "https://www.instagram.com/reel/REEL1/"}, 5)
+	p, err := f.Public(ctx, Link{Shortcode: "REEL1", Kind: KindReel, URL: "https://www.instagram.com/reel/REEL1/"}, 5, Sink{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,17 +174,17 @@ func TestPublicVideo(t *testing.T) {
 func TestPublicLoginWallIsUnavailable(t *testing.T) {
 	c := newCDN(t, false)
 	f := testFetcher(c.srv.URL)
-	_, err := f.Public(ctx, Link{Shortcode: "PRIVADO", Kind: KindPost}, 5)
+	_, err := f.Public(ctx, Link{Shortcode: "PRIVADO", Kind: KindPost}, 5, Sink{})
 	if !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("erro = %v", err)
 	}
-	_, err = f.Public(ctx, Link{Shortcode: "X"}, 5)
+	_, err = f.Public(ctx, Link{Shortcode: "X"}, 5, Sink{})
 	if err != nil {
 		t.Fatalf("página normal: %v", err)
 	}
 	// página fora do ar
 	f.EmbedBase = "http://127.0.0.1:1"
-	if _, err := f.Public(ctx, Link{Shortcode: "X"}, 5); !errors.Is(err, ErrUnavailable) {
+	if _, err := f.Public(ctx, Link{Shortcode: "X"}, 5, Sink{}); !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("fora do ar: %v", err)
 	}
 }
@@ -202,7 +203,7 @@ func TestPublicIgnoresMediaOutsideAllowList(t *testing.T) {
 	}))
 	t.Cleanup(page.Close)
 	f := testFetcher(page.URL)
-	_, err := f.Public(ctx, Link{Shortcode: "X"}, 5)
+	_, err := f.Public(ctx, Link{Shortcode: "X"}, 5, Sink{})
 	if !errors.Is(err, ErrUnavailable) || evilHits.Load() != 0 {
 		t.Fatalf("erro = %v acessos ao host proibido = %d", err, evilHits.Load())
 	}
@@ -294,7 +295,7 @@ func TestOwnCarouselFromGraph(t *testing.T) {
 		}}}
 	f := testFetcher(c.srv.URL)
 	f.Graph = g
-	p, err := f.Own(ctx, "tok", "IG1", Link{Shortcode: "MEU1", Kind: KindPost}, 5)
+	p, err := f.Own(ctx, "tok", "IG1", Link{Shortcode: "MEU1", Kind: KindPost}, 5, Sink{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -306,15 +307,15 @@ func TestOwnCarouselFromGraph(t *testing.T) {
 func TestOwnErrors(t *testing.T) {
 	g := &fakeGraph{media: meta.IGMedia{Shortcode: "MEU1"}}
 	f := testFetcher("")
-	if _, err := f.Own(ctx, "tok", "IG1", Link{Shortcode: "X"}, 5); !errors.Is(err, ErrNoGraph) {
+	if _, err := f.Own(ctx, "tok", "IG1", Link{Shortcode: "X"}, 5, Sink{}); !errors.Is(err, ErrNoGraph) {
 		t.Fatalf("sem graph: %v", err)
 	}
 	f.Graph = g
-	if _, err := f.Own(ctx, "tok", "IG1", Link{Shortcode: "DE_OUTRO"}, 5); !errors.Is(err, ErrNotOwn) {
+	if _, err := f.Own(ctx, "tok", "IG1", Link{Shortcode: "DE_OUTRO"}, 5, Sink{}); !errors.Is(err, ErrNotOwn) {
 		t.Fatalf("post de outra conta: %v", err)
 	}
 	// o post existe mas o item não baixa
-	if _, err := f.Own(ctx, "tok", "IG1", Link{Shortcode: "MEU1"}, 5); !errors.Is(err, ErrUnavailable) {
+	if _, err := f.Own(ctx, "tok", "IG1", Link{Shortcode: "MEU1"}, 5, Sink{}); !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("sem itens: %v", err)
 	}
 }
@@ -330,8 +331,122 @@ func TestOwnPermissionError(t *testing.T) {
 	mc.GraphURL = srv.URL
 	f := testFetcher("")
 	f.Graph = mc
-	if _, err := f.Own(ctx, "tok", "IG1", Link{Shortcode: "A"}, 5); !errors.Is(err, ErrPermission) {
+	if _, err := f.Own(ctx, "tok", "IG1", Link{Shortcode: "A"}, 5, Sink{}); !errors.Is(err, ErrPermission) {
 		t.Fatalf("erro = %v", err)
+	}
+}
+
+// Memória: cada item vai para o Save assim que baixa e é solto antes do próximo download.
+func TestItemsStreamOneAtATime(t *testing.T) {
+	c := newCDN(t, false)
+	f := testFetcher(c.srv.URL)
+	var got []int
+	save := func(p Post, pos int, it Item) error {
+		if int(c.hits.Load()) != pos+1 {
+			t.Fatalf("item %d: %d downloads antes de guardar (baixou o próximo antes)", pos, c.hits.Load())
+		}
+		if p.Permalink == "" || p.Total != 2 || len(it.Data) == 0 {
+			t.Fatalf("post = %+v item = %d bytes", p, len(it.Data))
+		}
+		got = append(got, pos)
+		return nil
+	}
+	p, err := f.Public(ctx, Link{Shortcode: "CAR", Kind: KindPost, URL: "https://www.instagram.com/p/CAR/"}, 5, Sink{Save: save})
+	if err != nil || p.Got != 2 || len(p.Items) != 0 || len(got) != 2 {
+		t.Fatalf("público: err = %v got = %d itens guardados no post = %d", err, p.Got, len(p.Items))
+	}
+
+	c2 := newCDN(t, false)
+	g := &fakeGraph{media: meta.IGMedia{ID: "9", Shortcode: "MEU1", Children: []meta.IGChild{
+		{MediaType: "IMAGE", MediaURL: c2.srv.URL + "/cdn/a.jpg"}, {MediaType: "IMAGE", MediaURL: c2.srv.URL + "/cdn/b.jpg"}}}}
+	f2 := testFetcher(c2.srv.URL)
+	f2.Graph = g
+	c = c2
+	got = nil
+	p, err = f2.Own(ctx, "tok", "IG1", Link{Shortcode: "MEU1", URL: "https://www.instagram.com/p/MEU1/"}, 5, Sink{Save: save})
+	if err != nil || p.Got != 2 || len(p.Items) != 0 {
+		t.Fatalf("conta: err = %v got = %d itens = %d", err, p.Got, len(p.Items))
+	}
+}
+
+// Item já guardado (nova tentativa do job) não é baixado de novo nem conta no máximo.
+func TestSkipAvoidsDownload(t *testing.T) {
+	c := newCDN(t, false)
+	f := testFetcher(c.srv.URL)
+	var saved []int
+	p, err := f.Public(ctx, Link{Shortcode: "CAR", Kind: KindPost}, 1, Sink{
+		Skip: func(_ Post, pos int) bool { return pos == 0 },
+		Save: func(_ Post, pos int, _ Item) error { saved = append(saved, pos); return nil },
+	})
+	if err != nil || p.Got != 1 || p.Skipped != 1 || len(saved) != 1 || saved[0] != 1 || c.hits.Load() != 1 {
+		t.Fatalf("err = %v got = %d skipped = %d saved = %v hits = %d", err, p.Got, p.Skipped, saved, c.hits.Load())
+	}
+	// tudo já guardado: não é erro
+	p, err = f.Public(ctx, Link{Shortcode: "CAR", Kind: KindPost}, 5, Sink{Skip: func(Post, int) bool { return true }})
+	if err != nil || p.Got != 0 || p.Skipped != 2 {
+		t.Fatalf("tudo guardado: err = %v %+v", err, p)
+	}
+	// ErrStop do Save encerra sem erro
+	p, err = f.Public(ctx, Link{Shortcode: "CAR", Kind: KindPost}, 5, Sink{Save: func(Post, int, Item) error { return ErrStop }})
+	if err != nil || p.Got != 0 {
+		t.Fatalf("ErrStop: err = %v %+v", err, p)
+	}
+	// erro do Save volta para quem chamou
+	boom := errors.New("banco fora")
+	if _, err = f.Public(ctx, Link{Shortcode: "CAR", Kind: KindPost}, 5, Sink{Save: func(Post, int, Item) error { return boom }}); !errors.Is(err, boom) {
+		t.Fatalf("erro do Save: %v", err)
+	}
+}
+
+// Prazo total esgotado no meio: para de baixar e fica com o que já baixou.
+func TestBudgetExhaustedKeepsDownloaded(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/lento.jpg" {
+			<-r.Context().Done()
+			return
+		}
+		w.Header().Set("Content-Type", "image/jpeg")
+		w.Write(mediatest.JPEG(1080, 1080))
+	}))
+	t.Cleanup(srv.Close)
+	g := &fakeGraph{media: meta.IGMedia{ID: "9", Shortcode: "MEU1", Children: []meta.IGChild{
+		{MediaType: "IMAGE", MediaURL: srv.URL + "/a.jpg"}, {MediaType: "IMAGE", MediaURL: srv.URL + "/lento.jpg"},
+		{MediaType: "IMAGE", MediaURL: srv.URL + "/c.jpg"}}}}
+	f := testFetcher(srv.URL)
+	f.Graph = g
+	bctx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	n := 0
+	p, err := f.Own(bctx, "tok", "IG1", Link{Shortcode: "MEU1"}, 5, Sink{Save: func(Post, int, Item) error { n++; return nil }})
+	if err != nil || p.Got != 1 || n != 1 {
+		t.Fatalf("err = %v got = %d", err, p.Got)
+	}
+	if time.Since(start) > 3*time.Second {
+		t.Fatalf("não parou no prazo: %v", time.Since(start))
+	}
+	// sem nada baixado no prazo: erro
+	bctx2, cancel2 := context.WithTimeout(ctx, 200*time.Millisecond)
+	defer cancel2()
+	g.media.Children = []meta.IGChild{{MediaType: "IMAGE", MediaURL: srv.URL + "/lento.jpg"}, {MediaType: "IMAGE", MediaURL: srv.URL + "/a.jpg"}}
+	if _, err := f.Own(bctx2, "tok", "IG1", Link{Shortcode: "MEU1"}, 5, Sink{Save: func(Post, int, Item) error { return nil }}); err == nil {
+		t.Fatal("prazo esgotado sem item deveria dar erro")
+	}
+}
+
+func TestVideoLimitAndPreallocation(t *testing.T) {
+	if DefaultVideoLimit != 100<<20 {
+		t.Fatalf("limite de vídeo = %d MB", DefaultVideoLimit>>20)
+	}
+	// com Content-Length, o buffer nasce do tamanho certo (sem dobrar a memória ao crescer)
+	data, err := readBody(strings.NewReader(strings.Repeat("x", 3000)), 10000, 3000)
+	if err != nil || len(data) != 3000 || cap(data) != 3001 {
+		t.Fatalf("err = %v len = %d cap = %d", err, len(data), cap(data))
+	}
+	// acima do limite: lê só limit+1
+	data, err = readBody(strings.NewReader(strings.Repeat("x", 3000)), 1000, -1)
+	if err != nil || len(data) != 1001 {
+		t.Fatalf("corte: err = %v len = %d", err, len(data))
 	}
 }
 
@@ -340,7 +455,7 @@ func TestPublicReelWithoutVideoIsUnavailable(t *testing.T) {
 	c := newCDN(t, false) // página só com imagens
 	f := testFetcher(c.srv.URL)
 	for _, kind := range []string{KindReel, KindTV} {
-		_, err := f.Public(ctx, Link{Shortcode: "REEL2", Kind: kind, URL: "https://www.instagram.com/reel/REEL2/"}, 5)
+		_, err := f.Public(ctx, Link{Shortcode: "REEL2", Kind: kind, URL: "https://www.instagram.com/reel/REEL2/"}, 5, Sink{})
 		if !errors.Is(err, ErrUnavailable) {
 			t.Fatalf("%s sem vídeo: erro = %v", kind, err)
 		}

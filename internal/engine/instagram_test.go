@@ -2,9 +2,12 @@ package engine_test
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/engine"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/instagram"
@@ -13,52 +16,97 @@ import (
 )
 
 // fakeIG faz o papel do instagram.Fetcher: posts por shortcode na conta do cliente e na página pública.
+// Entrega os itens um a um ao Sink, como o Fetcher de verdade.
 type fakeIG struct {
-	mu       sync.Mutex
-	own      map[string]instagram.Post
-	ownErr   error
-	pub      map[string]instagram.Post
-	pubErr   error
-	ownCalls int
-	pubCalls int
-	tokens   []string
+	mu        sync.Mutex
+	own       map[string]instagram.Post
+	ownErr    error
+	pub       map[string]instagram.Post
+	pubErr    error
+	ownCalls  int
+	pubCalls  int
+	tokens    []string
+	deadlines []time.Duration // prazo que sobrava no contexto de cada busca
+	before    func()          // antes de entregar o primeiro item (ex.: fechar a etapa)
+	afterSave func(pos int)   // depois de cada item guardado
 }
 
-func (f *fakeIG) Own(_ context.Context, token, igUserID string, l instagram.Link, max int) (instagram.Post, error) {
+func (f *fakeIG) Own(ctx context.Context, token, igUserID string, l instagram.Link, max int, sink instagram.Sink) (instagram.Post, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.ownCalls++
 	f.tokens = append(f.tokens, token+"|"+igUserID)
-	if f.ownErr != nil {
-		return instagram.Post{}, f.ownErr
-	}
+	f.noteDeadline(ctx)
+	err := f.ownErr
 	p, ok := f.own[l.Shortcode]
+	f.mu.Unlock()
+	if err != nil {
+		return instagram.Post{}, err
+	}
 	if !ok {
 		return instagram.Post{}, instagram.ErrNotOwn
 	}
-	return limitItems(p, max), nil
+	return f.deliver(ctx, p, max, sink)
 }
 
-func (f *fakeIG) Public(_ context.Context, l instagram.Link, max int) (instagram.Post, error) {
+func (f *fakeIG) Public(ctx context.Context, l instagram.Link, max int, sink instagram.Sink) (instagram.Post, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.pubCalls++
-	if f.pubErr != nil {
-		return instagram.Post{}, f.pubErr
-	}
+	f.noteDeadline(ctx)
+	err := f.pubErr
 	p, ok := f.pub[l.Shortcode]
+	f.mu.Unlock()
+	if err != nil {
+		return instagram.Post{}, err
+	}
 	if !ok {
 		return instagram.Post{}, instagram.ErrUnavailable
 	}
-	return limitItems(p, max), nil
+	return f.deliver(ctx, p, max, sink)
 }
 
-func limitItems(p instagram.Post, max int) instagram.Post {
-	p.Total = len(p.Items)
-	if max > 0 && len(p.Items) > max {
-		p.Items = p.Items[:max]
+func (f *fakeIG) noteDeadline(ctx context.Context) {
+	if d, ok := ctx.Deadline(); ok {
+		f.deadlines = append(f.deadlines, time.Until(d))
 	}
-	return p
+}
+
+func (f *fakeIG) deliver(ctx context.Context, p instagram.Post, max int, sink instagram.Sink) (instagram.Post, error) {
+	items := p.Items
+	out := p
+	out.Items, out.Total = nil, len(items)
+	if f.before != nil {
+		f.before()
+	}
+	for pos, it := range items {
+		if max > 0 && out.Got >= max {
+			break
+		}
+		if sink.Skip != nil && sink.Skip(out, pos) {
+			out.Skipped++
+			continue
+		}
+		if ctx.Err() != nil {
+			break
+		}
+		if sink.Save == nil {
+			out.Items = append(out.Items, it)
+			out.Got++
+			continue
+		}
+		if err := sink.Save(out, pos, it); errors.Is(err, instagram.ErrStop) {
+			return out, nil
+		} else if err != nil {
+			return out, err
+		}
+		out.Got++
+		if f.afterSave != nil {
+			f.afterSave(pos)
+		}
+	}
+	if out.Got == 0 && out.Skipped == 0 && ctx.Err() != nil {
+		return instagram.Post{}, fmt.Errorf("%w: %v", instagram.ErrUnavailable, ctx.Err())
+	}
+	return out, nil
 }
 
 var (
@@ -352,5 +400,67 @@ func TestPublishOwnPostUsesInstagramMedia(t *testing.T) {
 	}
 	if len(pub2.inputs[0].Creatives) != 2 {
 		t.Fatalf("misturado: %d criativos", len(pub2.inputs[0].Creatives))
+	}
+}
+
+// runKindCtx roda os jobs do tipo com o contexto dado (o do worker: prazo ou desligamento).
+func (h *harness) runKindCtx(jctx context.Context, kind string) {
+	h.t.Helper()
+	_, err := h.pool.Exec(ctx, `UPDATE outbox_jobs SET run_after = CASE WHEN kind = $1 THEN now() ELSE now() + interval '1 hour' END
+		WHERE status = 'pending'`, kind)
+	h.must(err)
+	for {
+		job, ok, err := h.st.ClaimJob(ctx)
+		h.must(err)
+		if !ok {
+			return
+		}
+		_, err = h.st.FinishJob(ctx, job.ID, h.eng.HandleJob(jctx, job))
+		h.must(err)
+	}
+}
+
+// I1: cada item é guardado assim que baixa, antes do próximo (só um arquivo em memória por vez).
+func TestInstagramSavesEachItemBeforeNext(t *testing.T) {
+	h, _, _, ig, _ := newIGHarness(t)
+	h.connectMetaIG()
+	ig.own["MEU1"] = instagram.Post{MediaID: "1789", Items: []instagram.Item{igSquare, igVertical}}
+	var counts []int
+	ig.afterSave = func(int) { counts = append(counts, h.creatives()) }
+	h.say("SIM " + h.reachApproval())
+	h.say("https://www.instagram.com/p/MEU1/")
+	h.runKind(engine.JobInstagramFetch)
+	if len(counts) != 2 || counts[0] != 1 || counts[1] != 2 {
+		t.Fatalf("criativos guardados depois de cada item = %v", counts)
+	}
+}
+
+// I5: prazo total de 3 min para baixar; acabou o prazo do job no meio, o que baixou fica e o aviso sai
+// (gravação e aviso com contexto próprio).
+func TestInstagramBudgetKeepsDownloadedAndNotifies(t *testing.T) {
+	h, _, _, ig, _ := newIGHarness(t)
+	h.connectMetaIG()
+	ig.own["MEU1"] = instagram.Post{MediaID: "1789", Items: []instagram.Item{igSquare, igVertical}}
+	h.say("SIM " + h.reachApproval())
+	h.say("https://www.instagram.com/p/MEU1/")
+	jctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	ig.afterSave = func(pos int) {
+		if pos == 0 {
+			cancel() // prazo do job ou worker parando depois do primeiro item
+		}
+	}
+	h.runKindCtx(jctx, engine.JobInstagramFetch)
+	if engine.InstagramBudget != 3*time.Minute {
+		t.Fatalf("orçamento = %v", engine.InstagramBudget)
+	}
+	if len(ig.deadlines) != 1 || ig.deadlines[0] > engine.InstagramBudget || ig.deadlines[0] < engine.InstagramBudget-time.Minute {
+		t.Fatalf("prazo da busca = %v (orçamento %v)", ig.deadlines, engine.InstagramBudget)
+	}
+	if h.creatives() != 1 {
+		t.Fatalf("criativos = %d", h.creatives())
+	}
+	if msg := h.lastClient(); !strings.Contains(msg, "Peguei seu post") {
+		t.Fatalf("aviso depois do prazo = %q", msg)
 	}
 }
