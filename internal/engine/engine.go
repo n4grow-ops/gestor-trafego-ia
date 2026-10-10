@@ -371,6 +371,9 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 	campaignTalk := turn.Intent == contract.IntentCreateCampaign || turn.Intent == contract.IntentProvideInfo || turn.Fields.HasData()
 	if campaignTalk {
 		if err := e.ensureProject(ctx, ident, &conv, turn.Project, projects); err != nil {
+			if limit, ok := projectLimit(err); ok {
+				return e.send(ctx, conv, limit)
+			}
 			return err
 		}
 	}

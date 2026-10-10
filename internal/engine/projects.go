@@ -80,6 +80,9 @@ func nextProjectName(projects []store.Project) string {
 	}
 }
 
+// msgProjectLimit: o plano chegou ao máximo de projetos ativos.
+const msgProjectLimit = "Seu plano atual permite até %d projetos ativos ao mesmo tempo. Para começar outro, posso arquivar um dos que já existem, ou a equipe te apresenta os planos Starter e Pro. Como prefere seguir?"
+
 // ensureProject garante um projeto ativo antes de coletar dados de campanha.
 func (e *Engine) ensureProject(ctx context.Context, ident store.Identity, conv *store.Conversation, name string, projects []store.Project) error {
 	if conv.ActiveProjectID != nil {
@@ -120,6 +123,9 @@ func (e *Engine) startProject(ctx context.Context, ident store.Identity, conv st
 		name = nextProjectName(projects)
 	}
 	p, created, err := e.Store.CreateOrReopenProject(ctx, ident.OrgID, name, contract.Fields{})
+	if limit, ok := projectLimit(err); ok {
+		return e.send(ctx, conv, limit)
+	}
 	if err != nil {
 		return err
 	}
@@ -265,4 +271,13 @@ var draftLabels = map[string]string{
 	"rejected":  "recusada",
 	"expired":   "expirada",
 	"cancelled": "cancelada",
+}
+
+// projectLimit traduz o limite de projetos do plano numa resposta ao cliente.
+func projectLimit(err error) (string, bool) {
+	var pl *store.ProjectLimitError
+	if !errors.As(err, &pl) {
+		return "", false
+	}
+	return fmt.Sprintf(msgProjectLimit, pl.Max), true
 }

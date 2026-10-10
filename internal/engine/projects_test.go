@@ -219,3 +219,20 @@ func TestBusinessMemoryFillsFieldsAndBriefing(t *testing.T) {
 	}
 	_ = engine.JobPropose
 }
+
+func TestProjectLimitAnswersInsteadOfFailing(t *testing.T) {
+	h := newHarness(t, "owner")
+	ident, err := h.st.FindIdentity(ctx, "openwa", phone)
+	h.must(err)
+	_, err = h.pool.Exec(ctx, `INSERT INTO subscriptions (organization_id, plan_code, status) VALUES ($1, 'free', 'active')`, ident.OrgID)
+	h.must(err)
+	for _, n := range []string{"A", "B", "C"} {
+		_, _, err := h.st.CreateOrReopenProject(ctx, ident.OrgID, n, contract.Fields{})
+		h.must(err)
+	}
+	h.att.Responses = []string{`{"intent":"new_project","project":"Quarto","fields":{},"reply":"ok"}`}
+	h.say("quero um projeto novo")
+	if got := h.wa.last().Text; !strings.Contains(got, "até 3 projetos") {
+		t.Fatalf("resposta = %q", got)
+	}
+}

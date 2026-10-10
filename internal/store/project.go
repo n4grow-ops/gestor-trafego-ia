@@ -50,12 +50,42 @@ func scanProject(row pgx.Row) (Project, error) {
 	return p, nil
 }
 
+// ProjectLimitError: o plano não permite outro projeto ativo.
+type ProjectLimitError struct{ Max int }
+
+func (e *ProjectLimitError) Error() string {
+	return fmt.Sprintf("store: limite de %d projetos ativos do plano", e.Max)
+}
+
+// checkProjectLimit barra projeto NOVO acima do max_projects do plano. Reabrir um existente sempre
+// vale; arquivados não contam; sem assinatura (cliente trazido pela equipe) não há limite.
+func (s *Store) checkProjectLimit(ctx context.Context, orgID int64, name string) error {
+	var exists bool
+	var max *int
+	var active int
+	err := s.pool.QueryRow(ctx, `SELECT
+		EXISTS (SELECT 1 FROM projects WHERE organization_id = $1 AND lower(name) = lower($2)),
+		(SELECT p.max_projects FROM subscriptions sub JOIN plans p ON p.code = sub.plan_code
+			WHERE sub.organization_id = $1 AND sub.status IN ('active', 'trialing')),
+		(SELECT count(*) FROM projects WHERE organization_id = $1 AND stage <> 'archived')`, orgID, name).Scan(&exists, &max, &active)
+	if err != nil {
+		return err
+	}
+	if !exists && max != nil && active >= *max {
+		return &ProjectLimitError{Max: *max}
+	}
+	return nil
+}
+
 // CreateOrReopenProject cria o projeto ou, se o nome já existe (sem diferenciar maiúsculas), reabre.
 // Projeto aprovado ou arquivado volta para collecting; os campos existentes são mantidos.
 func (s *Store) CreateOrReopenProject(ctx context.Context, orgID int64, name string, initial contract.Fields) (Project, bool, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return Project{}, false, errors.New("store: nome de projeto vazio")
+	}
+	if err := s.checkProjectLimit(ctx, orgID, name); err != nil {
+		return Project{}, false, err
 	}
 	fields, err := json.Marshal(initial)
 	if err != nil {
