@@ -513,3 +513,77 @@ func TestAdminClientActions(t *testing.T) {
 		t.Fatalf("ações registradas = %v", actions)
 	}
 }
+
+func (e *adminEnv) auditActions(email string) []string {
+	e.t.Helper()
+	log, err := e.st.AdminLog(context.Background(), store.AdminLogFilter{ActorEmail: email})
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	var out []string
+	for _, l := range log {
+		out = append(out, l.Action)
+	}
+	return out
+}
+
+func TestAdminLoginBruteForceLocks(t *testing.T) {
+	e := newAdminEnv(t, "otp")
+	e.admin.Limiter = nil // só a trava do banco
+	const email = "marina@meuanuncio.io"
+	if r := e.do("POST", "/api/login/start", nil, map[string]string{"email": email}); r.code != 200 {
+		t.Fatalf("start = %d", r.code)
+	}
+	for i := 0; i < 5; i++ {
+		if r := e.do("POST", "/api/login/verify", nil, map[string]string{"email": email, "code": "00000" + strconv.Itoa(i)}); r.code != http.StatusUnauthorized {
+			t.Fatalf("tentativa %d = %d %s", i, r.code, r.raw)
+		}
+	}
+	// Com 5 falhas, nem o código certo entra: e-mail bloqueado.
+	if r := e.do("POST", "/api/login/verify", nil, map[string]string{"email": email, "code": "123456"}); r.code != http.StatusTooManyRequests {
+		t.Fatalf("código certo depois de 5 falhas = %d %s", r.code, r.raw)
+	}
+	if r := e.do("POST", "/api/login/start", nil, map[string]string{"email": email}); r.code != http.StatusTooManyRequests {
+		t.Fatalf("novo código durante o bloqueio = %d", r.code)
+	}
+	acts := strings.Join(e.auditActions(email), ",")
+	if strings.Count(acts, "login_failed") != 5 || strings.Count(acts, "login_locked") != 1 || strings.Contains(acts, "login,") {
+		t.Fatalf("registro = %s", acts)
+	}
+	// Passado o bloqueio, o código antigo continua sem valer; com um código novo, entra.
+	if _, err := e.pool.Exec(context.Background(), `UPDATE admin_login_state SET locked_until = now() - interval '1 second'`); err != nil {
+		t.Fatal(err)
+	}
+	if r := e.do("POST", "/api/login/verify", nil, map[string]string{"email": email, "code": "123456"}); r.code != http.StatusUnauthorized {
+		t.Fatalf("código antigo depois do bloqueio = %d %s", r.code, r.raw)
+	}
+	e.login(email)
+	// Quem não é da equipe recebe as mesmas respostas e também fica bloqueado.
+	if r := e.do("POST", "/api/login/start", nil, map[string]string{"email": "intruso@mail.com"}); r.code != 200 {
+		t.Fatalf("start intruso = %d", r.code)
+	}
+	for i := 0; i < 5; i++ {
+		if r := e.do("POST", "/api/login/verify", nil, map[string]string{"email": "intruso@mail.com", "code": "123456"}); r.code != http.StatusUnauthorized {
+			t.Fatalf("intruso %d = %d", i, r.code)
+		}
+	}
+	if r := e.do("POST", "/api/login/verify", nil, map[string]string{"email": "intruso@mail.com", "code": "123456"}); r.code != http.StatusTooManyRequests {
+		t.Fatalf("intruso bloqueado = %d", r.code)
+	}
+}
+
+func TestAdminLoginCodeEmailLimit(t *testing.T) {
+	e := newAdminEnv(t, "otp")
+	e.admin.Limiter = nil // só o teto por hora do banco
+	for i := 0; i < 5; i++ {
+		if r := e.do("POST", "/api/login/start", nil, map[string]string{"email": "dono@meuanuncio.io"}); r.code != 200 {
+			t.Fatalf("pedido %d = %d", i, r.code)
+		}
+	}
+	if r := e.do("POST", "/api/login/start", nil, map[string]string{"email": "dono@meuanuncio.io"}); r.code != http.StatusTooManyRequests {
+		t.Fatalf("sexto código na hora = %d", r.code)
+	}
+	if len(e.otp.sent) != 5 {
+		t.Fatalf("e-mails enviados = %d", len(e.otp.sent))
+	}
+}

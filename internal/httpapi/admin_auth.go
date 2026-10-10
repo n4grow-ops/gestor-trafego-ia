@@ -190,17 +190,31 @@ func (a *Admin) loginStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m, err := a.Store.TeamMemberByEmail(r.Context(), email)
-	if err == nil && m.Active {
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		a.fail(w, err)
+		return
+	}
+	member := err == nil && m.Active
+	// Teto no banco: 5 códigos por e-mail e 20 no total por hora; e-mail bloqueado não pede código.
+	if err := a.Store.AdminCodeRequest(r.Context(), email, member); err != nil {
+		if errors.Is(err, store.ErrLoginLocked) || errors.Is(err, store.ErrTooManyCodes) {
+			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "muitas_tentativas"})
+			return
+		}
+		a.fail(w, err)
+		return
+	}
+	if member {
 		if err := a.Auth.SendOTP(r.Context(), email); err != nil {
 			a.Log.Error("painel: envio do código falhou", "erro", err)
 		}
-	} else if err != nil && !errors.Is(err, store.ErrNotFound) {
-		a.fail(w, err)
-		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "enviado"})
 }
 
+// loginVerify confere o código. A trava fica no banco: com 5 falhas o código deixa de valer e o
+// e-mail fica bloqueado por 15 min (e há um teto diário de falhas). Quem não é da equipe recebe as
+// mesmas respostas e conta do mesmo jeito.
 func (a *Admin) loginVerify(w http.ResponseWriter, r *http.Request) {
 	if a.Mode != "otp" {
 		http.NotFound(w, r)
@@ -215,23 +229,33 @@ func (a *Admin) loginVerify(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "muitas_tentativas"})
 		return
 	}
-	code := strings.TrimSpace(b.Code)
-	if !ok || !otpCode.MatchString(code) {
+	if !ok {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "codigo_invalido"})
 		return
 	}
-	m, err := a.Store.TeamMemberByEmail(r.Context(), email)
-	if errors.Is(err, store.ErrNotFound) || (err == nil && !m.Active) {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "codigo_invalido"})
+	valid, err := a.Store.AdminLoginGate(r.Context(), email)
+	if errors.Is(err, store.ErrLoginLocked) {
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "muitas_tentativas"})
 		return
 	}
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
+	m, err := a.Store.TeamMemberByEmail(r.Context(), email)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		a.fail(w, err)
+		return
+	}
+	member := err == nil && m.Active
+	code := strings.TrimSpace(b.Code)
+	if !valid || !member || !otpCode.MatchString(code) {
+		a.loginFailed(w, r, email, m, member)
+		return
+	}
 	user, err := a.Auth.VerifyOTP(r.Context(), email, code)
 	if errors.Is(err, signup.ErrUnauthorized) || (err == nil && user.Email != email) {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "codigo_invalido"})
+		a.loginFailed(w, r, email, m, member)
 		return
 	}
 	if err != nil {
@@ -239,7 +263,29 @@ func (a *Admin) loginVerify(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "login_indisponivel"})
 		return
 	}
+	if err := a.Store.AdminLoginSucceeded(r.Context(), email); err != nil {
+		a.fail(w, err)
+		return
+	}
 	a.finishLogin(w, r, m, "otp")
+}
+
+// loginFailed conta a falha, grava login_failed (e login_locked quando bloqueou) e responde.
+func (a *Admin) loginFailed(w http.ResponseWriter, r *http.Request, email string, m store.TeamMember, member bool) {
+	locked, err := a.Store.AdminLoginFailed(r.Context(), email)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	actor := store.TeamMember{Email: email}
+	if member {
+		actor = m
+	}
+	a.log(r, actor, "login_failed", "", "", "", nil)
+	if locked {
+		a.log(r, actor, "login_locked", "", "", "", map[string]int{"minutos": store.AdminLoginLockMinutes})
+	}
+	writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "codigo_invalido"})
 }
 
 // loginDev entra só com o e-mail da equipe. Existe apenas no modo de desenvolvimento (sem Supabase).
