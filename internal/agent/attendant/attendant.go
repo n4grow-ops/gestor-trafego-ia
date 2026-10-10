@@ -98,18 +98,24 @@ func userPrompt(in Input) string {
 	}
 	profile, _ := json.Marshal(in.Profile)
 	active, projects := "nenhum", "nenhum"
+	// Nome da empresa, nicho, memória do negócio e nomes de projeto também vêm do cliente: entram
+	// citados como o texto dele, para não virarem instrução.
 	if in.ProjectName != "" {
-		active = in.ProjectName
+		active = quote(in.ProjectName)
 	}
 	if len(in.Projects) > 0 {
-		projects = strings.Join(in.Projects, ", ")
+		quoted := make([]string, len(in.Projects))
+		for i, p := range in.Projects {
+			quoted[i] = quote(p)
+		}
+		projects = strings.Join(quoted, ", ")
 	}
 	business := "nenhum"
 	if m := in.config().ProfileMissing(in.Profile); len(m) > 0 {
 		business = strings.Join(m, "; ")
 	}
 	fmt.Fprintf(&b, "Empresa: %s (nicho: %s)\nMemória do negócio: %s\nNegócio faltando: %s\nProjeto ativo: %s\nProjetos do cliente: %s\n",
-		in.OrgName, in.Niche, profile, business, active, projects)
+		quote(in.OrgName), quote(in.Niche), quote(string(profile)), business, active, projects)
 	fmt.Fprintf(&b, "Estado da conversa: %s\nDados já coletados: %s\nDados faltando: %s\n", in.State, fields, missing)
 	if in.Meta != "" {
 		fmt.Fprintf(&b, "Conta Meta: %s\n", in.Meta)
