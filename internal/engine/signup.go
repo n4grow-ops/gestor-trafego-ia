@@ -40,6 +40,12 @@ func (e *Engine) signupGate(ctx context.Context, ident store.Identity, conv stor
 	if err != nil || recent {
 		return err
 	}
+	return e.inviteSignup(ctx, ident, conv)
+}
+
+// inviteSignup cria um link de cadastro e o entrega: como formulário do WhatsApp quando houver,
+// senão (ou se o formulário falhar) como link da página.
+func (e *Engine) inviteSignup(ctx context.Context, ident store.Identity, conv store.Conversation) error {
 	raw, hash, err := signup.NewToken()
 	if err != nil {
 		return err
@@ -50,6 +56,9 @@ func (e *Engine) signupGate(ctx context.Context, ident store.Identity, conv stor
 	e.audit(ctx, ident.OrgID, "system", "signup_link_sent", map[string]any{"identity_id": ident.ID})
 	if err := e.scheduleFirstReminder(ctx, ident.ID, conv.ID); err != nil {
 		return err
+	}
+	if e.sendSignupFlow(ctx, conv, raw, msgSignupFlow) {
+		return nil
 	}
 	return e.send(ctx, conv, fmt.Sprintf(msgSignupLink, strings.TrimRight(e.SignupBaseURL, "/")+"/"+raw))
 }

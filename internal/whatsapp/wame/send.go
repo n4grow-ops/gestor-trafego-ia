@@ -109,9 +109,13 @@ func (c *Client) ChatIDForPhone(phone string) string { return phone }
 
 // SendFlow manda o botão que abre o formulário publicado (navegação estática, sem endpoint de dados).
 func (c *Client) SendFlow(ctx context.Context, chatID string, f whatsapp.Flow) error {
+	mode := "published"
+	if f.Draft {
+		mode = "draft"
+	}
 	return c.send(ctx, http.MethodPost, "/message/flow", map[string]any{
 		"to": to(chatID), "flowId": f.ID, "flowToken": f.Token, "flowCta": f.CTA, "body": f.Body,
-		"header": f.Header, "footer": f.Footer, "screen": f.Screen, "flowAction": "navigate", "mode": "published",
+		"header": f.Header, "footer": f.Footer, "screen": f.Screen, "flowAction": "navigate", "mode": mode,
 	})
 }
 

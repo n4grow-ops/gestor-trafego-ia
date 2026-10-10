@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -136,20 +138,59 @@ func TestHomePage(t *testing.T) {
 	e := newSignupEnv(t)
 	rec := e.do("GET", "/", "", "")
 	body := rec.Body.String()
-	if rec.Code != 200 || !strings.Contains(body, "meuanuncio.io") || !strings.Contains(body, "https://wa.me/5511900000000?text=") || strings.Contains(body, "{{WHATSAPP}}") {
+	if rec.Code != 200 || !strings.Contains(body, "meuanuncio.io") || !strings.Contains(body, "https://wa.me/5511900000000?text=") || strings.Contains(body, "{{WHATSAPP") {
 		t.Fatalf("início: %d %s", rec.Code, body)
 	}
-	for p, ct := range map[string]string{"/static/logo.png": "image/png", "/static/icon.png": "image/png", "/favicon.ico": "image/png",
-		"/static/bricolage.woff2": "font/woff2", "/static/figtree.woff2": "font/woff2"} {
+	if !strings.Contains(body, "+55 11 90000-0000") {
+		t.Error("início sem o número do WhatsApp formatado")
+	}
+	// A página roda JS próprio (demonstração e contadores), nunca inline nem de terceiros.
+	csp := rec.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, "script-src 'self'") || !strings.Contains(csp, "style-src 'self'") || strings.Contains(csp, "unsafe-inline") {
+		t.Fatalf("CSP = %q", csp)
+	}
+	if strings.Contains(body, "<script>") || strings.Contains(body, ` style="`) {
+		t.Error("script ou style inline no início (a CSP bloqueia)")
+	}
+	for p, ct := range map[string]string{
+		"/static/logo.png": "image/png", "/static/icon.png": "image/png", "/favicon.ico": "image/png",
+		"/static/logo.svg": "image/svg+xml", "/static/simbolo.svg": "image/svg+xml", "/static/favicon.svg": "image/svg+xml",
+		"/static/apple-touch-icon.png": "image/png",
+		"/static/urbanist.woff2":       "font/woff2", "/static/figtree.woff2": "font/woff2",
+		"/static/inicio.css": "text/css; charset=utf-8", "/static/inicio.js": "text/javascript; charset=utf-8",
+	} {
 		if rec := e.do("GET", p, "", ""); rec.Code != 200 || rec.Header().Get("Content-Type") != ct {
 			t.Errorf("%s: %d %q", p, rec.Code, rec.Header().Get("Content-Type"))
 		}
 	}
-	if !strings.Contains(body, `src="/static/logo.png?v=2"`) {
-		t.Error("início sem a logo")
+	for _, href := range []string{`href="/termos"`, `href="/privacidade"`, `src="/static/logo.svg"`} {
+		if !strings.Contains(body, href) {
+			t.Errorf("início sem %s", href)
+		}
 	}
 	if rec := e.do("GET", "/nao-existe", "", ""); rec.Code != 404 {
 		t.Fatalf("rota desconhecida: %d", rec.Code)
+	}
+}
+
+// Todo arquivo /static/... citado nas páginas públicas precisa ter rota.
+func TestPublicPagesAssetsResolve(t *testing.T) {
+	e := newSignupEnv(t)
+	ref := regexp.MustCompile(`(?:href|src)="(/static/[^"?]+)`)
+	for _, page := range []string{"web/inicio.html", "web/cadastro.html", "web/meta.html", "web/termos.html", "web/privacidade.html", "web/inicio.css", "web/cadastro.css"} {
+		b, err := os.ReadFile(page)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := ref.FindAllStringSubmatch(string(b), -1)
+		for _, m := range regexp.MustCompile(`url\("(/static/[^"?]+)`).FindAllStringSubmatch(string(b), -1) {
+			found = append(found, m)
+		}
+		for _, m := range found {
+			if rec := e.do("GET", m[1], "", ""); rec.Code != 200 {
+				t.Errorf("%s cita %s: %d", page, m[1], rec.Code)
+			}
+		}
 	}
 }
 

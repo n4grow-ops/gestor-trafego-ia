@@ -56,7 +56,13 @@ func (s *Signup) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /static/icon.png", s.asset("web/icon.png", "image/png"))
 	mux.HandleFunc("GET /static/favicon.png", s.asset("web/favicon.png", "image/png"))
 	mux.HandleFunc("GET /favicon.ico", s.asset("web/favicon.png", "image/png"))
-	mux.HandleFunc("GET /static/bricolage.woff2", s.asset("web/bricolage.woff2", "font/woff2"))
+	mux.HandleFunc("GET /static/logo.svg", s.asset("web/logo.svg", "image/svg+xml"))
+	mux.HandleFunc("GET /static/simbolo.svg", s.asset("web/simbolo.svg", "image/svg+xml"))
+	mux.HandleFunc("GET /static/favicon.svg", s.asset("web/favicon.svg", "image/svg+xml"))
+	mux.HandleFunc("GET /static/apple-touch-icon.png", s.asset("web/apple-touch-icon.png", "image/png"))
+	mux.HandleFunc("GET /static/urbanist.woff2", s.asset("web/urbanist.woff2", "font/woff2"))
+	mux.HandleFunc("GET /static/inicio.css", s.asset("web/inicio.css", "text/css; charset=utf-8"))
+	mux.HandleFunc("GET /static/inicio.js", s.asset("web/inicio.js", "text/javascript; charset=utf-8"))
 	mux.HandleFunc("GET /static/figtree.woff2", s.asset("web/figtree.woff2", "font/woff2"))
 	mux.HandleFunc("GET /static/cadastro.js", s.asset("web/cadastro.js", "text/javascript; charset=utf-8"))
 	// supabase-js 2.117.1 (UMD) servido daqui: sem CDN de terceiros rodando na página do cadastro.
@@ -88,8 +94,12 @@ func (s *Signup) home(w http.ResponseWriter, r *http.Request) {
 	link := s.whatsappLink() + "?text=" + url.QueryEscape("Oi! Quero anunciar meu negócio.")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'none'; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'")
-	w.Write(bytes.ReplaceAll(b, []byte("{{WHATSAPP}}"), []byte(html.EscapeString(link))))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "+
+		"font-src 'self'; connect-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
+	b = bytes.ReplaceAll(b, []byte("{{WHATSAPP}}"), []byte(html.EscapeString(link)))
+	b = bytes.ReplaceAll(b, []byte("{{WHATSAPP_NUMERO}}"), []byte(html.EscapeString(phoneDisplay(s.BotNumber))))
+	w.Write(b)
 }
 
 func (s *Signup) asset(name, contentType string) http.HandlerFunc {
@@ -107,6 +117,21 @@ func (s *Signup) serve(w http.ResponseWriter, name, contentType string) {
 	}
 	w.Header().Set("Content-Type", contentType)
 	w.Write(b)
+}
+
+// phoneDisplay escreve o número do bot do jeito que se lê no Brasil: +55 49 99191-1891.
+// Fora do formato brasileiro, devolve só os dígitos com o +.
+func phoneDisplay(raw string) string {
+	d := signup.OnlyDigits(raw)
+	if strings.HasPrefix(d, "55") && (len(d) == 12 || len(d) == 13) {
+		local := d[4:]
+		cut := len(local) - 4
+		return "+55 " + d[2:4] + " " + local[:cut] + "-" + local[cut:]
+	}
+	if d == "" {
+		return ""
+	}
+	return "+" + d
 }
 
 func (s *Signup) whatsappLink() string { return "https://wa.me/" + signup.OnlyDigits(s.BotNumber) }

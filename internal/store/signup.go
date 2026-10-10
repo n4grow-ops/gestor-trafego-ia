@@ -179,9 +179,14 @@ func (s *Store) CompleteRegistration(ctx context.Context, r Registration) (Regis
 
 	f := r.Form
 	res.FullName = f.FullName
+	// Pelo formulário do WhatsApp não há login: e-mail sem confirmação e sem usuário do Supabase.
+	var verifiedAt *time.Time
+	if !r.EmailVerifiedAt.IsZero() {
+		verifiedAt = &r.EmailVerifiedAt
+	}
 	if _, err := tx.Exec(ctx, `UPDATE members SET name = $2, full_name = $2, email = $3, email_verified_at = $4,
-		auth_user_id = $5, cpf = nullif($6, '') WHERE id = $1`,
-		res.MemberID, f.FullName, r.Email, r.EmailVerifiedAt, r.AuthUserID, f.CPF); err != nil {
+		auth_user_id = nullif($5, '')::uuid, cpf = nullif($6, '') WHERE id = $1`,
+		res.MemberID, f.FullName, r.Email, verifiedAt, r.AuthUserID, f.CPF); err != nil {
 		return RegistrationResult{}, fmt.Errorf("store: membro: %w", err)
 	}
 	approver := "Eu mesmo"

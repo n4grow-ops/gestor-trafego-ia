@@ -229,3 +229,11 @@ func TestSendFlow(t *testing.T) {
 		}
 	}
 }
+
+func TestSendFlowDraft(t *testing.T) {
+	c, calls := server(t, 200, `{}`)
+	must(t, c.SendFlow(context.Background(), "5511999998888", whatsapp.Flow{ID: "F", Token: "t", CTA: "x", Draft: true}))
+	if (*calls)[0].Body["mode"] != "draft" {
+		t.Fatalf("mode = %v", (*calls)[0].Body["mode"])
+	}
+}

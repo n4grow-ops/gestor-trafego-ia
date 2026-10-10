@@ -24,7 +24,7 @@ import (
 )
 
 // termsVersion é a versão dos Termos e da Política de Privacidade gravada em cada aceite.
-const termsVersion = "2026-09-23"
+const termsVersion = signup.TermsVersion
 
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
