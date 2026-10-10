@@ -85,6 +85,7 @@ type Flow struct {
 	Body   string
 	Footer string
 	Screen string // primeira tela
+	Draft  bool   // manda o rascunho (teste, antes de a Meta liberar a publicação)
 }
 
 // FlowSender é opcional: provedores que mandam formulário do WhatsApp.

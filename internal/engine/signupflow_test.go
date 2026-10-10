@@ -149,3 +149,12 @@ func TestFlowAnswerBrokenJSON(t *testing.T) {
 		t.Fatalf("status=%s formulários=%d", h.registrationStatus(), len(wa.flows))
 	}
 }
+
+func TestSignupFlowDraftMode(t *testing.T) {
+	h, wa := newFlowHarness(t)
+	h.eng.SignupFlowDraft = true
+	h.say("oi")
+	if !wa.lastFlow(t).Draft {
+		t.Fatal("formulário deveria ir em rascunho")
+	}
+}

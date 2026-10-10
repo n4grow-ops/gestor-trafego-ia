@@ -36,7 +36,7 @@ func (e *Engine) sendSignupFlow(ctx context.Context, conv store.Conversation, to
 		return false
 	}
 	err := fs.SendFlow(ctx, conv.ChatID, whatsapp.Flow{
-		ID: e.SignupFlowID, Token: token, CTA: signupFlowCTA, Body: body, Screen: signup.FlowFirstScreen,
+		ID: e.SignupFlowID, Token: token, CTA: signupFlowCTA, Body: body, Screen: signup.FlowFirstScreen, Draft: e.SignupFlowDraft,
 	})
 	if err != nil {
 		e.Log.Error("formulário de cadastro não enviado; vai o link", "conversation_id", conv.ID, "erro", err)

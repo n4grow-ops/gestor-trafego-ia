@@ -96,7 +96,9 @@ type Engine struct {
 	// SignupFlowID: formulário do WhatsApp publicado; com ele (e provedor que manda formulário)
 	// o cadastro é feito sem sair do WhatsApp. TermsVersion é a versão dos termos aceitos ali.
 	SignupFlowID string
-	TermsVersion string
+	// SignupFlowDraft manda o formulário em rascunho (enquanto a Meta não libera a publicação).
+	SignupFlowDraft bool
+	TermsVersion    string
 
 	// Anúncios (imagens e vídeos) pedidos depois da aprovação. Sem Storage, a aprovação encerra a conversa.
 	Storage Storage

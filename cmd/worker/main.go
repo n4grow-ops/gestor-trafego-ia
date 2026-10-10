@@ -81,6 +81,7 @@ func run(log *slog.Logger) error {
 	if cfg.SignupEnabled() {
 		eng.SignupBaseURL = cfg.PublicBaseURL + "/c"
 		eng.SignupFlowID = cfg.SignupFlowID
+		eng.SignupFlowDraft = cfg.SignupFlowDraft
 		eng.TermsVersion = signup.TermsVersion
 	}
 	if cfg.MetaConnectEnabled() {
