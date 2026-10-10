@@ -136,12 +136,16 @@ type Engine struct {
 	MetaTokenKey *secretbox.Box
 	// Publications: nil = Store. Os testes trocam por um fake.
 	Publications PublicationStore
-	// Canal da equipe: privado de cada número (vazio = OperatorPhone) e, opcional, o grupo pela
-	// instância não oficial. AdminURL vai no aviso de atendimento humano; vazio = sem link.
-	TeamPhones   []string
-	TeamGroup    TeamGroupSender
-	TeamGroupJID string
-	AdminURL     string
+	// Canal da equipe: privado de cada número (painel, senão TeamPhones, senão OperatorPhone) e,
+	// opcional, o grupo pela instância não oficial. AdminURL vai no aviso de atendimento humano; vazio = sem link.
+	TeamPhones []string
+	// TeamDirectory lê os números marcados no painel (Equipe → "Recebe avisos"); quando devolve
+	// algum, vale no lugar de TeamPhones. nil = só TeamPhones/OperatorPhone. Cache de 30 s.
+	TeamDirectory func(ctx context.Context) ([]string, error)
+	teamDir       teamDirCache
+	TeamGroup     TeamGroupSender
+	TeamGroupJID  string
+	AdminURL      string
 	// Testador automático do app da Meta. MetaAppID monta o link de Funções no aviso à equipe.
 	MetaAppID string
 	// AppTesters lê os testadores do app (Graph API); nil = leitura a cada 5 min desligada.

@@ -115,6 +115,77 @@ func TestTeamMembers(t *testing.T) {
 	}
 }
 
+func TestTeamAlertPhones(t *testing.T) {
+	st, pool := newStore(t)
+	ctx := context.Background()
+	ana, err := st.AddTeamMember(ctx, "ana@meuanuncio.io", "Ana", "admin", "teste")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bia, err := st.AddTeamMember(ctx, "bia@meuanuncio.io", "Bia", "staff", "teste")
+	if err != nil {
+		t.Fatal(err)
+	}
+	caio, err := st.AddTeamMember(ctx, "caio@meuanuncio.io", "Caio", "staff", "teste")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Sem ninguém marcado, a lista vem vazia (o motor cai no TEAM_PHONES).
+	if got, err := st.TeamAlertPhones(ctx); err != nil || len(got) != 0 {
+		t.Fatalf("vazio: %q %v", got, err)
+	}
+
+	// Número com máscara fica só com dígitos.
+	m, err := st.SetTeamMemberAlerts(ctx, ana.ID, "+55 (11) 98888-7777", true)
+	if err != nil || m.WhatsApp != "5511988887777" || !m.ReceivesAlerts {
+		t.Fatalf("ana: %+v %v", m, err)
+	}
+	// Número guardado, mas sem receber avisos.
+	if _, err := st.SetTeamMemberAlerts(ctx, bia.ID, "5511977776666", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.SetTeamMemberAlerts(ctx, caio.ID, "5511966665555", true); err != nil {
+		t.Fatal(err)
+	}
+	// Inválidos: curto, longo e marcar aviso sem número.
+	for _, c := range []struct {
+		num      string
+		receives bool
+	}{{"123456789", false}, {"1234567890123456", true}, {"", true}, {"abc", true}} {
+		if _, err := st.SetTeamMemberAlerts(ctx, bia.ID, c.num, c.receives); !errors.Is(err, store.ErrInvalidInput) {
+			t.Fatalf("SetTeamMemberAlerts(%q, %v) = %v", c.num, c.receives, err)
+		}
+	}
+	// Vazio com aviso desligado limpa o número.
+	if m, err := st.SetTeamMemberAlerts(ctx, bia.ID, "", false); err != nil || m.WhatsApp != "" {
+		t.Fatalf("limpar: %+v %v", m, err)
+	}
+	if _, err := st.SetTeamMemberAlerts(ctx, 99999, "5511900000000", true); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("inexistente: %v", err)
+	}
+
+	got, err := st.TeamAlertPhones(ctx)
+	if err != nil || len(got) != 2 || got[0] != "5511966665555" || got[1] != "5511988887777" {
+		t.Fatalf("lista: %q %v", got, err)
+	}
+	// Inativo sai da lista.
+	if _, err := pool.Exec(ctx, `UPDATE team_members SET active = false WHERE id = $1`, caio.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = st.TeamAlertPhones(ctx); len(got) != 1 || got[0] != "5511988887777" {
+		t.Fatalf("sem inativo: %q", got)
+	}
+	// O banco também recusa aviso ligado sem número (trava da migration).
+	if _, err := pool.Exec(ctx, `UPDATE team_members SET receives_alerts = true, whatsapp = '' WHERE id = $1`, bia.ID); err == nil {
+		t.Fatal("banco aceitou aviso sem número")
+	}
+	byID, err := st.TeamMemberByID(ctx, ana.ID)
+	if err != nil || byID.WhatsApp != "5511988887777" || !byID.ReceivesAlerts {
+		t.Fatalf("por id: %+v %v", byID, err)
+	}
+}
+
 func TestAdminAuditLog(t *testing.T) {
 	st := store.New(testdb.New(t))
 	ctx := context.Background()
