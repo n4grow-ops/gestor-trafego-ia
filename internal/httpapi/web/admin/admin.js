@@ -84,6 +84,8 @@ const ERRORS = {
   voce_mesmo: 'Você não pode tirar a si mesmo da equipe.', muitas_tentativas: 'Muitas tentativas. Espere alguns minutos e peça um código novo.',
   texto_invalido: 'Escreva uma mensagem (até 4.000 caracteres).', dados_invalidos: 'Confira os dados do formulário.',
   sem_telefone: 'Esse cliente não tem telefone cadastrado.', erro_interno: 'Erro no servidor. Tente de novo.',
+  codigo_em_uso: 'Já existe um plano com esse código.', plano_com_assinantes: 'Esse plano tem assinatura: não dá para apagar nem trocar o código. Oculte em vez disso.',
+  versao_desatualizada: 'Alguém salvou isso enquanto você editava. Feche, abra de novo e refaça a mudança.',
 };
 const errMsg = e => ERRORS[e.message] || (e.status ? 'Não deu certo (' + e.status + ').' : 'Sem conexão com o servidor.');
 async function api(method, path, body) {
@@ -121,6 +123,7 @@ const ACTIONS = {
   conversation_takeover: ['Assumiu a conversa', 'warn', 'hand'], conversation_release: ['Devolveu a conversa à IA', 'ok', 'bot'],
   conversation_send: ['Respondeu pelo painel', 'info', 'send'], payment_record: ['Registrou pagamento', 'ok', 'money'],
   team_add: ['Adicionou à equipe', 'info', 'user-plus'], team_remove: ['Removeu da equipe', 'warn', 'trash'],
+  plan_create: ['Criou plano', 'ok', 'tag'], plan_update: ['Editou plano', 'info', 'tag'], plan_delete: ['Apagou plano', 'warn', 'trash'],
 };
 const actionOf = a => ACTIONS[a] || [String(a).replace(/_/g, ' '), 'info', 'log'];
 const PROJECT_STAGE = { collecting: 'Coleta', awaiting_proposal: 'Esperando proposta', awaiting_approval: 'Esperando aprovação', approved: 'Aprovada', awaiting_creatives: 'Esperando anúncios', ready: 'Pronta para publicar', archived: 'Arquivado' };
@@ -393,6 +396,7 @@ function exportCSV() {
 async function openClient(id) {
   const d = $('#drawer');
   d.innerHTML = loadingPage();
+  d.setAttribute('aria-label', 'Ficha do cliente');
   d.inert = false; d.classList.add('on'); d.setAttribute('aria-hidden', 'false');
   $('#drawer-backdrop').classList.add('on');
   try {
@@ -895,7 +899,7 @@ syncSide();
 const CMDS = [
   ['Visão geral', '#/visao', 'home'], ['Clientes', '#/clientes', 'users'], ['Conversas', '#/conversas', 'chat'],
   ['Conversas pedindo humano', 'humano', 'hand'], ['Clientes travados', 'travados', 'clock'], ['WhatsApp do bot', '#/whatsapp', 'wa'],
-  ['Faturamento', '#/faturamento', 'money', true], ['Registrar pagamento', '#/faturamento', 'plus', true], ['Equipe', '#/equipe', 'team', true],
+  ['Faturamento', '#/faturamento', 'money', true], ['Registrar pagamento', '#/faturamento', 'plus', true], ['Planos', '#/planos', 'tag'], ['Equipe', '#/equipe', 'team', true],
   ['Registro de ações', '#/registro', 'log'], ['Sair do painel', 'sair', 'out'],
 ];
 let cmdSel = 0, cmdItems = [];
