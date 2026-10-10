@@ -102,6 +102,18 @@ func (f *fakePubs) LatestPublication(_ context.Context, orgID int64) (store.Publ
 	return store.Publication{}, store.ErrNotFound
 }
 
+func (f *fakePubs) ListPublications(_ context.Context, orgID int64, status string) ([]store.Publication, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []store.Publication
+	for _, p := range f.pubs {
+		if p.OrgID == orgID && p.Status == status {
+			out = append(out, p)
+		}
+	}
+	return out, nil
+}
+
 func (f *fakePubs) AppendClientCopy(_ context.Context, draftID int64, text string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -640,5 +652,96 @@ func TestPublishRefusesNonBRLAccount(t *testing.T) {
 				t.Fatalf("equipe = %v", ops)
 			}
 		})
+	}
+}
+
+// seedPubs grava publicações já criadas na Meta para a organização do cliente de teste.
+func (h *harness) seedPubs(pubs *fakePubs, list ...store.Publication) {
+	h.t.Helper()
+	ident, err := h.st.FindIdentity(ctx, "openwa", phone)
+	h.must(err)
+	for i := range list {
+		list[i].ID = int64(len(pubs.pubs) + 1)
+		list[i].OrgID = ident.OrgID
+		if list[i].ConnectionID == 0 {
+			list[i].ConnectionID = 7
+		}
+		if list[i].DraftID == 0 {
+			list[i].DraftID = 9000 + list[i].ID
+		}
+		pubs.pubs = append(pubs.pubs, list[i])
+	}
+}
+
+func (f *fakePubs) status(id int64) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.find(id).Status
+}
+
+// C2: PAUSAR pausa todas as campanhas no ar, mesmo que a última publicação esteja pausada.
+func TestPauseStopsAllActiveCampaigns(t *testing.T) {
+	h, pubs, pub := newPublishHarness(t, "owner")
+	h.connectMeta()
+	now := time.Now()
+	h.seedPubs(pubs,
+		store.Publication{Status: "active", CampaignID: "C1", ActivatedAt: &now},
+		store.Publication{Status: "active", CampaignID: "C2", ActivatedAt: &now},
+		store.Publication{Status: "paused", CampaignID: "C3"})
+	h.say("PAUSAR")
+	if pubs.status(1) != "paused" || pubs.status(2) != "paused" {
+		t.Fatalf("status = %s %s", pubs.status(1), pubs.status(2))
+	}
+	if !slices.Equal(pub.statuses, []string{"C1:PAUSED", "C2:PAUSED"}) {
+		t.Fatalf("chamadas = %v", pub.statuses)
+	}
+	if msg := h.wa.last().Text; !strings.Contains(msg, "Pausei") || strings.Contains(msg, "está pausada") {
+		t.Fatalf("resposta = %q", msg)
+	}
+	h.say("pausar")
+	if msg := h.wa.last().Text; !strings.Contains(msg, "pausada") || len(pub.statuses) != 2 {
+		t.Fatalf("segunda pausa = %q %v", msg, pub.statuses)
+	}
+}
+
+// C2: com várias pausadas, ATIVAR pergunta qual; aceita o número ou o nome do projeto.
+func TestActivateAsksWhichCampaign(t *testing.T) {
+	h, pubs, pub := newPublishHarness(t, "owner")
+	h.connectMeta()
+	h.seedPubs(pubs,
+		store.Publication{Status: "paused", CampaignID: "C1", ProjectName: "Pizza"},
+		store.Publication{Status: "paused", CampaignID: "C2", ProjectName: "Rodízio"})
+	h.say("ATIVAR")
+	msg := h.wa.last().Text
+	if len(pub.statuses) != 0 || !strings.Contains(msg, "1. Pizza") || !strings.Contains(msg, "2. Rodízio") || !strings.Contains(msg, "ATIVAR 2") {
+		t.Fatalf("pergunta = %q %v", msg, pub.statuses)
+	}
+	h.say("ATIVAR 9")
+	if len(pub.statuses) != 0 || !strings.Contains(h.wa.last().Text, "2. Rodízio") {
+		t.Fatalf("número fora da lista = %q %v", h.wa.last().Text, pub.statuses)
+	}
+	h.say("ATIVAR 2")
+	if pubs.status(2) != "active" || pubs.status(1) != "paused" || !slices.Equal(pub.statuses, []string{"C2:ACTIVE"}) {
+		t.Fatalf("ativou = %v", pub.statuses)
+	}
+	if !strings.Contains(h.wa.last().Text, "No ar") {
+		t.Fatalf("resposta = %q", h.wa.last().Text)
+	}
+	// com uma só pausada (e outra no ar), ATIVAR liga ela direto
+	h.say("ativar")
+	if pubs.status(1) != "active" || !slices.Equal(pub.statuses, []string{"C2:ACTIVE", "C1:ACTIVE"}) {
+		t.Fatalf("ativou = %v", pub.statuses)
+	}
+}
+
+func TestActivateByProjectName(t *testing.T) {
+	h, pubs, pub := newPublishHarness(t, "owner")
+	h.connectMeta()
+	h.seedPubs(pubs,
+		store.Publication{Status: "paused", CampaignID: "C1", ProjectName: "Pizza"},
+		store.Publication{Status: "paused", CampaignID: "C2", ProjectName: "Rodízio"})
+	h.say("ativar rodizio")
+	if pubs.status(2) != "active" || !slices.Equal(pub.statuses, []string{"C2:ACTIVE"}) {
+		t.Fatalf("ativou = %v", pub.statuses)
 	}
 }

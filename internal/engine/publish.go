@@ -8,6 +8,7 @@ import (
 	"math"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -48,6 +49,7 @@ type PublicationStore interface {
 	FailPublication(ctx context.Context, id int64, msg string) error
 	SetPublicationStatus(ctx context.Context, id int64, status string) error
 	LatestPublication(ctx context.Context, orgID int64) (store.Publication, error)
+	ListPublications(ctx context.Context, orgID int64, status string) ([]store.Publication, error)
 	AppendClientCopy(ctx context.Context, draftID int64, text string) error
 	PublishData(ctx context.Context, draftID int64) (store.PublishData, error)
 }
@@ -439,16 +441,26 @@ var campaignCommands = map[string]campaignCmd{
 	"publicar a campanha": cmdRetryPublish, "publica a campanha": cmdRetryPublish,
 }
 
-// parseCampaignCommand reconhece só a frase curta e exata, sem gastar IA.
-func parseCampaignCommand(s string) campaignCmd {
+// parseCampaignCommand reconhece só a frase curta e exata, sem gastar IA. "ATIVAR 2" e "ativar rodízio"
+// devolvem o complemento (número ou nome do projeto) em arg.
+func parseCampaignCommand(s string) (campaignCmd, string) {
 	s = strings.ToLower(strings.TrimFunc(s, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsPunct(r) || unicode.IsSymbol(r) }))
 	s = strings.Join(strings.Fields(strings.ReplaceAll(s, "*", "")), " ")
-	return campaignCommands[s]
+	if cmd := campaignCommands[s]; cmd != cmdCampaignNone {
+		return cmd, ""
+	}
+	for _, prefix := range []string{"pode ativar a campanha ", "ativar a campanha ", "ativa a campanha ", "pode ativar ", "ativar ", "ativa "} {
+		if arg, ok := strings.CutPrefix(s, prefix); ok && strings.TrimSpace(arg) != "" && utf8.RuneCountInString(arg) <= 60 {
+			return cmdActivate, strings.TrimSpace(arg)
+		}
+	}
+	return cmdCampaignNone, ""
 }
 
 // campaignCommand trata ATIVAR/PAUSAR/tentar de novo; handled = false segue o fluxo normal.
+// PAUSAR pausa todas as campanhas no ar; ATIVAR liga a única pausada ou pergunta qual.
 func (e *Engine) campaignCommand(ctx context.Context, ident store.Identity, conv store.Conversation, text string) (bool, error) {
-	cmd := parseCampaignCommand(text)
+	cmd, arg := parseCampaignCommand(text)
 	if cmd == cmdCampaignNone {
 		return false, nil
 	}
@@ -467,29 +479,54 @@ func (e *Engine) campaignCommand(ctx context.Context, ident store.Identity, conv
 	if !found {
 		return false, nil // sem campanha na Meta: a Atendente explica
 	}
+	active, err := e.pubs().ListPublications(ctx, ident.OrgID, "active")
+	if err != nil {
+		return true, err
+	}
+	paused, err := e.pubs().ListPublications(ctx, ident.OrgID, "paused")
+	if err != nil {
+		return true, err
+	}
+	// Alvo do comando: no PAUSAR, todas no ar; no ATIVAR, a pausada escolhida.
+	var targets []store.Publication
+	ask := false
+	if cmd == cmdPause {
+		targets = active
+	} else {
+		pick, ok, handled := pickPaused(paused, arg)
+		if !handled {
+			return false, nil // "ativar <algo>" que não é projeto pausado: a Atendente conduz
+		}
+		if ok {
+			targets = []store.Publication{pick}
+		}
+		ask = !ok && len(paused) > 1
+	}
 	if !ident.CanApprove() {
 		e.audit(ctx, ident.OrgID, member(ident), "campaign_status_refused", map[string]any{"publication_id": last.ID})
 		return true, e.send(ctx, conv, msgCampaignNotAllowed)
 	}
-	want, status, done := "ACTIVE", "active", msgActivated
-	if cmd == cmdPause {
-		want, status, done = "PAUSED", "paused", msgPausedCampaign
+	if ask {
+		return true, e.send(ctx, conv, fmt.Sprintf(msgPickCampaign, listCampaigns(paused)))
 	}
-	switch {
-	case last.Status == "publishing":
-		return true, e.send(ctx, conv, msgPublishing)
-	case last.Status == "failed":
-		return true, e.send(ctx, conv, msgPublishFailedHint)
-	case last.Status == status && cmd == cmdActivate:
-		return true, e.send(ctx, conv, msgAlreadyActive)
-	case last.Status == status:
-		return true, e.send(ctx, conv, msgAlreadyPaused)
+	if len(targets) == 0 {
+		switch {
+		case cmd == cmdActivate && len(active) > 0:
+			return true, e.send(ctx, conv, msgAlreadyActive)
+		case cmd == cmdPause && len(paused) > 0:
+			return true, e.send(ctx, conv, msgAlreadyPaused)
+		case last.Status == "publishing":
+			return true, e.send(ctx, conv, msgPublishing)
+		case last.Status == "failed":
+			return true, e.send(ctx, conv, msgPublishFailedHint)
+		}
+		return false, nil
 	}
 	if !e.publishOn() {
 		e.alertTeam(ctx, ident, "cliente pediu "+strings.ToUpper(text)+", mas a publicação na Meta está desligada no worker")
 		return true, e.send(ctx, conv, msgPublishOff)
 	}
-	_, sealed, err := e.pubs().MetaTokenSealed(ctx, ident.OrgID)
+	connID, sealed, err := e.pubs().MetaTokenSealed(ctx, ident.OrgID)
 	if errors.Is(err, store.ErrNotFound) {
 		return true, e.askMetaToPublish(ctx, ident, conv)
 	}
@@ -497,22 +534,106 @@ func (e *Engine) campaignCommand(ctx context.Context, ident store.Identity, conv
 		return true, err
 	}
 	token, err := e.MetaTokenKey.Open(sealed)
-	if err == nil {
-		err = e.Publisher.SetStatus(ctx, string(token), last.CampaignID, want)
-	}
 	if err != nil {
-		e.Log.Error("falha ao mudar status da campanha", "publication_id", last.ID, "status", want, "erro", err)
-		var perr *meta.PublishError
-		if errors.As(err, &perr) && strings.TrimSpace(perr.UserMessage) != "" {
-			return true, e.send(ctx, conv, perr.UserMessage)
-		}
+		e.Log.Error("token da meta não abre", "org_id", ident.OrgID, "erro", err)
+		e.alertTeam(ctx, ident, "o token da conta Meta não abre (META_TOKEN_KEY trocada?)")
 		return true, e.send(ctx, conv, msgCampaignStatusFailed)
 	}
-	if err := e.pubs().SetPublicationStatus(ctx, last.ID, status); err != nil {
-		return true, err
+	want, status, done := "ACTIVE", "active", msgActivated
+	if cmd == cmdPause {
+		want, status, done = "PAUSED", "paused", msgPausedCampaign
+		if len(targets) > 1 {
+			done = fmt.Sprintf(msgPausedCampaigns, len(targets))
+		}
 	}
-	e.audit(ctx, ident.OrgID, member(ident), "campaign_"+status, map[string]any{"publication_id": last.ID, "campaign_id": last.CampaignID})
-	return true, e.send(ctx, conv, done)
+	var changed int
+	var otherConn bool
+	var failMsg string
+	for _, p := range targets {
+		if p.ConnectionID != connID {
+			otherConn = true // campanha da conta conectada antes: o token atual não manda nela
+			continue
+		}
+		if err := e.setCampaignStatus(ctx, string(token), p, want); err != nil {
+			e.Log.Error("falha ao mudar status da campanha", "publication_id", p.ID, "status", want, "erro", err)
+			failMsg = msgCampaignStatusFailed
+			var perr *meta.PublishError
+			if errors.As(err, &perr) && strings.TrimSpace(perr.UserMessage) != "" {
+				failMsg = perr.UserMessage
+			}
+			continue
+		}
+		if err := e.pubs().SetPublicationStatus(ctx, p.ID, status); err != nil {
+			return true, err
+		}
+		changed++
+		e.audit(ctx, ident.OrgID, member(ident), "campaign_"+status, map[string]any{"publication_id": p.ID, "campaign_id": p.CampaignID})
+	}
+	var reply []string
+	if changed > 0 {
+		reply = append(reply, done)
+	}
+	if failMsg != "" {
+		reply = append(reply, failMsg)
+	}
+	if otherConn {
+		reply = append(reply, msgCampaignOtherConnection)
+	}
+	return true, e.send(ctx, conv, join(reply...))
+}
+
+// setCampaignStatus liga ou pausa a campanha na Meta.
+func (e *Engine) setCampaignStatus(ctx context.Context, token string, p store.Publication, want string) error {
+	return e.Publisher.SetStatus(ctx, token, p.CampaignID, want)
+}
+
+// pickPaused escolhe a pausada pelo complemento do ATIVAR. Sem complemento, a única pausada.
+// handled = false: o complemento não é número nem nome de projeto pausado.
+func pickPaused(paused []store.Publication, arg string) (pick store.Publication, ok, handled bool) {
+	if arg == "" {
+		if len(paused) == 1 {
+			return paused[0], true, true
+		}
+		return store.Publication{}, false, true
+	}
+	if n, err := strconv.Atoi(arg); err == nil {
+		if n >= 1 && n <= len(paused) {
+			return paused[n-1], true, true
+		}
+		return store.Publication{}, false, len(paused) > 0
+	}
+	want := normalizeName(arg)
+	var match []store.Publication
+	for _, p := range paused {
+		name := normalizeName(p.ProjectName)
+		if name != "" && (name == want || strings.Contains(name, want) || strings.Contains(want, name)) {
+			match = append(match, p)
+		}
+	}
+	if len(match) == 1 {
+		return match[0], true, true
+	}
+	return store.Publication{}, false, len(match) > 1
+}
+
+var nameAccents = strings.NewReplacer("á", "a", "à", "a", "â", "a", "ã", "a", "é", "e", "ê", "e", "í", "i",
+	"ó", "o", "ô", "o", "õ", "o", "ú", "u", "ü", "u", "ç", "c")
+
+func normalizeName(s string) string {
+	return strings.Join(strings.Fields(nameAccents.Replace(strings.ToLower(s))), " ")
+}
+
+// listCampaigns numera as campanhas pausadas pelo nome do projeto (ou a data de criação).
+func listCampaigns(list []store.Publication) string {
+	lines := make([]string, 0, len(list))
+	for i, p := range list {
+		name := strings.TrimSpace(p.ProjectName)
+		if name == "" {
+			name = "Campanha de " + p.CreatedAt.Format("02/01")
+		}
+		lines = append(lines, fmt.Sprintf("%d. %s", i+1, name))
+	}
+	return strings.Join(lines, "\n")
 }
 
 // retryPublish publica de novo o projeto pronto (ou o que falhou por último).

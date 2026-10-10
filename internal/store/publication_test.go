@@ -157,3 +157,63 @@ func TestPublishData(t *testing.T) {
 		t.Fatalf("proposta = %+v campos = %s", p, d.Fields)
 	}
 }
+
+// secondDraft copia o rascunho aprovado para um novo, ligado a um projeto com o nome dado.
+func secondDraft(t *testing.T, f draftFixture, project string) (int64, *int64) {
+	t.Helper()
+	var projectID int64
+	must(t, f.pool.QueryRow(ctx, `INSERT INTO projects (organization_id, name) VALUES ($1, $2) RETURNING id`, f.ident.OrgID, project).Scan(&projectID))
+	var id int64
+	must(t, f.pool.QueryRow(ctx, `INSERT INTO campaign_drafts (organization_id, conversation_id, briefing, proposal, proposal_hash, status, approved_by, approved_at, project_id)
+		SELECT organization_id, conversation_id, briefing, proposal, proposal_hash, status, approved_by, approved_at, $2 FROM campaign_drafts WHERE id = $1
+		RETURNING id`, f.draftID, projectID).Scan(&id))
+	return id, &projectID
+}
+
+// C2: ATIVAR/PAUSAR olham todas as publicações da organização, não só a última.
+func TestListPublicationsByStatus(t *testing.T) {
+	f, connID := seedPublishable(t)
+	org := f.ident.OrgID
+	d2, p2 := secondDraft(t, f, "Rodízio")
+	a, err := f.st.StartPublication(ctx, org, f.draftID, nil, connID)
+	must(t, err)
+	must(t, f.st.FinishPublication(ctx, a.ID, store.PublicationResult{CampaignID: "CA"}))
+	b, err := f.st.StartPublication(ctx, org, d2, p2, connID)
+	must(t, err)
+	must(t, f.st.FinishPublication(ctx, b.ID, store.PublicationResult{CampaignID: "CB"}))
+
+	paused, err := f.st.ListPublications(ctx, org, "paused")
+	must(t, err)
+	if len(paused) != 2 || paused[0].ID != a.ID || paused[1].ID != b.ID || paused[1].ProjectName != "Rodízio" || paused[0].ProjectName != "" {
+		t.Fatalf("pausadas = %+v", paused)
+	}
+	must(t, f.st.SetPublicationStatus(ctx, a.ID, "active"))
+	active, err := f.st.ListPublications(ctx, org, "active")
+	must(t, err)
+	if len(active) != 1 || active[0].CampaignID != "CA" {
+		t.Fatalf("ativas = %+v", active)
+	}
+	if other, err := f.st.ListPublications(ctx, org+999, "active"); err != nil || len(other) != 0 {
+		t.Fatalf("outra organização = %+v %v", other, err)
+	}
+}
+
+// C2: nova tentativa de uma publicação que falhou passa a ser a mais recente.
+func TestRetriedPublicationBecomesLatest(t *testing.T) {
+	f, connID := seedPublishable(t)
+	org := f.ident.OrgID
+	d2, p2 := secondDraft(t, f, "Rodízio")
+	a, err := f.st.StartPublication(ctx, org, f.draftID, nil, connID)
+	must(t, err)
+	must(t, f.st.FailPublication(ctx, a.ID, "falhou"))
+	b, err := f.st.StartPublication(ctx, org, d2, p2, connID)
+	must(t, err)
+	must(t, f.st.FinishPublication(ctx, b.ID, store.PublicationResult{CampaignID: "CB"}))
+	_, err = f.st.StartPublication(ctx, org, f.draftID, nil, connID)
+	must(t, err)
+	l, err := f.st.LatestPublication(ctx, org)
+	must(t, err)
+	if l.ID != a.ID || l.Status != "publishing" {
+		t.Fatalf("mais recente = %+v", l)
+	}
+}

@@ -32,6 +32,7 @@ type Publication struct {
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 	ActivatedAt  *time.Time
+	ProjectName  string // só em ListPublications
 }
 
 // PublicationResult são os IDs devolvidos pela Meta.
@@ -89,7 +90,8 @@ func (s *Store) MetaTokenSealed(ctx context.Context, orgID int64) (connID int64,
 }
 
 // StartPublication abre a publicação do rascunho; se já existe uma que não falhou, devolve ela com ErrAlreadyPublished.
-// Uma publicação que falhou volta para publishing (mesma linha, IDs e erro limpos). O rascunho precisa ser da organização.
+// Uma publicação que falhou volta para publishing (mesma linha, IDs e erro limpos, created_at renovado para ela
+// voltar a ser a mais recente). O rascunho precisa ser da organização.
 func (s *Store) StartPublication(ctx context.Context, orgID, draftID int64, projectID *int64, connID int64) (Publication, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -115,7 +117,8 @@ func (s *Store) StartPublication(ctx context.Context, orgID, draftID int64, proj
 		return p, ErrAlreadyPublished
 	}
 	p, err = scanPublication(tx.QueryRow(ctx, `UPDATE meta_publications SET status = 'publishing', project_id = $2, meta_connection_id = $3,
-			campaign_id = '', adset_id = '', ad_ids = '{}', warnings = '{}', error = '', activated_at = NULL, updated_at = now()
+			campaign_id = '', adset_id = '', ad_ids = '{}', warnings = '{}', error = '', activated_at = NULL,
+				created_at = now(), updated_at = now()
 		WHERE id = $1 RETURNING `+publicationCols, p.ID, projectID, connID))
 	if err != nil {
 		return Publication{}, err
@@ -179,6 +182,29 @@ func (s *Store) LatestPublication(ctx context.Context, orgID int64) (Publication
 		return Publication{}, notFound(err)
 	}
 	return p, nil
+}
+
+// ListPublications devolve as publicações da organização no status, da mais antiga para a mais nova,
+// com o nome do projeto (vazio sem projeto).
+func (s *Store) ListPublications(ctx context.Context, orgID int64, status string) ([]Publication, error) {
+	rows, err := s.pool.Query(ctx, `SELECT m.id, m.organization_id, m.draft_id, m.project_id, m.meta_connection_id, m.status,
+			m.campaign_id, m.adset_id, m.ad_ids, m.error, m.warnings, m.created_at, m.updated_at, m.activated_at, coalesce(p.name, '')
+		FROM meta_publications m LEFT JOIN projects p ON p.id = m.project_id
+		WHERE m.organization_id = $1 AND m.status = $2 ORDER BY m.created_at, m.id LIMIT 50`, orgID, status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Publication
+	for rows.Next() {
+		var p Publication
+		if err := rows.Scan(&p.ID, &p.OrgID, &p.DraftID, &p.ProjectID, &p.ConnectionID, &p.Status, &p.CampaignID, &p.AdSetID,
+			&p.AdIDs, &p.Error, &p.Warnings, &p.CreatedAt, &p.UpdatedAt, &p.ActivatedAt, &p.ProjectName); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
 }
 
 // AppendClientCopy acumula referências de headline/texto do cliente no rascunho (até 2000 runas).
