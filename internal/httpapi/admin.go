@@ -48,6 +48,8 @@ type Admin struct {
 	// Testadores: fila dos pedidos para entrar como testador do app da Meta.
 	MetaAppID string      // link "Abrir no app da Meta"; vazio = sem link
 	Testers   TesterQueue // nil = Store
+	// testerResends: último "Reenviar aviso" de cada pedido (no máximo um a cada 2 min).
+	testerResends resendGuard
 
 	Limiter *Limiter
 	Log     *slog.Logger

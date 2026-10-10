@@ -18,6 +18,18 @@ type fakeTesters struct {
 	reqs       []store.TesterRequestView
 	jobs       []store.JobSpec
 	enqueueErr error
+	listLimit  int // >0: a lista corta como o LIMIT do store
+}
+
+func (f *fakeTesters) TesterRequestByID(_ context.Context, id int64) (store.TesterRequestView, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, r := range f.reqs {
+		if r.ID == id {
+			return r, nil
+		}
+	}
+	return store.TesterRequestView{}, store.ErrNotFound
 }
 
 func (f *fakeTesters) ListTesterRequests(_ context.Context, status string) ([]store.TesterRequestView, error) {
@@ -29,6 +41,9 @@ func (f *fakeTesters) ListTesterRequests(_ context.Context, status string) ([]st
 		if (status == "" && open) || r.Status == status {
 			out = append(out, r)
 		}
+	}
+	if f.listLimit > 0 && len(out) > f.listLimit {
+		out = out[:f.listLimit]
 	}
 	return out, nil
 }
@@ -216,4 +231,34 @@ func contains(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// M4: reenviar no máximo uma vez a cada 2 min por pedido, e achar o pedido mesmo fora da lista.
+func TestTesterResendRateLimitAndLookup(t *testing.T) {
+	e, f := newTesterEnv(t)
+	now := time.Now()
+	e.admin.Now = func() time.Time { return now }
+	staff := e.login("marina@meuanuncio.io")
+	if r := e.do("POST", "/api/testers/2/resend", staff, nil); r.code != http.StatusAccepted {
+		t.Fatalf("reenviar = %d %s", r.code, r.raw)
+	}
+	if r := e.do("POST", "/api/testers/2/resend", staff, nil); r.code != http.StatusTooManyRequests {
+		t.Fatalf("reenviar de novo em seguida = %d %s", r.code, r.raw)
+	}
+	now = now.Add(2*time.Minute + time.Second)
+	if r := e.do("POST", "/api/testers/2/resend", staff, nil); r.code != http.StatusAccepted {
+		t.Fatalf("reenviar depois de 2 min = %d %s", r.code, r.raw)
+	}
+	// Pedido além do LIMIT da lista continua achável.
+	f.mu.Lock()
+	f.reqs = append(f.reqs, store.TesterRequestView{TesterRequest: store.TesterRequest{ID: 4, OrgID: e.orgID, RefKind: "username",
+		RefValue: "longe", Status: store.TesterAdded}, MemberName: "Bia", OrgName: "Doceria", Phone: "5511900001111"})
+	f.listLimit = 1
+	f.mu.Unlock()
+	if r := e.do("POST", "/api/testers/4/resend", staff, nil); r.code != http.StatusAccepted {
+		t.Fatalf("pedido fora da lista = %d %s", r.code, r.raw)
+	}
+	if ids := f.jobIDs(t); len(ids) != 3 || ids[2] != 4 {
+		t.Fatalf("jobs = %v", ids)
+	}
 }

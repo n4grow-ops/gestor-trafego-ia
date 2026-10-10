@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
@@ -19,6 +20,7 @@ const jobTesterAdded = "tester.added"
 type TesterQueue interface {
 	ListTesterRequests(ctx context.Context, status string) ([]store.TesterRequestView, error)
 	MarkTesterAdded(ctx context.Context, id int64, by string) (store.TesterRequestView, error)
+	TesterRequestByID(ctx context.Context, id int64) (store.TesterRequestView, error)
 	Enqueue(ctx context.Context, j store.JobSpec) error
 }
 
@@ -154,35 +156,69 @@ func (a *Admin) testerAdded(w http.ResponseWriter, r *http.Request, m store.Team
 	writeJSON(w, http.StatusOK, map[string]any{"tester": toTesterJSON(v), "notice": notice})
 }
 
-// testerResend põe de novo na fila o aviso ao cliente; só para pedido já adicionado.
+// testerResendEvery: intervalo mínimo entre dois "Reenviar aviso" do mesmo pedido.
+const testerResendEvery = 2 * time.Minute
+
+// resendGuard lembra o último reenvio de cada pedido (em memória: é só freio contra clique repetido).
+type resendGuard struct {
+	mu   sync.Mutex
+	last map[int64]time.Time
+}
+
+// allow registra o reenvio e diz se passou o intervalo desde o último. Limpa as entradas vencidas.
+func (g *resendGuard) allow(id int64, now time.Time) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.last == nil {
+		g.last = map[int64]time.Time{}
+	}
+	if at, ok := g.last[id]; ok && now.Sub(at) < testerResendEvery {
+		return false
+	}
+	for k, at := range g.last {
+		if now.Sub(at) >= testerResendEvery {
+			delete(g.last, k)
+		}
+	}
+	g.last[id] = now
+	return true
+}
+
+// forget desfaz o registro (reenvio que não entrou na fila pode ser tentado de novo na hora).
+func (g *resendGuard) forget(id int64) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	delete(g.last, id)
+}
+
+// testerResend põe de novo na fila o aviso ao cliente; só para pedido já adicionado e no máximo
+// uma vez a cada 2 min por pedido.
 func (a *Admin) testerResend(w http.ResponseWriter, r *http.Request, m store.TeamMember, _ adminSession) {
 	id, ok := pathID(w, r)
 	if !ok {
 		return
 	}
-	open, err := a.testers().ListTesterRequests(r.Context(), "")
-	if a.storeError(w, err) {
+	v, err := a.testers().TesterRequestByID(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) || (err == nil && v.Status != store.TesterRequested && v.Status != store.TesterAdded) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "nao_encontrado"})
 		return
 	}
-	var v *store.TesterRequestView
-	for i := range open {
-		if open[i].ID == id {
-			v = &open[i]
-			break
-		}
-	}
-	if v == nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "nao_encontrado"})
+	if a.storeError(w, err) {
 		return
 	}
 	if v.Status != store.TesterAdded {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "ainda_nao_adicionado"})
 		return
 	}
+	if !a.testerResends.allow(id, a.now()) {
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "aguarde", "detail": "um reenvio a cada 2 minutos"})
+		return
+	}
 	if err := a.enqueueTesterNotice(r.Context(), id); err != nil {
+		a.testerResends.forget(id)
 		a.fail(w, err)
 		return
 	}
-	a.log(r, m, "tester_resend", "tester_request", orgTarget(id), testerLabel(*v), map[string]any{"org_id": v.OrgID})
+	a.log(r, m, "tester_resend", "tester_request", orgTarget(id), testerLabel(v), map[string]any{"org_id": v.OrgID})
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "na_fila"})
 }
