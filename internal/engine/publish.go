@@ -93,6 +93,12 @@ func (e *Engine) publish(ctx context.Context, j PublishJob) error {
 	if data.OrgID != ident.OrgID {
 		return fmt.Errorf("engine: rascunho %d não é da organização da conversa", j.DraftID)
 	}
+	// Post público sem o É MEU não vai para a Meta: sem nenhum outro anúncio, a etapa dos anúncios volta.
+	if list, err := e.Store.ListCreatives(ctx, data.DraftID); err != nil {
+		return err
+	} else if len(list) > 0 && len(usableCreatives(list)) == 0 {
+		return e.askPublishMedia(ctx, conv, data)
+	}
 	connID, sealed, err := e.pubs().MetaTokenSealed(ctx, data.OrgID)
 	if errors.Is(err, store.ErrNotFound) {
 		return e.askMetaToPublish(ctx, ident, conv)
@@ -135,7 +141,7 @@ func (e *Engine) publish(ctx context.Context, j PublishJob) error {
 		var res meta.PublishResult
 		res, err = e.Publisher.Publish(ctx, string(token), in)
 		if err == nil {
-			return e.published(ctx, ident, conv, pub, res, in.Copies)
+			return e.published(ctx, ident, conv, pub, res, in)
 		}
 	}
 	// Sem cancelamento: a publicação precisa ficar failed para a nova tentativa reaproveitar a linha.
@@ -162,7 +168,7 @@ func (e *Engine) publish(ctx context.Context, j PublishJob) error {
 	return e.send(ctx, conv, fmt.Sprintf(msgPublishFailed, user))
 }
 
-func (e *Engine) published(ctx context.Context, ident store.Identity, conv store.Conversation, pub store.Publication, res meta.PublishResult, copies []meta.PublishCopy) error {
+func (e *Engine) published(ctx context.Context, ident store.Identity, conv store.Conversation, pub store.Publication, res meta.PublishResult, in meta.PublishInput) error {
 	// A campanha já existe na Meta: prazo do job ou worker parando não podem impedir gravar e avisar.
 	ctx = context.WithoutCancel(ctx)
 	if err := e.pubs().FinishPublication(ctx, pub.ID, store.PublicationResult{CampaignID: res.CampaignID, AdSetID: res.AdSetID,
@@ -175,7 +181,10 @@ func (e *Engine) published(ctx context.Context, ident store.Identity, conv store
 	// Os textos que vão no ar (podem ter sido reescritos com as referências do cliente depois da aprovação):
 	// o cliente confere antes do ATIVAR.
 	text := msgPublished
-	if list := copiesList(copies); list != "" {
+	if fromInstagramPost(in) {
+		// o anúncio é o próprio post: os textos da proposta não vão no ar
+		text = join(text, msgPublishedFromPost)
+	} else if list := copiesList(in.Copies); list != "" {
 		text = join(text, fmt.Sprintf(msgPublishedCopies, list))
 	}
 	if len(res.Warnings) > 0 {
@@ -245,12 +254,19 @@ func (e *Engine) publishInput(ctx context.Context, ident store.Identity, conn st
 	if conn.PageWhatsApp {
 		in.PageWhatsApp, in.WhatsAppNumber = true, whatsapp.Digits(conn.PageWhatsAppNumber)
 	}
-	list, err := e.Store.ListCreatives(ctx, data.DraftID)
+	all, err := e.Store.ListCreatives(ctx, data.DraftID)
 	if err != nil {
 		return meta.PublishInput{}, err
 	}
+	list := usableCreatives(all)
 	if len(list) == 0 {
 		return meta.PublishInput{}, fmt.Errorf("engine: rascunho %d sem anúncios", data.DraftID)
+	}
+	if posts := ownPosts(list); len(posts) > 0 && conn.InstagramID != "" {
+		// Todos os anúncios vieram de posts da conta conectada: o anúncio usa o próprio post (com legenda e
+		// engajamento), sem subir arquivo.
+		in.Creatives = posts
+		return in, nil
 	}
 	if e.Storage == nil {
 		return meta.PublishInput{}, errors.New("engine: storage dos anúncios desligado")
@@ -263,6 +279,52 @@ func (e *Engine) publishInput(ctx context.Context, ident store.Identity, conn st
 		in.Creatives = append(in.Creatives, meta.PublishCreative{Kind: c.Kind, Mime: c.Mime, Data: raw, Placement: c.Placement})
 	}
 	return in, nil
+}
+
+// usableCreatives tira os posts públicos sem o É MEU do cliente.
+func usableCreatives(list []store.Creative) []store.Creative {
+	out := make([]store.Creative, 0, len(list))
+	for _, c := range list {
+		if !c.RightsPending {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// ownPosts: se todos os anúncios são posts da conta do Instagram conectada, um criativo por post
+// (o carrossel vira um anúncio só). Qualquer outro anúncio na lista = nil (sobe os arquivos).
+func ownPosts(list []store.Creative) []meta.PublishCreative {
+	var out []meta.PublishCreative
+	seen := map[string]bool{}
+	for _, c := range list {
+		if c.Origin != store.OriginInstagramOwn || c.IGMediaID == "" {
+			return nil
+		}
+		if seen[c.IGMediaID] {
+			continue
+		}
+		seen[c.IGMediaID] = true
+		out = append(out, meta.PublishCreative{Kind: c.Kind, Mime: c.Mime, Placement: c.Placement, InstagramMediaID: c.IGMediaID})
+	}
+	return out
+}
+
+func fromInstagramPost(in meta.PublishInput) bool {
+	return len(in.Creatives) > 0 && in.Creatives[0].InstagramMediaID != ""
+}
+
+// askPublishMedia: só sobrou post público sem confirmação. A conversa volta para a etapa dos anúncios.
+func (e *Engine) askPublishMedia(ctx context.Context, conv store.Conversation, data store.PublishData) error {
+	if err := e.Store.UpdateConversation(ctx, conv.ID, store.StateAwaitingCreatives, conv.Fields); err != nil {
+		return err
+	}
+	if data.ProjectID != nil {
+		if err := e.Store.SetProjectStage(ctx, *data.ProjectID, store.StageAwaitingCreatives); err != nil {
+			return err
+		}
+	}
+	return e.send(ctx, conv, msgPublishNeedMedia)
 }
 
 // campaignName: "<organização> · <projeto> · <data> · #p<publicação>". A marca no fim deixa a nova tentativa

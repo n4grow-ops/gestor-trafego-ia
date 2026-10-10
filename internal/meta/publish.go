@@ -200,6 +200,12 @@ func (c *Client) Publish(ctx context.Context, token string, in PublishInput) (Pu
 	if err != nil {
 		return res, err
 	}
+	for _, m := range media {
+		if m.igMediaID != "" {
+			res.Warnings = append(res.Warnings, "anúncio criado a partir do post do Instagram: vai com a legenda, as curtidas e os comentários do post")
+			break
+		}
+	}
 
 	// Tentativa anterior desta publicação que deixou campanha na conta: apaga antes de criar outra.
 	if err := c.removeLeftover(ctx, token, act, in.Name); err != nil {
@@ -258,13 +264,24 @@ func (c *Client) Publish(ctx context.Context, token string, in PublishInput) (Pu
 	}
 	res.AdSetID = created.ID
 
-	for n, pr := range pairs(len(media), len(in.Copies)) {
+	usedPost := map[int]bool{}
+	for _, pr := range pairs(len(media), len(in.Copies)) {
 		m, cp := media[pr[0]], in.Copies[pr[1]]
-		label := fmt.Sprintf("%s - anúncio %d", in.Name, n+1)
+		label := fmt.Sprintf("%s - anúncio %d", in.Name, len(res.AdIDs)+1)
+		var params url.Values
+		if m.igMediaID == "" {
+			params = url.Values{"name": {label}, "object_story_spec": {jsonParam(storySpec(in, p, m, cp))}}
+		} else {
+			// post do Instagram já tem legenda: um anúncio por post, sem combinar com os textos
+			if usedPost[pr[0]] {
+				continue
+			}
+			usedPost[pr[0]] = true
+			params = url.Values{"name": {label}, "object_id": {in.PageID}, "instagram_user_id": {in.InstagramActorID},
+				"source_instagram_media_id": {m.igMediaID}, "call_to_action": {jsonParam(callToAction(p, cp, false))}}
+		}
 		created.ID = ""
-		if err := c.call(ctx, http.MethodPost, act+"/adcreatives", token, url.Values{
-			"name": {label}, "object_story_spec": {jsonParam(storySpec(in, p, m, cp))},
-		}, &created); err != nil {
+		if err := c.call(ctx, http.MethodPost, act+"/adcreatives", token, params, &created); err != nil {
 			return fail("creative", err)
 		}
 		creativeID := created.ID
@@ -304,6 +321,12 @@ func validateInput(acct string, in PublishInput) error {
 	if len(in.Creatives) == 0 {
 		miss = append(miss, "criativos")
 	}
+	for _, cr := range in.Creatives {
+		if cr.InstagramMediaID != "" && strings.TrimSpace(in.InstagramActorID) == "" {
+			miss = append(miss, "conta do Instagram (para usar o post)")
+			break
+		}
+	}
 	if len(in.Copies) == 0 {
 		miss = append(miss, "textos")
 	}
@@ -332,6 +355,7 @@ type uploaded struct {
 	imageHash string
 	videoID   string
 	thumbURL  string
+	igMediaID string // post do Instagram usado como está
 }
 
 func (c *Client) uploadAll(ctx context.Context, token, act string, list []PublishCreative) ([]uploaded, error) {
@@ -339,13 +363,18 @@ func (c *Client) uploadAll(ctx context.Context, token, act string, list []Publis
 	for _, cr := range list {
 		var u uploaded
 		var err error
-		switch cr.Kind {
-		case "image":
-			u.imageHash, err = c.uploadImage(ctx, token, act, cr.Data)
-		case "video":
-			u.videoID, u.thumbURL, err = c.uploadVideo(ctx, token, act, cr)
+		switch {
+		case cr.InstagramMediaID != "":
+			u.igMediaID = cr.InstagramMediaID
 		default:
-			err = fmt.Errorf("tipo de mídia %q", cr.Kind)
+			switch cr.Kind {
+			case "image":
+				u.imageHash, err = c.uploadImage(ctx, token, act, cr.Data)
+			case "video":
+				u.videoID, u.thumbURL, err = c.uploadVideo(ctx, token, act, cr)
+			default:
+				err = fmt.Errorf("tipo de mídia %q", cr.Kind)
+			}
 		}
 		if err != nil {
 			return nil, publishError("upload", err)
@@ -473,27 +502,12 @@ func storySpec(in PublishInput, p plan, m uploaded, cp PublishCopy) map[string]a
 	if in.InstagramActorID != "" {
 		spec["instagram_user_id"] = in.InstagramActorID
 	}
-	cta := map[string]any{}
-	if p.whatsapp {
-		cta["type"] = "WHATSAPP_MESSAGE"
-		cta["value"] = map[string]any{"app_destination": "WHATSAPP"}
-	} else {
-		t := cp.CTA
-		if t != "LEARN_MORE" && t != "CONTACT_US" {
-			t = "LEARN_MORE" // WHATSAPP_MESSAGE não vale para clique no site
-		}
-		cta["type"] = t
-		cta["value"] = map[string]any{"link": p.link}
-	}
 	link := p.link
 	if p.whatsapp {
 		link = whatsAppLink
 	}
+	cta := callToAction(p, cp, m.videoID != "")
 	if m.videoID != "" {
-		if p.whatsapp {
-			// No vídeo o link vai dentro do call_to_action (video_data não tem campo link).
-			cta["value"] = map[string]any{"app_destination": "WHATSAPP", "link": link}
-		}
 		spec["video_data"] = map[string]any{"video_id": m.videoID, "image_url": m.thumbURL,
 			"title": cp.Headline, "message": cp.Text, "call_to_action": cta}
 		return spec
@@ -501,6 +515,22 @@ func storySpec(in PublishInput, p plan, m uploaded, cp PublishCopy) map[string]a
 	spec["link_data"] = map[string]any{"image_hash": m.imageHash, "message": cp.Text, "name": cp.Headline,
 		"link": link, "call_to_action": cta}
 	return spec
+}
+
+// callToAction é o botão do anúncio. No vídeo de WhatsApp o link vai dentro do botão (video_data não tem campo link).
+func callToAction(p plan, cp PublishCopy, video bool) map[string]any {
+	if p.whatsapp {
+		value := map[string]any{"app_destination": "WHATSAPP"}
+		if video {
+			value["link"] = whatsAppLink
+		}
+		return map[string]any{"type": "WHATSAPP_MESSAGE", "value": value}
+	}
+	t := cp.CTA
+	if t != "LEARN_MORE" && t != "CONTACT_US" {
+		t = "LEARN_MORE" // WHATSAPP_MESSAGE não vale para clique no site
+	}
+	return map[string]any{"type": t, "value": map[string]any{"link": p.link}}
 }
 
 // rollback apaga a campanha criada (conjunto e anúncios vão junto). Usa contexto próprio:
