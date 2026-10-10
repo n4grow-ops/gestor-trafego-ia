@@ -159,6 +159,8 @@ func WithAdminHost(adminHost string, next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		// O painel só existe em HTTPS: o navegador não tenta mais http nesse host.
+		w.Header().Set("Strict-Transport-Security", "max-age=31536000")
 		if r.URL.Path != "/healthz" && !isAdminPath {
 			r2 := r.Clone(r.Context())
 			r2.URL.Path = "/admin" + r.URL.Path

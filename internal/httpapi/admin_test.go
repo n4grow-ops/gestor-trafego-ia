@@ -682,3 +682,15 @@ func TestAdminSessionIdleTimeout(t *testing.T) {
 		t.Fatalf("mais de 12 h depois do login = %d", r.code)
 	}
 }
+
+func TestAdminHSTS(t *testing.T) {
+	e := newAdminEnv(t, "otp")
+	for _, c := range []struct{ method, path string }{
+		{"GET", "/"}, {"GET", "/static/admin.js"}, {"GET", "/api/session"}, {"GET", "/api/me"}, {"POST", "/api/login/start"},
+	} {
+		r := e.do(c.method, c.path, nil, map[string]string{"email": "x@y.io"})
+		if got := r.hdr.Get("Strict-Transport-Security"); got != "max-age=31536000" {
+			t.Errorf("%s %s: HSTS = %q", c.method, c.path, got)
+		}
+	}
+}
