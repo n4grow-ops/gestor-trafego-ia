@@ -34,3 +34,29 @@ func TestWhatsAppStatus(t *testing.T) {
 		t.Fatalf("volta: changed=%v s=%+v err=%v", changed, s, err)
 	}
 }
+
+func TestWhatsAppStats(t *testing.T) {
+	st, pool := newStore(t)
+	ident := seedIdentity(t, st, "owner", "5511988887777")
+	conv, err := st.GetOrCreateConversation(ctx, ident.ID, "c")
+	must(t, err)
+	must(t, st.AddMessage(ctx, conv.ID, "in", "text", "oi"))
+	must(t, st.AddMessage(ctx, conv.ID, "out", "text", "olá"))
+	must(t, st.AddMessage(ctx, conv.ID, "out", "text", "tudo bem?"))
+	_, err = pool.Exec(ctx, `INSERT INTO outbox_jobs (kind, payload, status, last_error) VALUES ('whatsapp.send', $1, 'failed', 'sessão FAILED')`,
+		`{"conversation_id":`+itoa(conv.ID)+`,"text":"faz seu cadastro: https://x.io/c/AbCdEfGhIjKl"}`)
+	must(t, err)
+	_, err = st.SetWhatsAppStatus(ctx, "wame", whatsapp.ConnectionEvent{Connected: true})
+	must(t, err)
+	w, err := st.WhatsAppStats(ctx)
+	must(t, err)
+	if len(w.Statuses) != 1 || !w.Statuses[0].Connected {
+		t.Fatalf("estado = %+v", w.Statuses)
+	}
+	if len(w.Days) != 7 || w.Days[6].In != 1 || w.Days[6].Out != 2 {
+		t.Fatalf("dias = %+v", w.Days)
+	}
+	if len(w.Failed) != 1 || w.Failed[0].OrgName != "Pizzaria Boa" || w.Failed[0].Preview != "faz seu cadastro: https://x.io/c/[link]" {
+		t.Fatalf("falhas = %+v", w.Failed)
+	}
+}
