@@ -107,6 +107,27 @@ func enqueue(ctx context.Context, q querier, j JobSpec) error {
 // processamento de vídeo, prazo de 15 minutos no worker) fica travada por 20 e o post do Instagram (prazo
 // de 5) por 7: outro worker não pega o mesmo job no meio e cria a campanha ou os anúncios duas vezes.
 func (s *Store) ClaimJob(ctx context.Context) (Job, bool, error) {
+	return s.claimJob(ctx, nil, false)
+}
+
+// ClaimJobOf é o ClaimJob só dos tipos dados (os jobs lentos que o worker roda fora do laço).
+func (s *Store) ClaimJobOf(ctx context.Context, kinds []string) (Job, bool, error) {
+	if len(kinds) == 0 {
+		return Job{}, false, nil
+	}
+	return s.claimJob(ctx, kinds, true)
+}
+
+// ClaimJobExcept é o ClaimJob de todos os tipos menos os dados.
+func (s *Store) ClaimJobExcept(ctx context.Context, kinds []string) (Job, bool, error) {
+	return s.claimJob(ctx, kinds, false)
+}
+
+// claimJob: kinds nil = qualquer tipo; senão só (only=true) ou menos (only=false) os tipos dados.
+func (s *Store) claimJob(ctx context.Context, kinds []string, only bool) (Job, bool, error) {
+	if kinds == nil {
+		kinds = []string{}
+	}
 	var j Job
 	err := s.pool.QueryRow(ctx, `UPDATE outbox_jobs
 		SET attempts = attempts + 1, updated_at = now(),
@@ -115,8 +136,9 @@ func (s *Store) ClaimJob(ctx context.Context) (Job, bool, error) {
 		WHERE id = (
 			SELECT id FROM outbox_jobs
 			WHERE status = 'pending' AND run_after <= now() AND (locked_until IS NULL OR locked_until < now())
+			  AND (cardinality($1::text[]) = 0 OR (kind = ANY($1::text[])) = $2)
 			ORDER BY run_after, id LIMIT 1 FOR UPDATE SKIP LOCKED)
-		RETURNING id, kind, payload, attempts`).Scan(&j.ID, &j.Kind, &j.Payload, &j.Attempts)
+		RETURNING id, kind, payload, attempts`, kinds, only).Scan(&j.ID, &j.Kind, &j.Payload, &j.Attempts)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Job{}, false, nil
 	}

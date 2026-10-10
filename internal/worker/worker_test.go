@@ -202,6 +202,162 @@ func TestPublishJobHasLongerTimeout(t *testing.T) {
 	}
 }
 
+// slowHandler segura os jobs lentos até release; o resto passa direto.
+type slowHandler struct {
+	mu       sync.Mutex
+	inbound  []string
+	running  int
+	peak     int
+	started  chan int64
+	release  chan struct{}
+	finished chan int64
+}
+
+func newSlowHandler() *slowHandler {
+	return &slowHandler{started: make(chan int64, 10), release: make(chan struct{}), finished: make(chan int64, 10)}
+}
+
+func (h *slowHandler) HandleInbound(_ context.Context, in whatsapp.Inbound) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.inbound = append(h.inbound, in.Text)
+	return nil
+}
+
+func (h *slowHandler) HandleJob(ctx context.Context, job store.Job) error {
+	if job.Kind != engine.JobInstagramFetch && job.Kind != engine.JobMetaPublish {
+		return nil
+	}
+	h.mu.Lock()
+	h.running++
+	h.peak = max(h.peak, h.running)
+	h.mu.Unlock()
+	defer func() {
+		h.mu.Lock()
+		h.running--
+		h.mu.Unlock()
+		h.finished <- job.ID
+	}()
+	h.started <- job.ID
+	select {
+	case <-h.release:
+		return nil
+	case <-ctx.Done():
+		time.Sleep(100 * time.Millisecond) // termina o que fazia antes de sair
+		return ctx.Err()
+	}
+}
+
+func (h *slowHandler) OnJobFailed(context.Context, store.Job) error { return nil }
+
+func (h *slowHandler) inboundCount() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.inbound)
+}
+
+func waitFor(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("esperando: %s", what)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func jobStatus(t *testing.T, pool *pgxpool.Pool, id int64) (string, bool) {
+	t.Helper()
+	var status string
+	var locked bool
+	if err := pool.QueryRow(ctx, `SELECT status, locked_until IS NOT NULL FROM outbox_jobs WHERE id = $1`, id).Scan(&status, &locked); err != nil {
+		t.Fatal(err)
+	}
+	return status, locked
+}
+
+// I2: job lento (post do Instagram, publicação) roda fora do laço: o inbox e os outros jobs seguem,
+// no máximo 2 lentos por vez, e o desligamento espera o lento terminar e gravar o resultado.
+func TestSlowJobsRunOffTheLoop(t *testing.T) {
+	wa := &fakeWA{parse: func([]byte) (whatsapp.Inbound, bool, error) {
+		return whatsapp.Inbound{ExternalID: "e1", ChatID: "x@c.us", Kind: whatsapp.KindText, Text: "oi"}, true, nil
+	}}
+	_, st, pool := setup(t, wa)
+	h := newSlowHandler()
+	w := &worker.Worker{Store: st, WA: wa, Engine: h, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Idle: 10 * time.Millisecond}
+	var slow []int64
+	for range 3 {
+		var id int64
+		if err := pool.QueryRow(ctx, `INSERT INTO outbox_jobs (kind, payload) VALUES ($1, '{}') RETURNING id`, engine.JobInstagramFetch).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		slow = append(slow, id)
+	}
+	rctx, stop := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() { w.Run(rctx); close(done) }()
+
+	<-h.started
+	<-h.started
+	// com os dois lentos rodando, mensagem e job rápido seguem
+	if _, err := st.InsertInbox(ctx, "openwa", "e1", []byte(`{"text":"oi"}`)); err != nil {
+		t.Fatal(err)
+	}
+	st.EnqueueJob(ctx, engine.JobSend, engine.SendJob{ChatID: "x@c.us", Text: "olá"})
+	waitFor(t, "mensagem processada com job lento rodando", func() bool {
+		s, _, _ := eventStatus(t, pool)
+		return s == "done"
+	})
+	waitFor(t, "job rápido processado", func() bool {
+		var n int
+		pool.QueryRow(ctx, `SELECT count(*) FROM outbox_jobs WHERE kind = $1 AND status = 'done'`, engine.JobSend).Scan(&n)
+		return n == 1
+	})
+	if h.inboundCount() != 1 {
+		t.Fatalf("mensagens tratadas = %d", h.inboundCount())
+	}
+	select {
+	case id := <-h.started:
+		t.Fatalf("terceiro lento (%d) começou com 2 rodando", id)
+	case <-time.After(200 * time.Millisecond):
+	}
+	h.release <- struct{}{} // libera um: o terceiro entra
+	<-h.finished
+	<-h.started
+	h.mu.Lock()
+	peak := h.peak
+	h.mu.Unlock()
+	if peak != 2 {
+		t.Fatalf("lentos ao mesmo tempo = %d", peak)
+	}
+
+	// desligamento com dois lentos rodando: Run espera e o resultado fica gravado (sem trava pendurada)
+	stop()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run não voltou")
+	}
+	if len(h.finished) != 2 {
+		t.Fatalf("Run voltou antes dos lentos terminarem: %d terminados", len(h.finished))
+	}
+	var finished, retry int
+	for _, id := range slow {
+		switch s, locked := jobStatus(t, pool, id); {
+		case s == "done" && !locked:
+			finished++
+		case s == "pending" && !locked:
+			retry++
+		default:
+			t.Fatalf("job %d: status = %s travado = %v", id, s, locked)
+		}
+	}
+	if finished != 1 || retry != 2 {
+		t.Fatalf("concluídos = %d para nova tentativa = %d", finished, retry)
+	}
+}
+
 // A trava do job (ClaimJob) cobre o prazo do tipo com folga: outro worker não pega o mesmo job no meio.
 func TestJobLockCoversTimeout(t *testing.T) {
 	wa := &fakeWA{parse: func([]byte) (whatsapp.Inbound, bool, error) { return whatsapp.Inbound{}, false, nil }}
