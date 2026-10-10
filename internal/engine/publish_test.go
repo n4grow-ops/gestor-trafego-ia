@@ -505,6 +505,25 @@ func TestPublishWithoutPublisherWarnsClientAndTeam(t *testing.T) {
 	}
 }
 
+func TestPublishAlertGoesToTeamPhones(t *testing.T) {
+	h, _, _ := newPublishHarness(t, "owner")
+	h.eng.Publisher = nil
+	h.eng.TeamPhones = []string{"5511900000001", "5511900000002"}
+	h.connectMeta()
+	h.readyProject()
+	h.runKind(engine.JobCreativesPreview)
+	h.runKind(engine.JobMetaPublish)
+	h.runKind(engine.JobSend)
+	for _, p := range h.eng.TeamPhones {
+		if got := h.wa.to(p + "@c.us"); len(got) != 1 || !strings.HasPrefix(got[0], "Publicação na Meta") {
+			t.Fatalf("equipe %s = %q", p, got)
+		}
+	}
+	if got := h.wa.to(operatorChat); len(got) != 0 {
+		t.Fatalf("com TEAM_PHONES o OPERATOR_PHONE não recebe à parte: %q", got)
+	}
+}
+
 func TestPublishWithoutTokenAsksToConnect(t *testing.T) {
 	h, pubs, pub := newPublishHarness(t, "owner")
 	h.connectMeta()

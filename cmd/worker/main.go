@@ -128,6 +128,8 @@ func run(log *slog.Logger) error {
 	// Canal da equipe: privado de cada número e, opcional, o grupo por uma instância Wame não
 	// oficial (QR) — o número oficial não manda para grupo. Ela só envia: não tem webhook aqui.
 	eng.TeamPhones = cfg.TeamPhones
+	// Números marcados no painel (Equipe → "Recebe avisos") valem antes do TEAM_PHONES.
+	eng.TeamDirectory = st.TeamAlertPhones
 	if cfg.TeamGroupEnabled() {
 		eng.TeamGroup = wame.New(cfg.WameBaseURL, cfg.TeamGroupWameKey, cfg.TeamGroupWameToken)
 		eng.TeamGroupJID = cfg.TeamGroupJID

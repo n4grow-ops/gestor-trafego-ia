@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 )
@@ -42,8 +44,53 @@ type TeamGroupJob struct {
 	Text string `json:"text"`
 }
 
-// teamPhones são os números da equipe; sem TEAM_PHONES vale o OPERATOR_PHONE.
-func (e *Engine) teamPhones() []string {
+// teamDirectoryTTL: por quanto tempo a lista do painel vale antes de ler o banco de novo.
+const teamDirectoryTTL = 30 * time.Second
+
+// teamDirCache guarda a última leitura dos números marcados no painel.
+type teamDirCache struct {
+	mu     sync.Mutex
+	phones []string
+	at     time.Time
+	loaded bool
+}
+
+// directoryPhones lê os números marcados no painel, com cache de 30 s. Se o banco falhar, segue
+// com a última leitura boa (ou nada) e só tenta de novo depois do TTL, para não martelar o banco.
+func (e *Engine) directoryPhones(ctx context.Context) []string {
+	if e.TeamDirectory == nil {
+		return nil
+	}
+	c := &e.teamDir
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	now := e.now()
+	if c.loaded && now.Sub(c.at) < teamDirectoryTTL {
+		return c.phones
+	}
+	phones, err := e.TeamDirectory(ctx)
+	c.at, c.loaded = now, true
+	if err != nil {
+		e.Log.Error("falha ao ler os números da equipe no banco; usando a última lista", "erro", err)
+		return c.phones
+	}
+	c.phones = phones
+	return phones
+}
+
+// InvalidateTeamDirectory força a próxima leitura dos números da equipe no banco.
+func (e *Engine) InvalidateTeamDirectory() {
+	e.teamDir.mu.Lock()
+	e.teamDir.loaded = false
+	e.teamDir.mu.Unlock()
+}
+
+// teamPhones são os números que recebem os avisos. Ordem: os marcados no painel (se houver
+// algum), depois TEAM_PHONES e por fim OPERATOR_PHONE.
+func (e *Engine) teamPhones(ctx context.Context) []string {
+	if p := e.directoryPhones(ctx); len(p) > 0 {
+		return p
+	}
 	if len(e.TeamPhones) > 0 {
 		return e.TeamPhones
 	}
@@ -65,7 +112,7 @@ func (e *Engine) teamJobs(ctx context.Context, n TeamNotice) []store.JobSpec {
 		text = fmt.Sprintf(msgOperator, n.Ident.MemberName, n.Ident.OrgName, n.Ident.Phone, n.Reason)
 	}
 	var jobs []store.JobSpec
-	for _, p := range e.teamPhones() {
+	for _, p := range e.teamPhones(ctx) {
 		jobs = append(jobs, systemSendJob(0, e.WA.ChatIDForPhone(p), text,
 			TeamAlertTemplate(n.Ident.MemberName, n.Ident.OrgName, n.Ident.Phone, n.Reason)))
 	}
@@ -73,6 +120,17 @@ func (e *Engine) teamJobs(ctx context.Context, n TeamNotice) []store.JobSpec {
 		jobs = append(jobs, store.JobSpec{Kind: JobTeamGroup, Payload: TeamGroupJob{Text: text}, MaxAttempts: sendAttempts})
 	}
 	return jobs
+}
+
+// MsgTeamTest é o aviso de teste mandado pelo painel (Equipe → "Enviar teste").
+const MsgTeamTest = "✅ Teste: você vai receber os avisos da equipe do meu anúncio.io aqui."
+
+// TeamTestJob é o envio de teste para o número de alguém da equipe. Vai pelo mesmo caminho dos
+// avisos de verdade: texto livre dentro da janela de 24 h e, fora dela (o normal, porque o número
+// da equipe quase nunca conversa com o bot), o modelo aprovado aviso_equipe com motivo de teste.
+func TeamTestJob(chatID, phone string) store.JobSpec {
+	return systemSendJob(0, chatID, MsgTeamTest,
+		TeamAlertTemplate("Teste", "meu anúncio.io", phone, "teste dos avisos da equipe pelo painel, nenhum cliente pediu nada"))
 }
 
 // sendTeamGroup entrega o aviso no grupo. Sem grupo configurado (ex.: variável removida com

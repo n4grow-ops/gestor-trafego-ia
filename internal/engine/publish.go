@@ -381,15 +381,16 @@ func validateCopies(cs []contract.Copy) error {
 	return nil
 }
 
-// alertTeam avisa a equipe pelo WhatsApp do operador (pelo outbox, para sobreviver ao WhatsApp fora).
+// alertTeam avisa a equipe (números do painel, TEAM_PHONES ou OPERATOR_PHONE, e o grupo se
+// ligado) pelo outbox, para sobreviver ao WhatsApp fora.
 func (e *Engine) alertTeam(ctx context.Context, ident store.Identity, reason string) {
-	if e.OperatorPhone == "" {
-		e.Log.Warn("aviso à equipe sem OPERATOR_PHONE", "org_id", ident.OrgID, "motivo", reason)
+	note := fmt.Sprintf(msgOperatorPublish, ident.MemberName, ident.OrgName, ident.Phone, reason)
+	jobs := e.teamJobs(ctx, TeamNotice{Kind: TeamPublish, Ident: ident, Reason: reason, Text: note})
+	if len(jobs) == 0 {
+		e.Log.Warn("aviso à equipe sem número: marque alguém em Equipe no painel ou defina TEAM_PHONES", "org_id", ident.OrgID, "motivo", reason)
 		return
 	}
-	note := fmt.Sprintf(msgOperatorPublish, ident.MemberName, ident.OrgName, ident.Phone, reason)
-	job := systemSendJob(0, e.WA.ChatIDForPhone(e.OperatorPhone), note, TeamAlertTemplate(ident.MemberName, ident.OrgName, ident.Phone, reason))
-	if err := e.Store.Enqueue(ctx, job); err != nil {
+	if err := e.enqueueAll(ctx, jobs...); err != nil {
 		e.Log.Error("falha ao avisar a equipe", "org_id", ident.OrgID, "erro", err)
 	}
 }

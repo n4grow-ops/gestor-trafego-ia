@@ -166,3 +166,45 @@ func TestProposalFailureAlertGoesToTeamPhones(t *testing.T) {
 		t.Fatalf("equipe = %q", got)
 	}
 }
+
+func TestHumanNoticeGoesToPanelPhones(t *testing.T) {
+	h := newHarness(t, "owner")
+	h.eng.TeamPhones = []string{"5511900000001"}
+	h.eng.TeamDirectory = h.st.TeamAlertPhones
+	m, err := h.st.AddTeamMember(ctx, "bia@meuanuncio.io", "Bia", "staff", "teste")
+	h.must(err)
+	_, err = h.st.SetTeamMemberAlerts(ctx, m.ID, "5511900000009", true)
+	h.must(err)
+	h.att.Responses = []string{humanTurn}
+	h.say("quero uma pessoa")
+	h.runJobs()
+	if got := h.wa.to("5511900000009@c.us"); len(got) != 1 || !strings.Contains(got[0], "quero uma pessoa") {
+		t.Fatalf("número do painel = %q", got)
+	}
+	if got := h.wa.to("5511900000001@c.us"); len(got) != 0 {
+		t.Fatalf("com números no painel o TEAM_PHONES não recebe: %q", got)
+	}
+	if got := h.wa.to(operatorChat); len(got) != 0 {
+		t.Fatalf("com números no painel o OPERATOR_PHONE não recebe: %q", got)
+	}
+}
+
+func TestTeamTestJobUsesTemplateOutsideWindow(t *testing.T) {
+	h := newHarness(t, "owner")
+	wa := &tplWA{fakeWA: h.wa}
+	h.eng.WA = wa
+	h.must(h.st.Enqueue(ctx, engine.TeamTestJob("5511900000009@c.us", "5511900000009")))
+	h.runJobs()
+	if len(wa.tpls) != 1 || wa.tpls[0].Name != engine.TplTeamAlert || !strings.Contains(strings.Join(wa.tpls[0].Params, " "), "teste") {
+		t.Fatalf("modelos = %+v", wa.tpls)
+	}
+}
+
+func TestTeamTestJobSendsText(t *testing.T) {
+	h := newHarness(t, "owner")
+	h.must(h.st.Enqueue(ctx, engine.TeamTestJob("5511900000009@c.us", "5511900000009")))
+	h.runJobs()
+	if got := h.wa.to("5511900000009@c.us"); len(got) != 1 || got[0] != engine.MsgTeamTest {
+		t.Fatalf("teste = %q", got)
+	}
+}

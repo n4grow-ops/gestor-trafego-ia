@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp"
 )
 
 var (
@@ -35,6 +37,9 @@ type TeamMember struct {
 	AddedBy     string     `json:"added_by"`
 	CreatedAt   time.Time  `json:"created_at"`
 	LastLoginAt *time.Time `json:"last_login_at"`
+	// WhatsApp (só dígitos) e ReceivesAlerts: quem recebe os avisos da equipe no privado.
+	WhatsApp       string `json:"whatsapp"`
+	ReceivesAlerts bool   `json:"receives_alerts"`
 	// SessionVersion vai no cookie; subir a versão derruba as sessões abertas.
 	SessionVersion int `json:"-"`
 }
@@ -53,11 +58,11 @@ func NormalizeEmail(s string) (string, bool) {
 	return e, true
 }
 
-const teamCols = `id, email, name, role, active, coalesce(added_by, ''), created_at, last_login_at, session_version`
+const teamCols = `id, email, name, role, active, coalesce(added_by, ''), created_at, last_login_at, session_version, whatsapp, receives_alerts`
 
 func scanTeam(row pgx.Row) (TeamMember, error) {
 	var m TeamMember
-	err := row.Scan(&m.ID, &m.Email, &m.Name, &m.Role, &m.Active, &m.AddedBy, &m.CreatedAt, &m.LastLoginAt, &m.SessionVersion)
+	err := row.Scan(&m.ID, &m.Email, &m.Name, &m.Role, &m.Active, &m.AddedBy, &m.CreatedAt, &m.LastLoginAt, &m.SessionVersion, &m.WhatsApp, &m.ReceivesAlerts)
 	return m, notFound(err)
 }
 
@@ -170,6 +175,30 @@ func (s *Store) RemoveTeamMember(ctx context.Context, id int64) error {
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// SetTeamMemberAlerts grava o WhatsApp da pessoa e se ela recebe os avisos da equipe. O número
+// fica só com dígitos (10 a 15); vazio só vale com os avisos desligados.
+func (s *Store) SetTeamMemberAlerts(ctx context.Context, id int64, whatsappNum string, receives bool) (TeamMember, error) {
+	d := whatsapp.Digits(whatsappNum)
+	if d != "" && (len(d) < 10 || len(d) > 15) {
+		return TeamMember{}, fmt.Errorf("%w: whatsapp", ErrInvalidInput)
+	}
+	if d == "" && receives {
+		return TeamMember{}, fmt.Errorf("%w: whatsapp", ErrInvalidInput)
+	}
+	return scanTeam(s.pool.QueryRow(ctx, `UPDATE team_members SET whatsapp = $2, receives_alerts = $3 WHERE id = $1
+		RETURNING `+teamCols, id, d, receives))
+}
+
+// TeamAlertPhones são os números de quem está ativo e marcou "recebe avisos", sem repetidos.
+func (s *Store) TeamAlertPhones(ctx context.Context) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT DISTINCT whatsapp FROM team_members
+		WHERE active AND receives_alerts AND whatsapp <> '' ORDER BY whatsapp`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
 func (s *Store) TouchTeamLogin(ctx context.Context, id int64) error {

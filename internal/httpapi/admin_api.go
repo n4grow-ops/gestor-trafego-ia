@@ -338,12 +338,18 @@ func (a *Admin) whatsapp(w http.ResponseWriter, r *http.Request, m store.TeamMem
 	writeJSON(w, http.StatusOK, map[string]any{"stats": st, "provider": a.Provider, "bot_number": a.BotNumber, "window_limited": a.WindowLimited})
 }
 
+// team: administrador vê a equipe toda; equipe vê só a própria linha (para cuidar do próprio
+// WhatsApp e dos avisos).
 func (a *Admin) team(w http.ResponseWriter, r *http.Request, m store.TeamMember, _ adminSession) {
+	if !m.IsAdmin() {
+		writeJSON(w, http.StatusOK, map[string]any{"team": []store.TeamMember{m}, "scope": "meus"})
+		return
+	}
 	team, err := a.Store.ListTeam(r.Context())
 	if a.storeError(w, err) {
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"team": team})
+	writeJSON(w, http.StatusOK, map[string]any{"team": team, "scope": "todos"})
 }
 
 func (a *Admin) addMember(w http.ResponseWriter, r *http.Request, m store.TeamMember, _ adminSession) {
