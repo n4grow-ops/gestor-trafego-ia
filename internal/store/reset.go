@@ -152,6 +152,7 @@ func resetOrganizations(ctx context.Context, tx pgx.Tx, orgIDs []int64, phones [
 		{"campaign_drafts", `DELETE FROM campaign_drafts WHERE organization_id = ANY($1)`},
 		{"outbox_jobs", `DELETE FROM outbox_jobs WHERE (payload->>'conversation_id') ~ '^[0-9]+$' AND (payload->>'conversation_id')::bigint IN (` + conv + `)
 			OR (payload->>'identity_id') ~ '^[0-9]+$' AND (payload->>'identity_id')::bigint IN (` + idents + `)`},
+		{"tester_requests", `DELETE FROM tester_requests WHERE organization_id = ANY($1) OR identity_id IN (` + idents + `)`},
 		{"messages", `DELETE FROM messages WHERE conversation_id IN (` + conv + `)`},
 		{"conversations", `DELETE FROM conversations WHERE id IN (` + conv + `)`},
 		{"projects", `DELETE FROM projects WHERE organization_id = ANY($1)`},
