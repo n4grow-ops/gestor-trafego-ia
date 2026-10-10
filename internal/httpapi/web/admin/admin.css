@@ -481,6 +481,13 @@ textarea.field { resize: vertical; min-height: 5rem; line-height: 1.45; }
 .team-row b { display: block; font-size: 0.875rem; }
 .team-row small { font-size: 0.75rem; color: var(--muted); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .team-add { display: grid; grid-template-columns: 1.4fr 1fr 9rem auto; gap: 0.5rem; margin-top: 1rem; align-items: end; }
+.team-member { border-bottom: 1px solid var(--line-soft); padding-bottom: 0.75rem; }
+.team-member .team-row { border-bottom: 0; padding-bottom: 0.45rem; }
+.team-alerts { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.9rem; padding-left: 2.75rem; }
+.team-alerts .wa-field { position: relative; flex: 1 1 15rem; max-width: 20rem; }
+.team-alerts .wa-field .ico-sm { position: absolute; left: 0.65rem; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+.team-alerts .wa-field .field { padding-left: 2rem; font-variant-numeric: tabular-nums; }
+.team-alerts-btns { display: inline-flex; gap: 0.35rem; }
 .log-row { display: grid; grid-template-columns: 9rem 11rem minmax(0, 1fr) auto; gap: 1rem; align-items: center; padding: 0.7rem 1rem; border-bottom: 1px solid var(--line-soft); font-size: 0.875rem; }
 .log-row:last-child { border-bottom: 0; }
 .log-row time { color: var(--faint); font-size: 0.8125rem; font-variant-numeric: tabular-nums; }
@@ -633,6 +640,8 @@ textarea.field { resize: vertical; min-height: 5rem; line-height: 1.45; }
   .log-row time { grid-column: 1 / -1; }
   .team-add { grid-template-columns: 1fr 1fr; }
   .team-add .btn { grid-column: 1 / -1; }
+  .team-alerts { padding-left: 0; }
+  .team-alerts .wa-field { max-width: none; flex-basis: 100%; }
   .b { max-width: 88%; }
 }
 @media (max-width: 520px) {

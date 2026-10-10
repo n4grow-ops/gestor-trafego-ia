@@ -326,7 +326,6 @@ func TestAdminPermissions(t *testing.T) {
 	}{
 		{"GET", "/api/billing", nil},
 		{"POST", "/api/payments", map[string]any{"org_id": e.orgID, "amount_cents": 100, "method": "pix", "status": "paid", "date": "2026-10-01"}},
-		{"GET", "/api/team", nil},
 		{"POST", "/api/team", map[string]string{"email": "novo@meuanuncio.io", "role": "admin"}},
 		{"DELETE", "/api/team/" + strconv.FormatInt(e.adminID, 10), nil},
 		{"GET", "/api/clients/" + org + "/reset", nil},
@@ -335,6 +334,11 @@ func TestAdminPermissions(t *testing.T) {
 		if r := e.do(c.method, c.path, staff, c.body); r.code != http.StatusForbidden {
 			t.Errorf("staff %s %s = %d %s", c.method, c.path, r.code, r.raw)
 		}
+	}
+	// Staff vê só a própria linha da equipe (para cuidar do próprio WhatsApp de avisos).
+	if r := e.do("GET", "/api/team", staff, nil); r.code != 200 || r.body["scope"] != "meus" || len(r.body["team"].([]any)) != 1 ||
+		r.body["team"].([]any)[0].(map[string]any)["email"] != "marina@meuanuncio.io" {
+		t.Errorf("staff GET /api/team = %d %s", r.code, r.raw)
 	}
 	for _, path := range []string{"/api/overview", "/api/clients", "/api/clients/" + org, "/api/conversations", "/api/whatsapp", "/api/audit"} {
 		if r := e.do("GET", path, staff, nil); r.code != 200 {

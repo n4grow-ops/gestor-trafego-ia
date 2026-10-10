@@ -100,13 +100,14 @@ func (a *Admin) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /admin/api/billing", a.only(true, a.billing))
 	mux.HandleFunc("POST /admin/api/payments", a.only(true, a.recordPayment))
 	mux.HandleFunc("GET /admin/api/whatsapp", a.only(false, a.whatsapp))
-	mux.HandleFunc("GET /admin/api/team", a.only(true, a.team))
+	mux.HandleFunc("GET /admin/api/team", a.only(false, a.team))
 	mux.HandleFunc("POST /admin/api/team", a.only(true, a.addMember))
 	mux.HandleFunc("DELETE /admin/api/team/{id}", a.only(true, a.removeMember))
 	mux.HandleFunc("GET /admin/api/audit", a.only(false, a.audit))
 	a.registerMia(mux)
 	a.registerPlans(mux)
 	a.registerTesters(mux)
+	a.registerTeamAlerts(mux)
 }
 
 // adminCSP: nada de script ou estilo inline, nada de terceiros; a API é a mesma origem.

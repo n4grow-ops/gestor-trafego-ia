@@ -87,6 +87,7 @@ const ERRORS = {
   codigo_em_uso: 'Já existe um plano com esse código.', plano_com_assinantes: 'Esse plano tem assinatura: não dá para apagar nem trocar o código. Oculte em vez disso.',
   versao_desatualizada: 'Alguém salvou isso enquanto você editava. Feche, abra de novo e refaça a mudança.',
   pedido_fechado: 'Esse pedido já foi atualizado por outra pessoa. A lista foi recarregada.',
+  sem_whatsapp: 'Salve um WhatsApp antes de mandar o teste.', whatsapp_desligado: 'O WhatsApp do bot não está configurado neste servidor.',
   ainda_nao_adicionado: 'Aperte “Adicionei” primeiro: o aviso só vai depois que o cliente estiver na Meta.',
 };
 const errMsg = e => ERRORS[e.message] || (e.status ? 'Não deu certo (' + e.status + ').' : 'Sem conexão com o servidor.');
@@ -125,6 +126,7 @@ const ACTIONS = {
   conversation_takeover: ['Assumiu a conversa', 'warn', 'hand'], conversation_release: ['Devolveu a conversa à IA', 'ok', 'bot'],
   conversation_send: ['Respondeu pelo painel', 'info', 'send'], payment_record: ['Registrou pagamento', 'ok', 'money'],
   team_add: ['Adicionou à equipe', 'info', 'user-plus'], team_remove: ['Removeu da equipe', 'warn', 'trash'],
+  team_alerts: ['Mudou o WhatsApp de avisos', 'info', 'wa'], team_alerts_test: ['Mandou teste de aviso', 'info', 'send'],
   plan_create: ['Criou plano', 'ok', 'tag'], plan_update: ['Editou plano', 'info', 'tag'], plan_delete: ['Apagou plano', 'warn', 'trash'],
   tester_added: ['Adicionou testador na Meta', 'ok', 'flask'], tester_resend: ['Reenviou aviso de testador', 'info', 'send'],
 };
@@ -255,7 +257,7 @@ function barChart(series) {
 
 /* ===================== telas ===================== */
 const views = {};
-const ADMIN_ROUTES = new Set(['faturamento', 'equipe']);
+const ADMIN_ROUTES = new Set(['faturamento']);
 const lockwall = what => `<div class="page"><div class="lockwall"><span class="big-ico">${icon('lock', 'ico')}</span><b>Só administradores</b><p class="muted">${esc(what)}</p></div></div>`;
 const loadingPage = () => `<div class="loading-page"><span class="spinner" aria-label="Carregando"></span></div>`;
 function errorPage(e, retry) {
@@ -711,29 +713,71 @@ views.whatsapp = async view => {
 
 /* ---------- equipe ---------- */
 views.equipe = async view => {
-  if (state.me.role !== 'admin') { view.innerHTML = lockwall('Só administradores adicionam e removem pessoas da equipe.'); return; }
   const d = await api('GET', '/team');
-  view.innerHTML = `<div class="page">
-    <div class="page-head"><div><h1>Equipe</h1><p>Quem entra no painel. O login é por código no e-mail.</p></div></div>
-    <section class="panel"><div class="panel-body">
-      ${d.team.map(m => `<div class="team-row"><span class="mini-av">${esc(initials(m.name || m.email))}</span><div><b>${esc(m.name || m.email.split('@')[0])}${m.id === state.me.id ? ' <span class="faint small">(você)</span>' : ''}</b><small>${esc(m.email)} · ${m.last_login_at ? 'último acesso ' + esc(dt(m.last_login_at)) : 'nunca entrou'}</small></div>
+  const admin = d.scope === 'todos';
+  const alertsForm = m => `<form class="team-alerts" data-alerts-form="${m.id}" novalidate>
+      <label class="sr" for="tm-wa-${m.id}">WhatsApp de ${esc(m.name || m.email)}</label>
+      <span class="wa-field">${icon('wa')}<input class="field" id="tm-wa-${m.id}" name="whatsapp" type="tel" inputmode="tel" autocomplete="tel" maxlength="24" placeholder="WhatsApp com DDI e DDD (5511…)" value="${esc(m.whatsapp)}"></span>
+      <label class="switch-wrap">Recebe avisos <input type="checkbox" name="receives_alerts" data-alerts-toggle="${m.id}" ${m.receives_alerts ? 'checked' : ''}></label>
+      <span class="team-alerts-btns"><button class="btn sm" type="submit">${icon('check')}Salvar</button>
+      <button class="btn sm ghost" type="button" data-alerts-test="${m.id}" ${m.whatsapp ? '' : 'disabled'} title="${m.whatsapp ? 'Manda uma mensagem de teste para ' + esc(phone(m.whatsapp)) : 'Salve um número primeiro'}">${icon('send')}Enviar teste</button></span>
+    </form>`;
+  const row = m => `<div class="team-member"><div class="team-row"><span class="mini-av">${esc(initials(m.name || m.email))}</span><div><b>${esc(m.name || m.email.split('@')[0])}${m.id === state.me.id ? ' <span class="faint small">(você)</span>' : ''}</b><small>${esc(m.email)} · ${m.last_login_at ? 'último acesso ' + esc(dt(m.last_login_at)) : 'nunca entrou'}</small></div>
         <span class="chip ${m.role === 'admin' ? 'info' : ''}">${m.role === 'admin' ? 'Administrador' : 'Equipe'}</span>
-        ${m.id === state.me.id ? '<span></span>' : `<button class="btn sm ghost" type="button" data-remove-member="${m.id}" data-email="${esc(m.email)}" aria-label="Remover ${esc(m.email)}">${icon('trash')}</button>`}</div>`).join('')}
-      <form class="team-add" id="team-form" novalidate>
+        ${!admin || m.id === state.me.id ? '<span></span>' : `<button class="btn sm ghost" type="button" data-remove-member="${m.id}" data-email="${esc(m.email)}" aria-label="Remover ${esc(m.email)}">${icon('trash')}</button>`}</div>
+      ${alertsForm(m)}</div>`;
+  const alerted = d.team.filter(m => m.active && m.receives_alerts && m.whatsapp).length;
+  view.innerHTML = `<div class="page">
+    <div class="page-head"><div><h1>Equipe</h1><p>${admin ? 'Quem entra no painel. O login é por código no e-mail.' : 'O seu WhatsApp para receber os avisos da equipe.'}</p></div></div>
+    <div class="alert note">${icon('wa', 'ico')}<p>Os números marcados recebem no WhatsApp os pedidos de atendimento humano, de testador e alertas. Fora de 24 h sem conversa, chega pelo modelo aprovado 'aviso_equipe'.${admin && !alerted ? ' <span class="no-alerted"><b>Ninguém marcado ainda:</b> por enquanto valem os números do servidor (TEAM_PHONES).</span>' : ''}</p></div>
+    <section class="panel"><div class="panel-body">
+      ${d.team.map(row).join('')}
+      ${admin ? `<form class="team-add" id="team-form" novalidate>
         <label class="sr" for="tm-email">E-mail</label><input class="field" id="tm-email" name="email" type="email" placeholder="e-mail da pessoa" required>
         <label class="sr" for="tm-name">Nome</label><input class="field" id="tm-name" name="name" placeholder="nome" maxlength="80">
         <label class="sr" for="tm-role">Papel</label><select class="field" id="tm-role" name="role"><option value="staff">Equipe</option><option value="admin">Administrador</option></select>
         <button class="btn primary" type="submit" id="tm-save">${icon('user-plus')}Adicionar</button>
       </form>
-      <p class="muted small">Equipe vê clientes, conversas, WhatsApp e as próprias ações. Administrador também vê faturamento, equipe, o registro completo e pode zerar contatos.</p>
+      <p class="muted small">Equipe vê clientes, conversas, WhatsApp e as próprias ações. Administrador também vê faturamento, equipe, o registro completo e pode zerar contatos.</p>` : ''}
     </div></section></div>`;
-  $('#team-form', view).addEventListener('submit', async e => {
+  $('#team-form', view)?.addEventListener('submit', async e => {
     e.preventDefault();
     const f = new FormData(e.target);
     const ok = await act($('#tm-save'), () => api('POST', '/team', { email: String(f.get('email')).trim(), name: String(f.get('name')).trim(), role: f.get('role') }));
     if (ok) { toast(ok.email + ' entrou na equipe.', 'ok', 'user-plus'); rerender(); }
   });
 };
+// Salva o WhatsApp e o "Recebe avisos" de uma pessoa (o toggle salva na hora).
+async function saveAlerts(form, btn) {
+  const id = form.dataset.alertsForm, input = form.elements.whatsapp, tog = form.elements.receives_alerts;
+  const digits = input.value.replace(/\D/g, '');
+  const bad = (digits && (digits.length < 10 || digits.length > 15)) || (!digits && tog.checked);
+  input.setAttribute('aria-invalid', String(!!bad));
+  if (bad) {
+    toast(!digits ? 'Coloque o número antes de ligar os avisos.' : 'O número precisa ter de 10 a 15 dígitos, com DDI e DDD.', 'err', 'alert');
+    if (btn === tog) tog.checked = !tog.checked;
+    input.focus();
+    return;
+  }
+  const ok = await act(btn, () => api('PUT', '/team/' + id + '/alerts', { whatsapp: digits, receives_alerts: tog.checked }));
+  if (!ok) { if (btn === tog) tog.checked = !tog.checked; return; }
+  input.value = ok.whatsapp;
+  if (ok.receives_alerts) document.querySelector('.no-alerted')?.remove();
+  const test = form.querySelector('[data-alerts-test]');
+  test.disabled = !ok.whatsapp;
+  test.title = ok.whatsapp ? 'Manda uma mensagem de teste para ' + phone(ok.whatsapp) : 'Salve um número primeiro';
+  toast(ok.receives_alerts ? phone(ok.whatsapp) + ' recebe os avisos da equipe (vale em até 30 s).' : (ok.whatsapp ? 'Número salvo, sem receber avisos.' : 'Número removido.'), 'ok', ok.receives_alerts ? 'wa' : 'check');
+}
+document.addEventListener('submit', e => {
+  const f = e.target.closest('[data-alerts-form]');
+  if (!f) return;
+  e.preventDefault();
+  saveAlerts(f, f.querySelector('button[type="submit"]'));
+});
+document.addEventListener('change', e => {
+  if (!e.target.matches('[data-alerts-toggle]')) return;
+  saveAlerts(e.target.closest('[data-alerts-form]'), e.target);
+});
 
 /* ---------- registro ---------- */
 views.registro = async view => {
@@ -827,6 +871,11 @@ document.addEventListener('click', async e => {
     if (ok) { toast('Conversa devolvida à IA.', 'ok', 'bot'); await openThread(id, true); loadInbox(); }
     return;
   }
+  if (ds.alertsTest) {
+    const ok = await act(t, () => api('POST', '/team/' + ds.alertsTest + '/alerts/test'));
+    if (ok) toast('Teste na fila. Chega em instantes no WhatsApp salvo.', 'ok', 'send');
+    return;
+  }
   if (ds.removeMember) {
     if (t.dataset.armed !== '1') { t.dataset.armed = '1'; t.classList.add('danger'); t.innerHTML = 'Remover?'; setTimeout(() => { if (t.isConnected) { t.dataset.armed = ''; t.classList.remove('danger'); t.innerHTML = icon('trash'); } }, 4000); return; }
     const ok = await act(t, () => api('DELETE', '/team/' + ds.removeMember));
@@ -903,7 +952,7 @@ syncSide();
 const CMDS = [
   ['Visão geral', '#/visao', 'home'], ['Clientes', '#/clientes', 'users'], ['Conversas', '#/conversas', 'chat'],
   ['Conversas pedindo humano', 'humano', 'hand'], ['Testadores da Meta', '#/testadores', 'flask'], ['Clientes travados', 'travados', 'clock'], ['WhatsApp do bot', '#/whatsapp', 'wa'],
-  ['Faturamento', '#/faturamento', 'money', true], ['Registrar pagamento', '#/faturamento', 'plus', true], ['Planos', '#/planos', 'tag'], ['Equipe', '#/equipe', 'team', true],
+  ['Faturamento', '#/faturamento', 'money', true], ['Registrar pagamento', '#/faturamento', 'plus', true], ['Planos', '#/planos', 'tag'], ['Equipe', '#/equipe', 'team'],
   ['Registro de ações', '#/registro', 'log'], ['Sair do painel', 'sair', 'out'],
 ];
 let cmdSel = 0, cmdItems = [];
