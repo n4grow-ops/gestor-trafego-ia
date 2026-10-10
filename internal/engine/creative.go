@@ -452,8 +452,16 @@ func upperFirst(s string) string {
 // "?" só no fim: headline de referência pode ter pergunta no meio ("Fome? A pizza chega em 30 min").
 var reQuestion = regexp.MustCompile(`\?\s*$|^(?:como|quando|quanto|quantos|quantas|qual|quais|onde|por ?que|porque|o que|pode|posso|consegue|dá pra|da pra|tem como|e se|e agora|e aí|e ai)(?:\s|$)|\b(?:dúvida|duvida|pergunta|ajuda)\b`)
 
+// reCopyMarker: o cliente diz que é texto de anúncio (aspas, "headline", "texto", "título", "tipo:"...).
+var reCopyMarker = regexp.MustCompile(`["“”«»]|(?:^|[^\pL])(?:headlines?|text(?:o|os)|t[ií]tulos?|refer[êe]ncias?|frases?|legendas?|slogans?|chamadas?|copy|an[úu]ncios?)(?:$|[^\pL])|(?:^|[^\pL])(?:tipo|assim|parecido com)\s*:`)
+
+// reChatter: conversa sobre o envio das mídias ou combinação de horário, não texto de anúncio.
+// Fronteira por letra (\pL), não \b: \b do Go é só ASCII e falha em "amanhã".
+var reChatter = regexp.MustCompile(`(?:^|[^\pL])(?:fotos?|v[íi]deos?|imagens?|arquivos?|amanh[ãa]|mais tarde|daqui a pouco|semana que vem|depois eu|vou mandar|j[áa] mando|ainda vou|aguarda|espera)(?:$|[^\pL])`)
+
 // isCopyReference diz se o texto livre na etapa dos anúncios é uma referência de headline ou texto:
-// não é pergunta nem conversa curta ("ok", "beleza", "obrigado").
+// não é pergunta nem conversa ("ok", "vou mandar as fotos amanhã"). Vale com marca de texto (aspas,
+// "headline", "texto", "título", "tipo:") ou, sem marca, com 8 palavras ou mais e sem falar do envio.
 func isCopyReference(s string) bool {
 	s = strings.ToLower(strings.TrimSpace(s))
 	if s == "" || strings.HasPrefix(s, "[") { // marcadores de mídia
@@ -462,7 +470,11 @@ func isCopyReference(s string) bool {
 	if reQuestion.MatchString(s) {
 		return false
 	}
-	return len(strings.Fields(s)) >= 4
+	words := len(strings.Fields(s))
+	if reCopyMarker.MatchString(s) {
+		return words >= 3
+	}
+	return words >= 8 && !reChatter.MatchString(s)
 }
 
 // isDone reconhece "pronto", "é isso", "só isso", "terminei"...

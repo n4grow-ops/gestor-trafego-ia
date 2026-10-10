@@ -143,7 +143,7 @@ func (e *Engine) publish(ctx context.Context, j PublishJob) error {
 	if ferr := e.pubs().FailPublication(bg, pub.ID, err.Error()); ferr != nil {
 		e.Log.Error("falha ao marcar publicação com erro", "publication_id", pub.ID, "erro", ferr)
 	}
-	e.audit(bg, ident.OrgID, "system", "meta_publish_failed", map[string]any{"draft_id": data.DraftID, "error": err.Error()})
+	e.audit(bg, ident.OrgID, "system", "meta_publish_failed", map[string]any{"draft_id": data.DraftID, "error": store.RedactSecrets(err.Error())})
 	var perr *meta.PublishError
 	if errors.As(err, &perr) && perr.Orphan != "" {
 		// rollback falhou: a próxima tentativa apaga pela marca do nome, mas a equipe confere a conta
@@ -154,7 +154,7 @@ func (e *Engine) publish(ctx context.Context, j PublishJob) error {
 		// worker parando (o cancelamento chega como PublishError) ou falha passageira: o outbox tenta de novo
 		return err
 	}
-	e.alertTeam(ctx, ident, fmt.Sprintf("a Meta recusou a campanha (etapa %s, código %d/%d): %s", perr.Step, perr.Code, perr.Subcode, perr.Message))
+	e.alertTeam(ctx, ident, fmt.Sprintf("a Meta recusou a campanha (etapa %s, código %d/%d): %s", perr.Step, perr.Code, perr.Subcode, store.RedactSecrets(perr.Message)))
 	user := strings.TrimSpace(perr.UserMessage)
 	if user == "" {
 		user = msgPublishMetaRefused

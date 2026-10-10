@@ -183,7 +183,7 @@ func resetOrganizations(ctx context.Context, tx pgx.Tx, orgIDs []int64, phones [
 	return rep, nil
 }
 
-var secretPattern = regexp.MustCompile(`(?i)\b(token|key|apikey|api_key|secret|password|senha|authorization|bearer)([=: ]+)("?)[A-Za-z0-9._\-]{8,}`)
+var secretPattern = regexp.MustCompile(`(?i)\b(access_token|appsecret_proof|token|key|apikey|api_key|secret|password|senha|authorization|bearer)([=: ]+)("?)[A-Za-z0-9._\-]{8,}`)
 
 // RedactSecrets troca valores com cara de segredo (token=..., key: ..., Bearer ...) por [oculto].
 func RedactSecrets(s string) string {

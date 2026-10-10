@@ -640,3 +640,27 @@ func TestPublishLeadsWithPageWhatsAppWithoutNumber(t *testing.T) {
 		t.Fatalf("conjunto = %v", set)
 	}
 }
+
+// M4: nomes de interesse vazios não contam no limite de 10.
+func TestInterestLimitIgnoresEmptyNames(t *testing.T) {
+	f, c := newFake(t)
+	f.basics()
+	in := baseInput()
+	in.Interests = []string{"", "  "}
+	for i := range 10 {
+		in.Interests = append(in.Interests, fmt.Sprintf("Interesse %d", i))
+	}
+	res, err := c.Publish(context.Background(), tok, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, r := range f.calls("GET /search") {
+		if r.Form.Get("type") == "adinterest" {
+			n++
+		}
+	}
+	if n != 10 || strings.Contains(strings.Join(res.Warnings, "|"), "primeiros interesses") {
+		t.Fatalf("buscas = %d avisos = %v", n, res.Warnings)
+	}
+}

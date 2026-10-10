@@ -929,3 +929,42 @@ func TestPublishedMessageShowsFinalCopiesAndLocksCTA(t *testing.T) {
 		t.Fatalf("mensagem sem os textos finais: %q", msg)
 	}
 }
+
+// M9: conversa sobre o envio das fotos não vira referência de texto; só o que parece copy.
+func TestChatterIsNotCopyReference(t *testing.T) {
+	h, pubs, _ := newPublishHarness(t, "owner")
+	h.say("SIM " + h.reachApproval())
+	for _, m := range []string{
+		"beleza vou tirar as fotos agora",
+		"vou mandar as fotos amanhã de manhã cedo tá bom",
+		"minha sócia que tem as fotos boas da loja nova",
+		"deixa que eu resolvo isso com ela só amanhã",
+	} {
+		h.say(m)
+	}
+	if got := strings.Join(mapValues(pubs.copies), ""); got != "" {
+		t.Fatalf("conversa virou referência: %q", got)
+	}
+	h.say(`Usa um título assim: "Pizza que chega quentinha"`)
+	h.say("Promoção de pizza grande com borda recheada e refri grátis toda sexta")
+	got := strings.Join(mapValues(pubs.copies), "")
+	if !strings.Contains(got, "Pizza que chega quentinha") || !strings.Contains(got, "borda recheada") {
+		t.Fatalf("referências = %q", got)
+	}
+}
+
+// M6: o erro gravado na auditoria passa pela mesma limpeza de segredos do store.
+func TestPublishAuditRedactsSecrets(t *testing.T) {
+	h, _, pub := newPublishHarness(t, "owner")
+	h.connectMeta()
+	pub.errs = []error{&meta.PublishError{Step: "adset", Code: 100, Message: "GET https://graph/x?access_token=EAABsegredo123456 falhou",
+		UserMessage: "A Meta recusou."}}
+	h.readyProject()
+	h.runKind(engine.JobCreativesPreview)
+	h.runKind(engine.JobMetaPublish)
+	var data string
+	h.must(h.pool.QueryRow(ctx, `SELECT data::text FROM audit_events WHERE action = 'meta_publish_failed' ORDER BY id DESC LIMIT 1`).Scan(&data))
+	if strings.Contains(data, "EAABsegredo") || !strings.Contains(data, "adset") {
+		t.Fatalf("auditoria = %s", data)
+	}
+}

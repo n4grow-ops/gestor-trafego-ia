@@ -240,3 +240,11 @@ func TestStartPublicationRecoversStale(t *testing.T) {
 		t.Fatalf("retomada vale uma vez: %v", err)
 	}
 }
+
+// M6: parâmetros da Graph API (access_token, appsecret_proof) também são segredo.
+func TestRedactSecretsGraphParams(t *testing.T) {
+	got := store.RedactSecrets("GET /x?access_token=EAABsegredo123456&appsecret_proof=abcdef0123456789 falhou; token=EAAB99999999")
+	if strings.Contains(got, "EAABsegredo") || strings.Contains(got, "abcdef0123456789") || strings.Contains(got, "EAAB99999999") {
+		t.Fatalf("redigido = %q", got)
+	}
+}

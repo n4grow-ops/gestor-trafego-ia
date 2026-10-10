@@ -191,15 +191,17 @@ func (c *Client) targeting(ctx context.Context, token string, in PublishInput) (
 
 	var interests []map[string]string
 	ids := map[string]bool{}
-	for i, name := range in.Interests {
+	used := 0 // nomes vazios não contam no limite
+	for _, name := range in.Interests {
 		name = strings.TrimSpace(name)
 		if name == "" {
 			continue
 		}
-		if i >= maxInterests {
+		if used >= maxInterests {
 			warnings = append(warnings, fmt.Sprintf("só os %d primeiros interesses foram usados", maxInterests))
 			break
 		}
+		used++
 		var r struct {
 			Data []struct {
 				ID   string `json:"id"`
