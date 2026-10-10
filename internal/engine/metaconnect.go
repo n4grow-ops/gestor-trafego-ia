@@ -42,15 +42,24 @@ func (e *Engine) sendMetaLink(ctx context.Context, ident store.Identity, conv st
 	if recent {
 		return e.send(ctx, conv, join(lead, msgMetaLinkRecent))
 	}
-	raw, hash, err := signup.NewToken()
+	link, err := e.newMetaLink(ctx, ident)
 	if err != nil {
 		return err
 	}
+	return e.send(ctx, conv, join(lead, fmt.Sprintf(msgMetaLink, link)))
+}
+
+// newMetaLink cria um link de conexão da conta Meta para a identidade (vale 24 h).
+func (e *Engine) newMetaLink(ctx context.Context, ident store.Identity) (string, error) {
+	raw, hash, err := signup.NewToken()
+	if err != nil {
+		return "", err
+	}
 	if err := e.Store.CreateMetaLink(ctx, ident.ID, hash, e.now().Add(metaLinkTTL)); err != nil {
-		return err
+		return "", err
 	}
 	e.audit(ctx, ident.OrgID, "system", "meta_link_sent", map[string]any{"identity_id": ident.ID})
-	return e.send(ctx, conv, join(lead, fmt.Sprintf(msgMetaLink, strings.TrimRight(e.MetaConnectBaseURL, "/")+"/"+raw)))
+	return strings.TrimRight(e.MetaConnectBaseURL, "/") + "/" + raw, nil
 }
 
 // metaStatus é o estado da conta que vai para a IA; vazio com a conexão desligada.
@@ -94,9 +103,10 @@ func MetaConnectedJob(convID int64, chatID string, s MetaSummary) store.JobSpec 
 		parts = append(parts, msgMetaWarnWA)
 	}
 	job := humanJob(0, store.Conversation{ID: convID, ChatID: chatID}, join(parts...), false)
-	// Depois da confirmação, o projeto que já estava pronto vai para a Meta.
+	// Depois da confirmação, o projeto que já estava pronto vai para a Meta; e fecha o pedido de testador.
 	sj := job.Payload.(SendJob)
 	sj.After = afterMetaConnected
+	sj.MetaConnected = true
 	job.Payload = sj
 	return job
 }

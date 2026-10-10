@@ -63,6 +63,8 @@ type SendJob struct {
 	Author string `json:"author,omitempty"`
 	// After: o que fazer depois que o último balão sair (ex.: publicar depois da confirmação da conexão Meta).
 	After string `json:"after,omitempty"`
+	// MetaConnected: confirmação da conexão Meta; ao sair fecha o pedido de testador da conversa.
+	MetaConnected bool `json:"meta_connected,omitempty"`
 }
 
 // StaffSendJob é a mensagem que alguém da equipe escreveu no painel durante o atendimento humano.
@@ -140,6 +142,15 @@ type Engine struct {
 	TeamGroup    TeamGroupSender
 	TeamGroupJID string
 	AdminURL     string
+	// Testador automático do app da Meta. MetaAppID monta o link de Funções no aviso à equipe.
+	MetaAppID string
+	// AppTesters lê os testadores do app (Graph API); nil = leitura a cada 5 min desligada.
+	AppTesters func(ctx context.Context) ([]string, error)
+	// Testers: pedidos de testador; nil = Store.
+	Testers TesterStore
+	// ParseProfile e ResolveShare: nil = meta.ParseProfileLink e meta.ResolveShareLink (trocados nos testes).
+	ParseProfile func(text string) (meta.ProfileRef, bool)
+	ResolveShare func(ctx context.Context, url string) (string, error)
 }
 
 func (e *Engine) identityProvider() string {
@@ -267,6 +278,9 @@ func (e *Engine) dispatch(ctx context.Context, ident store.Identity, conv store.
 	}
 	if e.MetaConnectBaseURL != "" && isMetaConnectCommand(conv.State, text) {
 		return e.sendMetaLink(ctx, ident, conv, "")
+	}
+	if done, err := e.profileLinkTurn(ctx, ident, conv, text, msgs); done || err != nil {
+		return err
 	}
 	switch conv.State {
 	case store.StateNeedsHuman:
