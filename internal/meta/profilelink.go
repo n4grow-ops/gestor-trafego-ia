@@ -27,6 +27,8 @@ var fbLink = regexp.MustCompile(`(?i)(?:https?://)?(?:[a-z0-9-]+\.)*(?:facebook\
 var (
 	numericID = regexp.MustCompile(`^[0-9]{1,25}$`)
 	username  = regexp.MustCompile(`^[a-z0-9][a-z0-9.]{2,49}$`)
+	// Versão da Graph API no caminho (/v18.0/dialog/oauth): rota da plataforma, não perfil.
+	apiVersion = regexp.MustCompile(`^v[0-9]+(\.[0-9]+)?$`)
 )
 
 // Hosts aceitos do Facebook (subdomínios como developers. ou business. ficam de fora).
@@ -52,6 +54,8 @@ var reservedPaths = map[string]bool{
 	"r": true, "l": true, "tr": true, "badges": true, "lite": true, "developers": true, "apps": true,
 	"notes": true, "offers": true, "community": true, "communities": true, "feeds": true, "latest": true,
 	"profile": true, "public": true, "campaign": true, "games": true, "pay": true, "facebookpay": true,
+	"commerce": true, "shops": true, "shop": true, "store": true, "page": true,
+	"accountscenter": true, "security": true, "oauth": true, "connect": true, "v": true,
 }
 
 // ParseProfileLink acha um link de perfil do Facebook no texto.
@@ -110,9 +114,12 @@ func parseFBURL(raw string) (ProfileRef, bool) {
 		}
 		s := "https://www.facebook.com/" + escapeSegments(segs)
 		return ProfileRef{Kind: "share", Value: s, URL: s}, true
+	case len(segs) > 1:
+		// Perfil é só /{id} ou /{usuário}: /pizzariaboa/posts/1, /nome/about etc. são página ou post.
+		return ProfileRef{}, false
 	case numericID.MatchString(first):
 		return idRef(first), true
-	case reservedPaths[first] || strings.Contains(first, ".php"):
+	case reservedPaths[first] || strings.Contains(first, ".php") || apiVersion.MatchString(first):
 		return ProfileRef{}, false
 	case username.MatchString(first) && strings.ContainsAny(first, "abcdefghijklmnopqrstuvwxyz") && !strings.HasSuffix(first, "."):
 		return ProfileRef{Kind: "username", Value: first, URL: "https://www.facebook.com/" + first}, true

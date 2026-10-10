@@ -26,7 +26,7 @@ func TestParseProfileLink(t *testing.T) {
 		{"https://www.facebook.com/maria.silva.5?mibextid=LQQJ4d", "username", "maria.silva.5", "https://www.facebook.com/maria.silva.5"},
 		{"Segue: fb.com/Joao.Souza/.", "username", "joao.souza", "https://www.facebook.com/joao.souza"},
 		{"(https://m.facebook.com/doceria.mel)", "username", "doceria.mel", "https://www.facebook.com/doceria.mel"},
-		{"https://www.facebook.com/joaosouza/about", "username", "joaosouza", "https://www.facebook.com/joaosouza"},
+		{"https://www.facebook.com/joaosouza/", "username", "joaosouza", "https://www.facebook.com/joaosouza"},
 		{"https://www.facebook.com/share/1AbCdEfGh/?mibextid=wwXIfr", "share", "https://www.facebook.com/share/1AbCdEfGh", "https://www.facebook.com/share/1AbCdEfGh"},
 		{"olha fb.me/2XyZ123 aí", "share", "https://fb.me/2XyZ123", "https://fb.me/2XyZ123"},
 		// O primeiro link que não é perfil não impede achar o segundo.
@@ -64,6 +64,22 @@ func TestParseProfileLinkRejects(t *testing.T) {
 		"https://www.instagram.com/maria.silva",
 		"https://www.facebook.com/share",
 		"https://fb.me/",
+		// Página de empresa com caminho a mais não é perfil.
+		"https://www.facebook.com/joaosouza/about",
+		"facebook.com/pizzariaboa/posts/123456",
+		"https://www.facebook.com/pizzariaboa/photos/a.1/2",
+		"https://www.facebook.com/pizzariaboa/videos/1",
+		"https://www.facebook.com/100012345678901/posts/1",
+		// Rotas da plataforma.
+		"https://www.facebook.com/v18.0/dialog/oauth?client_id=1",
+		"https://www.facebook.com/v18.0",
+		"https://www.facebook.com/v2",
+		"https://www.facebook.com/commerce/products/1",
+		"https://www.facebook.com/commerce",
+		"https://www.facebook.com/shops/x",
+		"https://www.facebook.com/shops",
+		"https://www.facebook.com/profile.php?sk=about",
+		"https://www.facebook.com/sharer.php?u=x",
 	} {
 		if got, ok := meta.ParseProfileLink(text); ok {
 			t.Errorf("%q aceito: %+v", text, got)
