@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -9,6 +10,32 @@ import (
 
 func env(m map[string]string) func(string) string {
 	return func(k string) string { return m[k] }
+}
+
+func TestTeamChannel(t *testing.T) {
+	c := config.Load(env(map[string]string{"OPERATOR_PHONE": "+55 (11) 99999-8888"}))
+	if len(c.TeamPhones) != 1 || c.TeamPhones[0] != "5511999998888" || c.TeamGroupEnabled() {
+		t.Fatalf("padrão = OPERATOR_PHONE: %+v grupo=%v", c.TeamPhones, c.TeamGroupEnabled())
+	}
+	// Números como estão no WhatsApp (sem inserir o nono dígito), sem repetidos nem inválidos.
+	c = config.Load(env(map[string]string{"OPERATOR_PHONE": "5511999998888", "TEAM_PHONES": " 551188887777, 5511977776666 ,123, 551188887777,"}))
+	if strings.Join(c.TeamPhones, ",") != "551188887777,5511977776666" {
+		t.Fatalf("TEAM_PHONES = %q", c.TeamPhones)
+	}
+	if c = config.Load(env(map[string]string{})); len(c.TeamPhones) != 0 {
+		t.Fatalf("sem números = %q", c.TeamPhones)
+	}
+	c = config.Load(env(map[string]string{"TEAM_GROUP_JID": " 120363000000000001@g.us ", "TEAM_GROUP_WAME_KEY": "gk"}))
+	if !c.TeamGroupEnabled() || c.TeamGroupJID != "120363000000000001@g.us" || c.TeamGroupWameKey != "gk" || c.TeamGroupWameToken != "" {
+		t.Fatalf("grupo: %+v", c)
+	}
+	c = config.Load(env(map[string]string{"TEAM_GROUP_JID": "120363000000000001", "TEAM_GROUP_WAME_KEY": "gk", "TEAM_GROUP_WAME_TOKEN": "gt"}))
+	if c.TeamGroupJID != "120363000000000001@g.us" || c.TeamGroupWameToken != "gt" {
+		t.Fatalf("JID sem sufixo: %q", c.TeamGroupJID)
+	}
+	if config.Load(env(map[string]string{"TEAM_GROUP_JID": "120363000000000001@g.us"})).TeamGroupEnabled() {
+		t.Fatal("sem a key da instância o grupo fica desligado")
+	}
 }
 
 func TestLoadDefaults(t *testing.T) {

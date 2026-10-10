@@ -45,6 +45,8 @@ func (e *Engine) HandleJob(ctx context.Context, job store.Job) error {
 			return fmt.Errorf("engine: payload de resposta inválido: %w", err)
 		}
 		return e.reply(ctx, r)
+	case JobTeamGroup:
+		return e.sendTeamGroup(ctx, job.Payload)
 	case JobDailyReport:
 		return e.dailyReport(ctx)
 	case JobCleanup:
@@ -91,6 +93,10 @@ func (e *Engine) OnJobFailed(ctx context.Context, job store.Job) error {
 		}
 		// Resumo com código não entregue: a proposta perde a validade e um humano assume.
 		return e.escalateIf(ctx, s.ConversationID, store.StateAwaitingApproval, "não foi possível entregar a proposta pelo WhatsApp")
+	case JobTeamGroup:
+		// O privado da equipe já recebeu o aviso: o grupo é reforço, então só registra.
+		e.Log.Error("aviso ao grupo da equipe não entregue", "job_id", job.ID)
+		return nil
 	case JobCreativesPreview:
 		// Prévia é cortesia: a etapa já fechou, então só registra.
 		e.Log.Error("prévia do anúncio não entregue", "job_id", job.ID)

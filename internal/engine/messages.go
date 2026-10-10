@@ -17,6 +17,7 @@ const (
 	msgRejected       = "Tranquilo, descartei essa proposta. Quando quiser, é só me contar o que anunciar."
 	msgProposalFailed = "Não consegui montar uma proposta segura com esses dados. Vou chamar uma pessoa da nossa equipe pra te ajudar."
 	msgOperator       = "Atendimento humano: %s (%s), telefone %s. Motivo: %s"
+	msgTeamHuman      = "🙋 Cliente quer falar com humano — %s (%s), WhatsApp %s. Motivo: «%s»."
 	msgAudioFailed    = "Não consegui ouvir seu áudio agora. Consegue me mandar por escrito?"
 
 	msgDailyLimit             = "Você chegou no limite de mensagens de hoje. Amanhã a gente continua de onde parou!"

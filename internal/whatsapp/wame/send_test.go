@@ -60,6 +60,15 @@ func TestSendText(t *testing.T) {
 	}
 }
 
+// Grupo (instância não oficial): o JID @g.us vai como está; só @c.us e @s.whatsapp.net viram dígitos.
+func TestSendTextToGroupKeepsJID(t *testing.T) {
+	c, calls := server(t, 200, `{"status":200}`)
+	must(t, c.SendText(context.Background(), "120363000000000001@g.us", "aviso"))
+	if got := (*calls)[0]; got.Path != "/KEY/message/text" || got.Body["to"] != "120363000000000001@g.us" {
+		t.Fatalf("%+v", got)
+	}
+}
+
 func TestNoTokenNoHeader(t *testing.T) {
 	auth := "x"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { auth = r.Header.Get("Authorization") }))

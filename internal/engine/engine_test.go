@@ -312,7 +312,7 @@ func TestHumanRequestEscalatesAndSilencesBot(t *testing.T) {
 	if h.conv().State != store.StateNeedsHuman {
 		t.Fatalf("estado = %s", h.conv().State)
 	}
-	if ops := h.wa.to(operatorChat); len(ops) != 1 || !strings.Contains(ops[0], "Atendimento humano") || !strings.Contains(ops[0], phone) {
+	if ops := h.wa.to(operatorChat); len(ops) != 1 || !strings.Contains(ops[0], "Cliente quer falar com humano") || !strings.Contains(ops[0], phone) || !strings.Contains(ops[0], "«quero falar com uma pessoa»") {
 		t.Errorf("operador = %v", ops)
 	}
 	if client := h.wa.to(chatID); len(client) != 1 || !strings.Contains(client[0], "pessoa da nossa equipe") {

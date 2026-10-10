@@ -21,6 +21,7 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp/build"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp/wame"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/worker"
 )
 
@@ -104,6 +105,16 @@ func run(log *slog.Logger) error {
 		}
 	}
 	eng.ReportPhone = whatsapp.Digits(cfg.ReportPhone)
+	// Canal da equipe: privado de cada número e, opcional, o grupo por uma instância Wame não
+	// oficial (QR) — o número oficial não manda para grupo. Ela só envia: não tem webhook aqui.
+	eng.TeamPhones = cfg.TeamPhones
+	if cfg.TeamGroupEnabled() {
+		eng.TeamGroup = wame.New(cfg.WameBaseURL, cfg.TeamGroupWameKey, cfg.TeamGroupWameToken)
+		eng.TeamGroupJID = cfg.TeamGroupJID
+	}
+	if cfg.AdminHost != "" {
+		eng.AdminURL = "https://" + cfg.AdminHost + "/"
+	}
 	if err := eng.EnsureCleanup(ctx); err != nil {
 		log.Error("falha ao agendar limpeza diária", "erro", err)
 	}
@@ -113,7 +124,8 @@ func run(log *slog.Logger) error {
 	w := &worker.Worker{Store: st, WA: wa, Parsers: build.Parsers(cfg, wa), Engine: eng, Log: log}
 	log.Info("worker iniciado", "whatsapp", wa.Name(), "atendente", cfg.AttendantModel, "gestor", cfg.ManagerModel,
 		"humano", cfg.Humanize, "voz", eng.Voice != nil, "cadastro", eng.SignupBaseURL != "", "formulario_cadastro", eng.SignupFlowID != "",
-		"anuncios", eng.Storage != nil, "relatorio", eng.ReportPhone != "", "conexao_meta", eng.MetaConnectBaseURL != "")
+		"anuncios", eng.Storage != nil, "relatorio", eng.ReportPhone != "", "conexao_meta", eng.MetaConnectBaseURL != "",
+		"equipe_numeros", len(eng.TeamPhones), "equipe_grupo", eng.TeamGroup != nil)
 	return w.Run(ctx)
 }
 
