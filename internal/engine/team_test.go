@@ -53,7 +53,7 @@ func TestHumanNoticeGoesToEveryTeamPhoneWithMotive(t *testing.T) {
 	h.say("quero falar com alguém sobre a fatura\n meu token=abcdefgh12345678 e o link https://x.io/c/AbC123xYz789qq")
 	h.runJobs()
 	want := "🙋 Cliente quer falar com humano — Ana (Pizzaria Boa), WhatsApp " + phone +
-		". Motivo: «quero falar com alguém sobre a fatura meu token=[oculto] e o link https://x.io/c/[link]». " +
+		". Motivo: «quero falar com alguém sobre a fatura meu token=[oculto] e o link [link x.io]». " +
 		"Atender: https://admin.meuanuncio.io/"
 	for _, p := range h.eng.TeamPhones {
 		if got := h.wa.to(p + "@c.us"); len(got) != 1 || got[0] != want {
