@@ -11,6 +11,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -200,12 +201,26 @@ func (c *Client) Publish(ctx context.Context, token string, in PublishInput) (Pu
 		return res, err
 	}
 
+	// Tentativa anterior desta publicação que deixou campanha na conta: apaga antes de criar outra.
+	if err := c.removeLeftover(ctx, token, act, in.Name); err != nil {
+		return res, err
+	}
+
 	// Daqui em diante, falha apaga a campanha.
 	fail := func(step string, err error) (PublishResult, error) {
+		perr := publishError(step, err)
 		if res.CampaignID != "" {
-			c.rollback(token, res.CampaignID)
+			if rerr := c.rollback(token, res.CampaignID); rerr != nil {
+				var pe *PublishError
+				if errors.As(perr, &pe) {
+					cp := *pe
+					cp.Orphan = res.CampaignID
+					cp.Message += fmt.Sprintf("; rollback falhou, campanha %s ficou na conta: %v", res.CampaignID, rerr)
+					perr = &cp
+				}
+			}
 		}
-		return PublishResult{Warnings: res.Warnings}, publishError(step, err)
+		return PublishResult{Warnings: res.Warnings}, perr
 	}
 
 	var created struct {
@@ -488,12 +503,52 @@ func storySpec(in PublishInput, p plan, m uploaded, cp PublishCopy) map[string]a
 	return spec
 }
 
-// rollback apaga a campanha criada (melhor esforço; conjunto e anúncios vão junto). Usa contexto próprio:
-// o da publicação pode já ter sido cancelado.
-func (c *Client) rollback(token, campaignID string) {
+// rollback apaga a campanha criada (conjunto e anúncios vão junto). Usa contexto próprio:
+// o da publicação pode já ter sido cancelado. Erro = a campanha ficou na conta.
+func (c *Client) rollback(token, campaignID string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	_ = c.call(ctx, http.MethodDelete, "/"+url.PathEscape(campaignID), token, url.Values{}, nil)
+	return c.call(ctx, http.MethodDelete, "/"+url.PathEscape(campaignID), token, url.Values{}, nil)
+}
+
+// nameMarker é a marca da publicação no fim do nome da campanha ("... · #p12").
+var nameMarker = regexp.MustCompile(`#p\d+$`)
+
+// removeLeftover procura, pelo nome exato com a marca da publicação, campanha de tentativa anterior
+// (worker caiu, prazo estourou ou rollback falhou) e apaga. Campanha ativa ou que não apaga barra a
+// publicação: criar outra duplicaria anúncios na conta.
+func (c *Client) removeLeftover(ctx context.Context, token, act, name string) error {
+	if !nameMarker.MatchString(name) {
+		return nil
+	}
+	var r struct {
+		Data []struct {
+			ID     string `json:"id"`
+			Name   string `json:"name"`
+			Status string `json:"effective_status"`
+		} `json:"data"`
+	}
+	filter := jsonParam([]map[string]string{{"field": "name", "operator": "EQUAL", "value": name}})
+	if err := c.call(ctx, http.MethodGet, act+"/campaigns", token, url.Values{"filtering": {filter},
+		"fields": {"id,name,effective_status"}, "limit": {"25"}}, &r); err != nil {
+		return publishError("campaign", err)
+	}
+	for _, x := range r.Data {
+		if x.ID == "" || x.Name != name {
+			continue
+		}
+		if x.Status == "ACTIVE" {
+			return &PublishError{Step: "campaign", Message: fmt.Sprintf("campanha %s de tentativa anterior está ativa", x.ID),
+				UserMessage: genericUserMessage}
+		}
+		if err := c.call(ctx, http.MethodDelete, "/"+url.PathEscape(x.ID), token, url.Values{}, nil); err != nil {
+			pe := publishError("campaign", err).(*PublishError)
+			pe.Message = fmt.Sprintf("campanha %s de tentativa anterior não apagou: %s", x.ID, pe.Message)
+			pe.Orphan = x.ID
+			return pe
+		}
+	}
+	return nil
 }
 
 // SetStatus liga ou pausa só a campanha. Conjunto e anúncios ficam como estão: o que o cliente (ou a equipe)

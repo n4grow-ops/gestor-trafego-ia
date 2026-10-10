@@ -121,10 +121,15 @@ func (e *Engine) publish(ctx context.Context, j PublishJob) error {
 	if err != nil {
 		return err
 	}
+	if pub.Recovered {
+		// worker caiu no meio: a Meta procura a campanha pela marca do nome e apaga antes de criar outra
+		e.Log.Warn("publicação parada em publishing retomada", "publication_id", pub.ID, "org_id", data.OrgID)
+		e.alertTeam(ctx, ident, fmt.Sprintf("a publicação %d estava parada em publishing há mais de 30 min; refazendo (campanha da tentativa anterior com o mesmo nome é apagada)", pub.ID))
+	}
 	if conn.Currency != "BRL" {
 		return e.refuseCurrency(ctx, ident, conv, pub, conn.Currency)
 	}
-	in, err := e.publishInput(ctx, ident, conn, data)
+	in, err := e.publishInput(ctx, ident, conn, data, pub.ID)
 	if err == nil {
 		var res meta.PublishResult
 		res, err = e.Publisher.Publish(ctx, string(token), in)
@@ -139,6 +144,11 @@ func (e *Engine) publish(ctx context.Context, j PublishJob) error {
 	}
 	e.audit(bg, ident.OrgID, "system", "meta_publish_failed", map[string]any{"draft_id": data.DraftID, "error": err.Error()})
 	var perr *meta.PublishError
+	if errors.As(err, &perr) && perr.Orphan != "" {
+		// rollback falhou: a próxima tentativa apaga pela marca do nome, mas a equipe confere a conta
+		e.Log.Error("campanha ficou na conta depois da falha", "publication_id", pub.ID, "campaign_id", perr.Orphan)
+		e.alertTeam(bg, ident, fmt.Sprintf("a campanha %s ficou na conta de anúncios depois da falha (rollback não apagou); confira no Gerenciador", perr.Orphan))
+	}
 	if ctx.Err() != nil || !errors.As(err, &perr) {
 		// worker parando (o cancelamento chega como PublishError) ou falha passageira: o outbox tenta de novo
 		return err
@@ -194,7 +204,7 @@ func (e *Engine) askMetaToPublish(ctx context.Context, ident store.Identity, con
 }
 
 // publishInput traduz a proposta aprovada no que a Meta precisa.
-func (e *Engine) publishInput(ctx context.Context, ident store.Identity, conn store.MetaConnection, data store.PublishData) (meta.PublishInput, error) {
+func (e *Engine) publishInput(ctx context.Context, ident store.Identity, conn store.MetaConnection, data store.PublishData, pubID int64) (meta.PublishInput, error) {
 	var prop contract.CampaignProposal
 	if err := json.Unmarshal(data.Proposal, &prop); err != nil {
 		return meta.PublishInput{}, fmt.Errorf("engine: proposta inválida no rascunho %d: %w", data.DraftID, err)
@@ -213,7 +223,7 @@ func (e *Engine) publishInput(ctx context.Context, ident store.Identity, conn st
 		AdAccountID:      conn.AdAccountID,
 		PageID:           conn.PageID,
 		InstagramActorID: conn.InstagramID,
-		Name:             campaignName(data, e.now()),
+		Name:             campaignName(data, e.now(), pubID),
 		Objective:        prop.Objective,
 		DailyBudgetCents: int64(math.Round(prop.DailyBudgetBRL * 100)),
 		LocationQuery:    strings.TrimSpace(fields.Location),
@@ -247,13 +257,14 @@ func (e *Engine) publishInput(ctx context.Context, ident store.Identity, conn st
 	return in, nil
 }
 
-// campaignName: "<organização> · <projeto> · <data>".
-func campaignName(d store.PublishData, now time.Time) string {
+// campaignName: "<organização> · <projeto> · <data> · #p<publicação>". A marca no fim deixa a nova tentativa
+// achar (e apagar) a campanha que uma tentativa anterior deixou na conta.
+func campaignName(d store.PublishData, now time.Time, pubID int64) string {
 	parts := []string{strings.TrimSpace(d.OrgName)}
 	if p := strings.TrimSpace(d.ProjectName); p != "" {
 		parts = append(parts, p)
 	}
-	parts = append(parts, now.Format("02/01/2006"))
+	parts = append(parts, now.Format("02/01/2006"), fmt.Sprintf("#p%d", pubID))
 	return strings.Join(slices.DeleteFunc(parts, func(s string) bool { return s == "" }), " · ")
 }
 

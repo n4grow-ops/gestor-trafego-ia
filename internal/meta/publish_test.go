@@ -552,3 +552,74 @@ func TestSetStatusFailureMessage(t *testing.T) {
 		t.Fatalf("erro = %+v", err)
 	}
 }
+
+// I2/I7: nome com a marca da publicação (#p<id>): antes de criar, a campanha de uma tentativa anterior que
+// ficou na conta (worker caiu, prazo estourou, rollback falhou) é procurada pelo nome e apagada.
+func TestPublishRemovesLeftoverCampaignByMarker(t *testing.T) {
+	f, c := newFake(t)
+	f.basics()
+	f.on("GET /act_9/campaigns", `{"data":[{"id":"OLD","name":"Pizzaria · #p12","effective_status":"PAUSED"}]}`)
+	in := baseInput()
+	in.Name = "Pizzaria · #p12"
+	res, err := c.Publish(context.Background(), tok, in)
+	if err != nil || res.CampaignID != "CAMP" {
+		t.Fatalf("resultado = %+v %v", res, err)
+	}
+	q := f.one("GET /act_9/campaigns").Form
+	if !strings.Contains(q.Get("filtering"), `"value":"Pizzaria · #p12"`) || !strings.Contains(q.Get("filtering"), `"operator":"EQUAL"`) {
+		t.Fatalf("busca = %v", q)
+	}
+	f.one("DELETE /OLD")
+	var order []string
+	for _, r := range f.reqs {
+		order = append(order, r.Method+" "+r.Path)
+	}
+	if j := strings.Join(order, ","); strings.Index(j, "DELETE /OLD") > strings.Index(j, "POST /act_9/campaigns") {
+		t.Fatalf("ordem = %v", order)
+	}
+
+	// sem a marca não procura (não apaga campanha do cliente com nome parecido)
+	f2, c2 := newFake(t)
+	f2.basics()
+	if _, err := c2.Publish(context.Background(), tok, baseInput()); err != nil {
+		t.Fatal(err)
+	}
+	if len(f2.calls("GET /act_9/campaigns")) != 0 {
+		t.Fatal("procurou campanha sem marca")
+	}
+}
+
+func TestPublishLeftoverCampaignActiveOrUndeletable(t *testing.T) {
+	for _, tc := range []struct{ name, list string }{
+		{"ativa", `{"data":[{"id":"OLD","name":"Pizzaria · #p12","effective_status":"ACTIVE"}]}`},
+		{"não apaga", `{"data":[{"id":"OLD","name":"Pizzaria · #p12","effective_status":"PAUSED"}]}`},
+	} {
+		f, c := newFake(t)
+		f.basics()
+		f.on("GET /act_9/campaigns", tc.list)
+		f.onCode("DELETE /OLD", 500, `{"error":{"message":"Unknown","code":1}}`)
+		in := baseInput()
+		in.Name = "Pizzaria · #p12"
+		_, err := c.Publish(context.Background(), tok, in)
+		var pe *meta.PublishError
+		if !errors.As(err, &pe) || pe.Step != "campaign" {
+			t.Errorf("%s: erro = %v", tc.name, err)
+		}
+		if len(f.calls("POST /act_9/campaigns")) != 0 {
+			t.Errorf("%s: criou outra campanha", tc.name)
+		}
+	}
+}
+
+// I7: rollback que falha deixa a campanha órfã na conta e isso aparece no erro.
+func TestPublishRollbackFailureIsReported(t *testing.T) {
+	f, c := newFake(t)
+	f.basics()
+	f.onCode("POST /act_9/ads", 400, `{"error":{"message":"Ad rejected","code":100}}`)
+	f.onCode("DELETE /CAMP", 500, `{"error":{"message":"Unknown","code":1}}`)
+	_, err := c.Publish(context.Background(), tok, baseInput())
+	var pe *meta.PublishError
+	if !errors.As(err, &pe) || pe.Orphan != "CAMP" || !strings.Contains(pe.Message, "rollback") {
+		t.Fatalf("erro = %+v", err)
+	}
+}

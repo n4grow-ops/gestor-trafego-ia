@@ -33,7 +33,14 @@ type Publication struct {
 	UpdatedAt    time.Time
 	ActivatedAt  *time.Time
 	ProjectName  string // só em ListPublications
+	// Recovered: StartPublication retomou uma publicação parada em publishing (worker caiu no meio).
+	// A campanha pode ter sido criada pela metade; quem publica procura pelo nome antes de criar outra.
+	Recovered bool
 }
+
+// stalePublishing é quanto uma publicação pode ficar em publishing antes de ser dada como parada
+// (o job tem prazo de 15 min e trava de 20).
+const stalePublishing = 30 * time.Minute
 
 // PublicationResult são os IDs devolvidos pela Meta.
 type PublicationResult struct {
@@ -90,7 +97,7 @@ func (s *Store) MetaTokenSealed(ctx context.Context, orgID int64) (connID int64,
 }
 
 // StartPublication abre a publicação do rascunho; se já existe uma que não falhou, devolve ela com ErrAlreadyPublished.
-// Uma publicação que falhou volta para publishing (mesma linha, IDs e erro limpos, created_at renovado para ela
+// Uma publicação que falhou (ou parada em publishing há mais de 30 min, com Recovered) volta para publishing (mesma linha, IDs e erro limpos, created_at renovado para ela
 // voltar a ser a mais recente). O rascunho precisa ser da organização.
 func (s *Store) StartPublication(ctx context.Context, orgID, draftID int64, projectID *int64, connID int64) (Publication, error) {
 	tx, err := s.pool.Begin(ctx)
@@ -113,7 +120,8 @@ func (s *Store) StartPublication(ctx context.Context, orgID, draftID int64, proj
 	if err != nil {
 		return Publication{}, notFound(err)
 	}
-	if p.Status != "failed" {
+	stale := p.Status == "publishing" && time.Since(p.UpdatedAt) > stalePublishing
+	if p.Status != "failed" && !stale {
 		return p, ErrAlreadyPublished
 	}
 	p, err = scanPublication(tx.QueryRow(ctx, `UPDATE meta_publications SET status = 'publishing', project_id = $2, meta_connection_id = $3,
@@ -123,6 +131,7 @@ func (s *Store) StartPublication(ctx context.Context, orgID, draftID int64, proj
 	if err != nil {
 		return Publication{}, err
 	}
+	p.Recovered = stale
 	return p, tx.Commit(ctx)
 }
 

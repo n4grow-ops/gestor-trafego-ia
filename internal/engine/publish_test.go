@@ -29,6 +29,7 @@ type fakePubs struct {
 	sealed  []byte // nil = sem conexão (ErrNotFound)
 	starts  int
 	statusN map[string]int
+	stale   map[int64]bool // publicações em publishing dadas como paradas
 }
 
 func (f *fakePubs) MetaTokenSealed(_ context.Context, _ int64) (int64, []byte, error) {
@@ -49,11 +50,15 @@ func (f *fakePubs) StartPublication(_ context.Context, orgID, draftID int64, pro
 		if p.DraftID != draftID {
 			continue
 		}
-		if p.Status != "failed" {
+		stale := p.Status == "publishing" && f.stale[p.ID]
+		if p.Status != "failed" && !stale {
 			return *p, store.ErrAlreadyPublished
 		}
+		delete(f.stale, p.ID)
 		p.Status, p.Error = "publishing", ""
-		return *p, nil
+		out := *p
+		out.Recovered = stale
+		return out, nil
 	}
 	p := store.Publication{ID: int64(len(f.pubs) + 1), OrgID: orgID, DraftID: draftID, ProjectID: projectID, ConnectionID: connID, Status: "publishing"}
 	f.pubs = append(f.pubs, p)
@@ -321,7 +326,7 @@ func TestPublishAfterPreviewWhenConnected(t *testing.T) {
 		t.Errorf("criativos = %d", len(in.Creatives))
 	case in.WhatsAppNumber != "":
 		t.Errorf("página sem WhatsApp não leva número: %q", in.WhatsAppNumber)
-	case !strings.HasPrefix(in.Name, "Pizzaria Boa · ") || !strings.HasSuffix(in.Name, "22/09/2026"):
+	case !strings.HasPrefix(in.Name, "Pizzaria Boa · ") || !strings.HasSuffix(in.Name, "22/09/2026 · #p1"):
 		t.Errorf("nome = %q", in.Name)
 	}
 	if p := pubs.latest(); p.Status != "paused" || p.CampaignID != "C1" {
@@ -840,4 +845,49 @@ func TestPublishRecordsEvenIfDeadlinePassesAfterCreate(t *testing.T) {
 	if !strings.Contains(h.sentText(), "*pausada*") {
 		t.Fatalf("cliente não soube da campanha: %q", h.sentText())
 	}
+}
+
+// I2: publicação parada em publishing (worker caiu) é retomada com aviso à equipe; o nome leva a marca
+// da publicação para a Meta achar e apagar a campanha da tentativa anterior.
+func TestPublishRecoversStalePublication(t *testing.T) {
+	h, pubs, pub := newPublishHarness(t, "owner")
+	h.connectMeta()
+	h.readyProject()
+	h.runKind(engine.JobCreativesPreview)
+	draftID := h.latestDraftID()
+	h.seedPubs(pubs, store.Publication{Status: "publishing", DraftID: draftID})
+	pubs.stale = map[int64]bool{1: true}
+	h.runKind(engine.JobMetaPublish)
+	if pub.calls() != 1 || pubs.latest().Status != "paused" {
+		t.Fatalf("chamadas = %d publicação = %+v", pub.calls(), pubs.latest())
+	}
+	if !strings.HasSuffix(pub.inputs[0].Name, "#p1") {
+		t.Fatalf("nome sem marca = %q", pub.inputs[0].Name)
+	}
+	h.runKind(engine.JobSend)
+	if ops := strings.Join(h.wa.to(operatorChat), "|"); !strings.Contains(ops, "parada") {
+		t.Fatalf("equipe = %q", ops)
+	}
+}
+
+// I7: rollback que falhou deixa campanha na conta: a equipe fica sabendo qual.
+func TestPublishOrphanCampaignAlertsTeam(t *testing.T) {
+	h, _, pub := newPublishHarness(t, "owner")
+	h.connectMeta()
+	pub.errs = []error{&meta.PublishError{Step: "ad", Code: 100, Message: "Ad rejected; rollback falhou", Orphan: "C77",
+		UserMessage: "A Meta recusou o anúncio pelas políticas de publicidade."}}
+	h.readyProject()
+	h.runKind(engine.JobCreativesPreview)
+	h.runKind(engine.JobMetaPublish)
+	h.runKind(engine.JobSend)
+	if ops := strings.Join(h.wa.to(operatorChat), "|"); !strings.Contains(ops, "C77") {
+		t.Fatalf("equipe = %q", ops)
+	}
+}
+
+func (h *harness) latestDraftID() int64 {
+	h.t.Helper()
+	var id int64
+	h.must(h.pool.QueryRow(ctx, `SELECT id FROM campaign_drafts WHERE status = 'approved' ORDER BY id DESC LIMIT 1`).Scan(&id))
+	return id
 }

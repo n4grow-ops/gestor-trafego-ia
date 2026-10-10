@@ -217,3 +217,26 @@ func TestRetriedPublicationBecomesLatest(t *testing.T) {
 		t.Fatalf("mais recente = %+v", l)
 	}
 }
+
+// I2: publicação parada em publishing há mais de 30 min (worker morreu no meio) é retomada, com aviso.
+func TestStartPublicationRecoversStale(t *testing.T) {
+	f, connID := seedPublishable(t)
+	org := f.ident.OrgID
+	p, err := f.st.StartPublication(ctx, org, f.draftID, nil, connID)
+	must(t, err)
+	if p.Recovered {
+		t.Fatal("publicação nova marcada como retomada")
+	}
+	if _, err := f.st.StartPublication(ctx, org, f.draftID, nil, connID); !errors.Is(err, store.ErrAlreadyPublished) {
+		t.Fatalf("publicando há pouco: %v", err)
+	}
+	_, err = f.pool.Exec(ctx, `UPDATE meta_publications SET updated_at = now() - interval '31 minutes' WHERE id = $1`, p.ID)
+	must(t, err)
+	again, err := f.st.StartPublication(ctx, org, f.draftID, nil, connID)
+	if err != nil || again.ID != p.ID || again.Status != "publishing" || !again.Recovered {
+		t.Fatalf("retomada = %+v %v", again, err)
+	}
+	if _, err := f.st.StartPublication(ctx, org, f.draftID, nil, connID); !errors.Is(err, store.ErrAlreadyPublished) {
+		t.Fatalf("retomada vale uma vez: %v", err)
+	}
+}

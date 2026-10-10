@@ -28,7 +28,7 @@ type PublishInput struct {
 	InstagramActorID string // opcional
 	WhatsAppNumber   string // E.164 sem +, opcional
 	LinkURL          string // opcional; vazio = página do Facebook
-	Name             string
+	Name             string // terminando em "#p<id>", a campanha de tentativa anterior é procurada e apagada antes
 	Objective        string // OUTCOME_ENGAGEMENT | OUTCOME_LEADS | OUTCOME_TRAFFIC
 	DailyBudgetCents int64  // na moeda da conta
 	StartTime        time.Time
@@ -57,6 +57,9 @@ type PublishError struct {
 	Subcode     int
 	Message     string // técnico
 	UserMessage string // pt-BR, para o cliente
+	// Orphan é a campanha que ficou na conta porque o rollback falhou (a equipe apaga ou a próxima
+	// tentativa acha pela marca do nome).
+	Orphan string
 }
 
 func (e *PublishError) Error() string {
