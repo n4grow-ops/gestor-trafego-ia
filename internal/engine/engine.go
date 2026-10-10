@@ -16,6 +16,7 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/campaign"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/humanize"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/llm"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/meta"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/mia"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp"
@@ -59,6 +60,8 @@ type SendJob struct {
 	Template *whatsapp.Template `json:"template,omitempty"`
 	// Author: nome de quem da equipe escreveu pelo painel; a mensagem é gravada como "staff".
 	Author string `json:"author,omitempty"`
+	// MetaConnected: confirmação da conexão Meta; ao sair fecha o pedido de testador da conversa.
+	MetaConnected bool `json:"meta_connected,omitempty"`
 }
 
 // StaffSendJob é a mensagem que alguém da equipe escreveu no painel durante o atendimento humano.
@@ -121,6 +124,16 @@ type Engine struct {
 
 	// Conexão da conta Meta: base do link (…/m). Vazio = desligada.
 	MetaConnectBaseURL string
+
+	// Testador automático do app da Meta. MetaAppID monta o link de Funções no aviso à equipe.
+	MetaAppID string
+	// AppTesters lê os testadores do app (Graph API); nil = leitura a cada 5 min desligada.
+	AppTesters func(ctx context.Context) ([]string, error)
+	// Testers: pedidos de testador; nil = Store.
+	Testers TesterStore
+	// ParseProfile e ResolveShare: nil = meta.ParseProfileLink e meta.ResolveShareLink (trocados nos testes).
+	ParseProfile func(text string) (meta.ProfileRef, bool)
+	ResolveShare func(ctx context.Context, url string) (string, error)
 }
 
 func (e *Engine) identityProvider() string {
@@ -242,6 +255,9 @@ func (e *Engine) HandleInbound(ctx context.Context, in whatsapp.Inbound) error {
 func (e *Engine) dispatch(ctx context.Context, ident store.Identity, conv store.Conversation, text string, msgs []string, batch []int64) error {
 	if e.MetaConnectBaseURL != "" && isMetaConnectCommand(conv.State, text) {
 		return e.sendMetaLink(ctx, ident, conv, "")
+	}
+	if done, err := e.profileLinkTurn(ctx, ident, conv, text, msgs); done || err != nil {
+		return err
 	}
 	switch conv.State {
 	case store.StateNeedsHuman:

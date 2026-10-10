@@ -28,7 +28,7 @@ const (
 	msgProjectAmbiguous       = "Achei mais de um projeto parecido: %s. Qual deles?"
 	msgNoProjects             = "Você ainda não tem projetos. É só me contar o que quer anunciar."
 
-	msgMetaLink             = "Pra eu publicar seus anúncios, conecta sua conta de anúncios do Facebook/Instagram por aqui:\n\n%s\n\nVocê entra com o seu Facebook e escolhe a conta e a Página. Leva 1 minuto e o link vale por 24 horas."
+	msgMetaLink             = "Pra eu publicar seus anúncios, conecta sua conta de anúncios do Facebook/Instagram por aqui:\n\n%s\n\nVocê entra com o seu Facebook e escolhe a conta e a Página. Leva 1 minuto e o link vale por 24 horas.\n\nSe aparecer que o app está indisponível, me manda o link do seu perfil do Facebook que eu peço pra te liberar."
 	msgMetaLinkRecent       = "Te mandei o link de conexão há pouco, é só abrir ele 🙂 Se não achar, me pede de novo daqui a uns minutos."
 	msgMetaOwnerOnly        = "Quem conecta a conta de anúncios é o responsável pela conta aqui no meuanuncio. Pede pra ele me mandar \"conectar meta\" 🙂"
 	msgMetaConnected        = "Conectado ✅\n\nConta de anúncios: %s (%s)\nPágina: %s\nInstagram: %s"
@@ -52,6 +52,17 @@ const (
 	msgPreviewStoryOnly     = "Prévia de como seu anúncio aparece nos Stories e Reels do Instagram 👆\n\nÉ uma ilustração: na publicação, a Meta pode ajustar um pouco o corte e o texto."
 
 	msgDailyReport = "📊 meuanuncio.io — resumo das últimas 24 h\n\n👤 Contatos novos: %d\n✅ Cadastros concluídos: %d\n⏳ Cadastros pendentes (com link): %d\n💬 Mensagens recebidas: %d\n📝 Propostas geradas: %d\n👍 Propostas aprovadas: %d\n🖼️ Anúncios recebidos: %d\n💸 Custo de IA: US$ %s"
+
+	// Testador do app da Meta (enquanto o app está em desenvolvimento).
+	msgTesterReceived   = "Recebi! Já pedi pra equipe te liberar como testador, te aviso aqui 🙂"
+	msgTesterAlready    = "Esse perfil eu já recebi e já pedi pra equipe te liberar 🙂 Assim que liberarem, te aviso aqui."
+	msgTesterAddressBar = "Não consegui abrir esse link 😅 Abre o seu perfil do Facebook no navegador e me manda o endereço que aparece lá em cima, na barra de endereço (tipo facebook.com/seu.nome)?"
+	msgTesterAdded      = "Te adicionei como testador! ✅ Agora aceita o convite: abre o Facebook → Notificações (ou https://developers.facebook.com/requests) e confirma. Depois é só tocar aqui pra conectar sua conta:"
+	msgTesterAccepted   = "Vi que você aceitou o convite ✅ Toca aqui pra conectar sua conta:"
+	msgTesterReminder   = "Oi! Só lembrando: pra conectar sua conta, falta aceitar o convite de testador no Facebook (Notificações ou https://developers.facebook.com/requests). Depois é só tocar aqui:"
+	msgTeamTester       = "🧪 Cliente enviou ID, preciso que adicione como testador — %s (%s), WhatsApp %s. ID/usuário: %s. Link: %s."
+	msgTeamTesterWhere  = " Adicionar em: https://developers.facebook.com/apps/%s/roles/roles/"
+	msgTeamTesterLate   = "⏰ Cliente ainda não aceitou o convite de testador (24 h) — %s (%s), WhatsApp %s. ID/usuário: %s. Lembrei o cliente uma vez."
 
 	msgSignupOwner = "Oi! Antes de começar, o cadastro da conta precisa ser feito pelo responsável. Pede pra ele mandar uma mensagem aqui, que eu envio o link."
 )

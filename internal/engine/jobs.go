@@ -26,6 +26,10 @@ func (e *Engine) HandleJob(ctx context.Context, job store.Job) error {
 		if err := json.Unmarshal(job.Payload, &s); err != nil {
 			return fmt.Errorf("engine: payload de envio inválido: %w", err)
 		}
+		if s.MetaConnected {
+			e.testerAccepted(ctx, s.ConversationID)
+			s.MetaConnected = false // os balões seguintes não repetem
+		}
 		if s.Human {
 			return e.sendHuman(ctx, s)
 		}
@@ -55,6 +59,14 @@ func (e *Engine) HandleJob(ctx context.Context, job store.Job) error {
 			return fmt.Errorf("engine: payload de lembrete inválido: %w", err)
 		}
 		return e.remind(ctx, r)
+	case JobTesterAdded:
+		j, err := decodeTesterAdded(job.Payload)
+		if err != nil {
+			return err
+		}
+		return e.testerAdded(ctx, j)
+	case JobTesterPoll:
+		return e.testerPoll(ctx)
 	case JobCreativesPreview:
 		var p PreviewJob
 		if err := json.Unmarshal(job.Payload, &p); err != nil {
