@@ -96,9 +96,10 @@ type Plan struct {
 	Available         bool    `json:"available"`
 }
 
+// Plans são os planos que o cadastro mostra (os ocultos pelo painel ficam de fora).
 func (s *Store) Plans(ctx context.Context) ([]Plan, error) {
 	rows, err := s.pool.Query(ctx, `SELECT code, name, price_cents, currency, daily_message_limit,
-		max_daily_budget_brl::float8, max_projects, available FROM plans ORDER BY sort_order`)
+		max_daily_budget_brl::float8, max_projects, available FROM plans WHERE visible ORDER BY sort_order, code`)
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +169,7 @@ func (s *Store) CompleteRegistration(ctx context.Context, r Registration) (Regis
 	}
 
 	var plan Plan
-	err = tx.QueryRow(ctx, `SELECT daily_message_limit, max_daily_budget_brl::float8 FROM plans WHERE code = $1 AND available`,
+	err = tx.QueryRow(ctx, `SELECT daily_message_limit, max_daily_budget_brl::float8 FROM plans WHERE code = $1 AND available AND visible`,
 		r.PlanCode).Scan(&plan.DailyMessageLimit, &plan.MaxDailyBudgetBRL)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return RegistrationResult{}, ErrPlanUnavailable

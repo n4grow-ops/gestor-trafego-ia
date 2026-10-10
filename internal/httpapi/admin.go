@@ -65,6 +65,7 @@ func (a *Admin) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /admin/static/admin.css", a.asset("web/admin/admin.css", "text/css; charset=utf-8"))
 	mux.HandleFunc("GET /admin/static/admin.js", a.asset("web/admin/admin.js", "text/javascript; charset=utf-8"))
 	mux.HandleFunc("GET /admin/static/mia.js", a.asset("web/admin/mia.js", "text/javascript; charset=utf-8"))
+	mux.HandleFunc("GET /admin/static/planos.js", a.asset("web/admin/planos.js", "text/javascript; charset=utf-8"))
 	mux.HandleFunc("GET /admin/static/marca.png", a.asset("web/admin/marca.png", "image/png"))
 	mux.HandleFunc("GET /admin/static/icone.png", a.asset("web/admin/icone.png", "image/png"))
 	mux.HandleFunc("GET /admin/static/figtree.woff2", a.asset("web/figtree.woff2", "font/woff2"))
@@ -99,6 +100,7 @@ func (a *Admin) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /admin/api/team/{id}", a.only(true, a.removeMember))
 	mux.HandleFunc("GET /admin/api/audit", a.only(false, a.audit))
 	a.registerMia(mux)
+	a.registerPlans(mux)
 }
 
 // adminCSP: nada de script ou estilo inline, nada de terceiros; a API é a mesma origem.
@@ -219,6 +221,12 @@ func (a *Admin) storeError(w http.ResponseWriter, err error) bool {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "cliente_real"})
 	case errors.Is(err, store.ErrAlreadyRegistered):
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "cadastro_concluido"})
+	case errors.Is(err, store.ErrPlanExists):
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "codigo_em_uso"})
+	case errors.Is(err, store.ErrPlanInUse):
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "plano_com_assinantes"})
+	case errors.Is(err, store.ErrConflict):
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "versao_desatualizada"})
 	default:
 		a.fail(w, err)
 	}
