@@ -587,3 +587,65 @@ func TestAdminLoginCodeEmailLimit(t *testing.T) {
 		t.Fatalf("e-mails enviados = %d", len(e.otp.sent))
 	}
 }
+
+func TestAdminLogoutInvalidatesSession(t *testing.T) {
+	e := newAdminEnv(t, "otp")
+	s := e.login("marina@meuanuncio.io")
+	other := e.login("marina@meuanuncio.io") // outro aparelho
+	if r := e.do("POST", "/api/logout", s, nil); r.code != 200 {
+		t.Fatalf("logout = %d %s", r.code, r.raw)
+	}
+	// O cookie antigo (copiado antes do logout) não vale mais, em nenhum aparelho.
+	if r := e.do("GET", "/api/me", s, nil); r.code != http.StatusUnauthorized {
+		t.Fatalf("cookie depois do logout = %d", r.code)
+	}
+	if r := e.do("GET", "/api/me", other, nil); r.code != http.StatusUnauthorized {
+		t.Fatalf("outra sessão depois do logout = %d", r.code)
+	}
+	// Login novo funciona.
+	if r := e.do("GET", "/api/me", e.login("marina@meuanuncio.io"), nil); r.code != 200 {
+		t.Fatalf("login novo = %d", r.code)
+	}
+}
+
+func TestAdminSessionIdleTimeout(t *testing.T) {
+	e := newAdminEnv(t, "otp")
+	now := time.Now()
+	e.admin.Now = func() time.Time { return now }
+	s := e.login("marina@meuanuncio.io")
+
+	// Uso dentro de 2 h renova a sessão (o cookie volta com a hora do último uso).
+	now = now.Add(110 * time.Minute)
+	r := e.do("GET", "/api/me", s, nil)
+	if r.code != 200 {
+		t.Fatalf("1h50 depois = %d", r.code)
+	}
+	c := r.hdr.Get("Set-Cookie")
+	if !strings.HasPrefix(c, "__Host-ma_admin=") {
+		t.Fatalf("sessão não renovada: %q", c)
+	}
+	renewed := &session{cookie: strings.Split(c, ";")[0], csrf: s.csrf}
+	now = now.Add(110 * time.Minute)
+	if r := e.do("GET", "/api/me", renewed, nil); r.code != 200 {
+		t.Fatalf("renovada, 1h50 depois = %d", r.code)
+	}
+	// O cookie antigo, parado há mais de 2 h, não vale.
+	if r := e.do("GET", "/api/me", s, nil); r.code != http.StatusUnauthorized {
+		t.Fatalf("parada há 3h40 = %d", r.code)
+	}
+	// Teto de 12 h desde o login, mesmo com uso contínuo.
+	cur := renewed
+	for i := 0; i < 6; i++ {
+		now = now.Add(100 * time.Minute)
+		r := e.do("GET", "/api/me", cur, nil)
+		if r.code != 200 {
+			break
+		}
+		if c := r.hdr.Get("Set-Cookie"); c != "" {
+			cur = &session{cookie: strings.Split(c, ";")[0], csrf: s.csrf}
+		}
+	}
+	if r := e.do("GET", "/api/me", cur, nil); r.code != http.StatusUnauthorized {
+		t.Fatalf("mais de 12 h depois do login = %d", r.code)
+	}
+}

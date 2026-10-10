@@ -35,6 +35,8 @@ type TeamMember struct {
 	AddedBy     string     `json:"added_by"`
 	CreatedAt   time.Time  `json:"created_at"`
 	LastLoginAt *time.Time `json:"last_login_at"`
+	// SessionVersion vai no cookie; subir a versão derruba as sessões abertas.
+	SessionVersion int `json:"-"`
 }
 
 // IsAdmin diz se o membro tem o papel de administrador.
@@ -51,11 +53,11 @@ func NormalizeEmail(s string) (string, bool) {
 	return e, true
 }
 
-const teamCols = `id, email, name, role, active, coalesce(added_by, ''), created_at, last_login_at`
+const teamCols = `id, email, name, role, active, coalesce(added_by, ''), created_at, last_login_at, session_version`
 
 func scanTeam(row pgx.Row) (TeamMember, error) {
 	var m TeamMember
-	err := row.Scan(&m.ID, &m.Email, &m.Name, &m.Role, &m.Active, &m.AddedBy, &m.CreatedAt, &m.LastLoginAt)
+	err := row.Scan(&m.ID, &m.Email, &m.Name, &m.Role, &m.Active, &m.AddedBy, &m.CreatedAt, &m.LastLoginAt, &m.SessionVersion)
 	return m, notFound(err)
 }
 
@@ -147,6 +149,12 @@ func (s *Store) RemoveTeamMember(ctx context.Context, id int64) error {
 
 func (s *Store) TouchTeamLogin(ctx context.Context, id int64) error {
 	_, err := s.pool.Exec(ctx, `UPDATE team_members SET last_login_at = now() WHERE id = $1`, id)
+	return err
+}
+
+// BumpSessionVersion derruba todas as sessões abertas da pessoa (logout).
+func (s *Store) BumpSessionVersion(ctx context.Context, id int64) error {
+	_, err := s.pool.Exec(ctx, `UPDATE team_members SET session_version = session_version + 1 WHERE id = $1`, id)
 	return err
 }
 

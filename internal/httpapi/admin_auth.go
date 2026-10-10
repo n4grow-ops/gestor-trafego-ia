@@ -19,15 +19,19 @@ import (
 )
 
 const (
-	adminSessionTTL = 12 * time.Hour
-	csrfHeader      = "X-CSRF-Token"
+	adminSessionTTL  = 12 * time.Hour  // teto desde o login, mesmo com uso contínuo
+	adminSessionIdle = 2 * time.Hour   // sem nenhuma requisição por esse tempo, a sessão cai
+	adminSessionTick = 1 * time.Minute // de quanto em quanto o cookie é renovado com o último uso
+	csrfHeader       = "X-CSRF-Token"
 )
 
-// adminSession vai assinada no cookie. O papel e o "ativo" são relidos do banco a cada requisição:
-// tirar alguém da equipe derruba a sessão na hora.
+// adminSession vai assinada no cookie. O papel, o "ativo" e a versão da sessão são relidos do banco
+// a cada requisição: tirar alguém da equipe ou sair (logout) derruba a sessão na hora.
 type adminSession struct {
 	MemberID int64  `json:"m"`
+	Version  int    `json:"v"`
 	Expires  int64  `json:"e"`
+	Seen     int64  `json:"s"` // último uso: passa de adminSessionIdle, cai
 	CSRF     string `json:"c"`
 }
 
@@ -65,7 +69,9 @@ func (a *Admin) verify(token string) (adminSession, bool) {
 		return adminSession{}, false
 	}
 	var s adminSession
-	if json.Unmarshal(raw, &s) != nil || s.MemberID <= 0 || s.CSRF == "" || a.now().Unix() >= s.Expires {
+	now := a.now().Unix()
+	if json.Unmarshal(raw, &s) != nil || s.MemberID <= 0 || s.Version <= 0 || s.CSRF == "" || now >= s.Expires ||
+		now-s.Seen >= int64(adminSessionIdle.Seconds()) {
 		return adminSession{}, false
 	}
 	return s, true
@@ -78,12 +84,21 @@ func randomToken() string {
 }
 
 func (a *Admin) startSession(w http.ResponseWriter, m store.TeamMember) adminSession {
-	s := adminSession{MemberID: m.ID, Expires: a.now().Add(adminSessionTTL).Unix(), CSRF: randomToken()}
+	now := a.now()
+	s := adminSession{MemberID: m.ID, Version: m.SessionVersion, Expires: now.Add(adminSessionTTL).Unix(), Seen: now.Unix(), CSRF: randomToken()}
+	a.setSessionCookie(w, s)
+	return s
+}
+
+func (a *Admin) setSessionCookie(w http.ResponseWriter, s adminSession) {
+	maxAge := s.Expires - a.now().Unix()
+	if maxAge < 1 {
+		maxAge = 1
+	}
 	http.SetCookie(w, &http.Cookie{
-		Name: a.cookieName(), Value: a.sign(s), Path: "/", MaxAge: int(adminSessionTTL.Seconds()),
+		Name: a.cookieName(), Value: a.sign(s), Path: "/", MaxAge: int(maxAge),
 		HttpOnly: true, Secure: a.Secure, SameSite: http.SameSiteStrictMode,
 	})
-	return s
 }
 
 func (a *Admin) clearSession(w http.ResponseWriter) {
@@ -110,7 +125,7 @@ func (a *Admin) only(adminOnly bool, h staffHandler) http.HandlerFunc {
 			return
 		}
 		m, err := a.Store.TeamMemberByID(r.Context(), s.MemberID)
-		if errors.Is(err, store.ErrNotFound) || (err == nil && !m.Active) {
+		if errors.Is(err, store.ErrNotFound) || (err == nil && (!m.Active || m.SessionVersion != s.Version)) {
 			a.clearSession(w)
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "sessao_invalida"})
 			return
@@ -128,6 +143,11 @@ func (a *Admin) only(adminOnly bool, h staffHandler) http.HandlerFunc {
 		if adminOnly && !m.IsAdmin() {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": "somente_admin"})
 			return
+		}
+		// Renova o último uso (expiração por inatividade); o teto de 12 h não muda.
+		if now := a.now().Unix(); now-s.Seen >= int64(adminSessionTick.Seconds()) {
+			s.Seen = now
+			a.setSessionCookie(w, s)
 		}
 		h(w, r, m, s)
 	}
@@ -320,8 +340,13 @@ func (a *Admin) finishLogin(w http.ResponseWriter, r *http.Request, m store.Team
 	a.me(w, r, m, s)
 }
 
+// logout sobe a versão da sessão: o cookie atual e qualquer cópia dele deixam de valer.
 func (a *Admin) logout(w http.ResponseWriter, r *http.Request, m store.TeamMember, _ adminSession) {
 	a.clearSession(w)
+	if err := a.Store.BumpSessionVersion(r.Context(), m.ID); err != nil {
+		a.fail(w, err)
+		return
+	}
 	a.log(r, m, "logout", "", "", "", nil)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
