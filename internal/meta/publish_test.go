@@ -453,24 +453,14 @@ func TestPublishRejectsIncompleteInput(t *testing.T) {
 }
 
 func TestSetStatus(t *testing.T) {
+	// I5: ligar de novo mexe só na campanha; conjunto e anúncios ficam como estão.
 	f, c := newFake(t)
-	f.on("GET /CAMP/adsets", `{"data":[{"id":"SET"}]}`)
-	f.on("GET /CAMP/ads", `{"data":[{"id":"A1"},{"id":"A2"}]}`)
 	f.on("POST /CAMP", `{"success":true}`)
 	if err := c.SetStatus(context.Background(), tok, "CAMP", "ACTIVE"); err != nil {
 		t.Fatal(err)
 	}
-	var order []string
-	for _, r := range f.reqs {
-		if r.Method == http.MethodPost {
-			if r.Form.Get("status") != "ACTIVE" {
-				t.Fatalf("%s status = %s", r.Path, r.Form.Get("status"))
-			}
-			order = append(order, r.Path)
-		}
-	}
-	if strings.Join(order, ",") != "/SET,/A1,/A2,/CAMP" {
-		t.Fatalf("ordem = %v", order)
+	if len(f.reqs) != 1 || f.reqs[0].Method != http.MethodPost || f.reqs[0].Path != "/CAMP" || f.reqs[0].Form.Get("status") != "ACTIVE" {
+		t.Fatalf("ativar = %+v", f.reqs)
 	}
 
 	f2, c2 := newFake(t)
@@ -509,5 +499,56 @@ func TestPublishUnknownCityAsksClient(t *testing.T) {
 		if len(f.calls("POST /act_9/campaigns")) != 0 || len(f.calls("POST /act_9/adimages")) != 0 {
 			t.Errorf("%q: criou coisas na conta com local errado", q)
 		}
+	}
+}
+
+// I5/I6: a primeira ativação liga o conjunto e os anúncios gravados (não todos os da campanha), com o fim
+// contado a partir de agora, e a campanha por último.
+func TestActivateFirst(t *testing.T) {
+	f, c := newFake(t)
+	var a meta.Activator = c
+	end := time.Date(2026, 10, 17, 15, 0, 0, 0, time.UTC)
+	err := a.ActivateFirst(context.Background(), tok, meta.FirstActivation{CampaignID: "CAMP", AdSetID: "SET", AdIDs: []string{"A1", "A2"}, EndTime: end})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var order []string
+	for _, r := range f.reqs {
+		if r.Method != http.MethodPost || r.Form.Get("status") != "ACTIVE" {
+			t.Fatalf("%s %s = %v", r.Method, r.Path, r.Form)
+		}
+		order = append(order, r.Path)
+	}
+	if strings.Join(order, ",") != "/SET,/A1,/A2,/CAMP" {
+		t.Fatalf("ordem = %v", order)
+	}
+	if got := f.reqs[0].Form.Get("end_time"); got != "2026-10-17T15:00:00Z" {
+		t.Fatalf("end_time = %q", got)
+	}
+	if f.reqs[1].Form.Get("end_time") != "" || f.reqs[3].Form.Get("end_time") != "" {
+		t.Fatal("end_time fora do conjunto")
+	}
+
+	// sem duração: sem end_time; falha no conjunto não liga a campanha
+	f2, c2 := newFake(t)
+	f2.onCode("POST /SET", 400, `{"error":{"message":"No payment method","code":100}}`)
+	var pe *meta.PublishError
+	if err := c2.ActivateFirst(context.Background(), tok, meta.FirstActivation{CampaignID: "CAMP", AdSetID: "SET"}); !errors.As(err, &pe) ||
+		pe.Step != "status" || strings.Contains(pe.UserMessage, "criar") {
+		t.Fatalf("erro = %+v", err)
+	}
+	if len(f2.calls("POST /CAMP")) != 0 || f2.reqs[0].Form.Get("end_time") != "" {
+		t.Fatalf("chamadas = %+v", f2.reqs)
+	}
+}
+
+// M5: falha ao mudar o status não fala em "criar" a campanha.
+func TestSetStatusFailureMessage(t *testing.T) {
+	f, c := newFake(t)
+	f.onCode("POST /CAMP", 500, `{"error":{"message":"Unknown error","code":1}}`)
+	var pe *meta.PublishError
+	if err := c.SetStatus(context.Background(), tok, "CAMP", "PAUSED"); !errors.As(err, &pe) ||
+		strings.Contains(pe.UserMessage, "criar") || !strings.Contains(pe.UserMessage, "status") {
+		t.Fatalf("erro = %+v", err)
 	}
 }

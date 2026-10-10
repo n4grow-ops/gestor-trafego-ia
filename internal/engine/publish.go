@@ -25,8 +25,6 @@ const JobMetaPublish = "meta.publish"
 
 const (
 	publishAttempts = 3
-	// Início da campanha: uma folga para o cliente conferir antes de qualquer gasto.
-	publishLead = 10 * time.Minute
 	// afterMetaConnected: depois da confirmação da conexão, publica o projeto que estava pronto.
 	afterMetaConnected = "meta.connected"
 )
@@ -206,7 +204,7 @@ func (e *Engine) publishInput(ctx context.Context, ident store.Identity, conn st
 			return meta.PublishInput{}, fmt.Errorf("engine: campos inválidos no rascunho %d: %w", data.DraftID, err)
 		}
 	}
-	start := e.now().Add(publishLead)
+	// Sem início nem fim: a campanha nasce pausada e o período conta da primeira ativação (ATIVAR).
 	in := meta.PublishInput{
 		AdAccountID:      conn.AdAccountID,
 		PageID:           conn.PageID,
@@ -214,7 +212,6 @@ func (e *Engine) publishInput(ctx context.Context, ident store.Identity, conn st
 		Name:             campaignName(data, e.now()),
 		Objective:        prop.Objective,
 		DailyBudgetCents: int64(math.Round(prop.DailyBudgetBRL * 100)),
-		StartTime:        start,
 		LocationQuery:    strings.TrimSpace(fields.Location),
 		RadiusKM:         prop.Audience.RadiusKM,
 		AgeMin:           prop.Audience.AgeMin,
@@ -222,9 +219,6 @@ func (e *Engine) publishInput(ctx context.Context, ident store.Identity, conn st
 		Genders:          prop.Audience.Genders,
 		Interests:        prop.Audience.Interests,
 		Copies:           e.publishCopies(ctx, ident.OrgID, prop, fields.Offer, data.ClientCopy),
-	}
-	if prop.DurationDays > 0 {
-		in.EndTime = start.AddDate(0, 0, prop.DurationDays)
 	}
 	if conn.PageWhatsApp {
 		in.WhatsAppNumber = strings.TrimPrefix(ident.Phone, "+")
@@ -582,9 +576,40 @@ func (e *Engine) campaignCommand(ctx context.Context, ident store.Identity, conv
 	return true, e.send(ctx, conv, join(reply...))
 }
 
-// setCampaignStatus liga ou pausa a campanha na Meta.
+// setCampaignStatus liga ou pausa a campanha na Meta. A primeira ativação liga o conjunto e os anúncios
+// criados na publicação (não os que o cliente criou ou pausou no Gerenciador) e marca o fim do período
+// a partir de agora; depois disso, ATIVAR e PAUSAR só mexem na campanha.
 func (e *Engine) setCampaignStatus(ctx context.Context, token string, p store.Publication, want string) error {
-	return e.Publisher.SetStatus(ctx, token, p.CampaignID, want)
+	act, ok := e.Publisher.(meta.Activator)
+	if want != "ACTIVE" || p.ActivatedAt != nil || !ok {
+		return e.Publisher.SetStatus(ctx, token, p.CampaignID, want)
+	}
+	first := meta.FirstActivation{CampaignID: p.CampaignID, AdSetID: p.AdSetID, AdIDs: p.AdIDs}
+	days, err := e.durationDays(ctx, p.DraftID)
+	if err != nil {
+		return err
+	}
+	if days > 0 {
+		first.EndTime = e.now().AddDate(0, 0, days)
+	}
+	return act.ActivateFirst(ctx, token, first)
+}
+
+// durationDays lê a duração da proposta aprovada (0 = sem fim; rascunho sumido também).
+func (e *Engine) durationDays(ctx context.Context, draftID int64) (int, error) {
+	data, err := e.pubs().PublishData(ctx, draftID)
+	if errors.Is(err, store.ErrNotFound) {
+		e.Log.Warn("rascunho da publicação não encontrado; campanha ligada sem data de fim", "draft_id", draftID)
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	var prop contract.CampaignProposal
+	if err := json.Unmarshal(data.Proposal, &prop); err != nil {
+		return 0, fmt.Errorf("engine: proposta inválida no rascunho %d: %w", draftID, err)
+	}
+	return max(prop.DurationDays, 0), nil
 }
 
 // pickPaused escolhe a pausada pelo complemento do ATIVAR. Sem complemento, a única pausada.

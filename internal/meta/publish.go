@@ -496,40 +496,57 @@ func (c *Client) rollback(token, campaignID string) {
 	_ = c.call(ctx, http.MethodDelete, "/"+url.PathEscape(campaignID), token, url.Values{}, nil)
 }
 
-// SetStatus liga ou pausa a campanha. Para ligar, conjuntos e anúncios (criados PAUSED) ligam antes,
-// e a campanha por último: nada entrega até o fim.
+// SetStatus liga ou pausa só a campanha. Conjunto e anúncios ficam como estão: o que o cliente (ou a equipe)
+// pausou no Gerenciador continua pausado. A primeira ativação é ActivateFirst.
 func (c *Client) SetStatus(ctx context.Context, token, campaignID, status string) error {
 	if status != "ACTIVE" && status != "PAUSED" {
 		return &PublishError{Step: "status", Message: "status inválido: " + status, UserMessage: genericUserMessage}
 	}
-	id := "/" + url.PathEscape(campaignID)
-	set := func(objID string) error {
-		return c.call(ctx, http.MethodPost, "/"+url.PathEscape(objID), token, url.Values{"status": {status}}, nil)
-	}
-	if status == "ACTIVE" {
-		for _, edge := range []string{"/adsets", "/ads"} {
-			var r struct {
-				Data []struct {
-					ID string `json:"id"`
-				} `json:"data"`
-			}
-			if err := c.call(ctx, http.MethodGet, id+edge, token, url.Values{"fields": {"id"}, "limit": {"100"}}, &r); err != nil {
-				return publishError("status", err)
-			}
-			for _, x := range r.Data {
-				if err := set(x.ID); err != nil {
-					return publishError("status", err)
-				}
-			}
-		}
-	}
-	if err := set(campaignID); err != nil {
+	if err := c.call(ctx, http.MethodPost, "/"+url.PathEscape(campaignID), token, url.Values{"status": {status}}, nil); err != nil {
 		return publishError("status", err)
 	}
 	return nil
 }
 
-const genericUserMessage = "Não consegui criar a campanha na sua conta da Meta agora. A equipe já foi avisada e vai olhar isso pra você."
+var _ Activator = (*Client)(nil)
+
+// ActivateFirst liga, na ordem, o conjunto (com o fim contado a partir de agora), os anúncios criados na
+// publicação e a campanha por último: nada entrega antes de tudo estar ligado.
+func (c *Client) ActivateFirst(ctx context.Context, token string, a FirstActivation) error {
+	set := func(objID string, extra url.Values) error {
+		q := url.Values{"status": {"ACTIVE"}}
+		for k, v := range extra {
+			q[k] = v
+		}
+		if err := c.call(ctx, http.MethodPost, "/"+url.PathEscape(objID), token, q, nil); err != nil {
+			return publishError("status", err)
+		}
+		return nil
+	}
+	if strings.TrimSpace(a.CampaignID) == "" {
+		return &PublishError{Step: "status", Message: "ativação sem campanha", UserMessage: statusUserMessage}
+	}
+	if a.AdSetID != "" {
+		extra := url.Values{}
+		if !a.EndTime.IsZero() {
+			extra.Set("end_time", a.EndTime.UTC().Format(time.RFC3339))
+		}
+		if err := set(a.AdSetID, extra); err != nil {
+			return err
+		}
+	}
+	for _, id := range a.AdIDs {
+		if err := set(id, nil); err != nil {
+			return err
+		}
+	}
+	return set(a.CampaignID, nil)
+}
+
+const (
+	genericUserMessage = "Não consegui criar a campanha na sua conta da Meta agora. A equipe já foi avisada e vai olhar isso pra você."
+	statusUserMessage  = "Não consegui mudar o status da campanha na Meta agora. Tenta de novo daqui a pouquinho; se continuar, a equipe olha pra você."
+)
 
 // publishError converte o erro da etapa em PublishError com a mensagem para o cliente.
 func publishError(step string, err error) error {
@@ -554,8 +571,12 @@ func userMessage(step string, err error, ae *apiError) string {
 	if errors.Is(err, errVideoFailed) {
 		return "A Meta não conseguiu processar um dos vídeos. Manda o vídeo de novo em MP4 (até 4 GB) que eu tento outra vez."
 	}
+	generic := genericUserMessage
+	if step == "status" {
+		generic = statusUserMessage
+	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || ae == nil {
-		return genericUserMessage
+		return generic
 	}
 	text := strings.ToLower(ae.Message + " " + ae.UserTitle + " " + ae.UserMsg)
 	has := func(words ...string) bool {
@@ -584,5 +605,5 @@ func userMessage(step string, err error, ae *apiError) string {
 	case step == "upload" && has("image", "imagem", "small", "pequen", "dimension", "resolution", "resolução"):
 		return "Uma das imagens ficou pequena demais pra Meta. Manda imagens com pelo menos 600x600 pixels (o ideal é 1080x1080)."
 	}
-	return genericUserMessage
+	return generic
 }

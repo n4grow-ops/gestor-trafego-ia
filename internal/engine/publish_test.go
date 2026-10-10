@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/engine"
@@ -87,7 +88,12 @@ func (f *fakePubs) FailPublication(_ context.Context, id int64, msg string) erro
 func (f *fakePubs) SetPublicationStatus(_ context.Context, id int64, status string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.find(id).Status = status
+	p := f.find(id)
+	if status == "active" && p.Status != "active" && p.ActivatedAt == nil {
+		now := time.Now()
+		p.ActivatedAt = &now
+	}
+	p.Status = status
 	return nil
 }
 
@@ -129,6 +135,9 @@ func (f *fakePubs) PublishData(ctx context.Context, draftID int64) (store.Publis
 	err := f.pool.QueryRow(ctx, `SELECT d.organization_id, d.project_id, o.name, coalesce(p.name, ''), d.proposal, d.briefing
 		FROM campaign_drafts d JOIN organizations o ON o.id = d.organization_id LEFT JOIN projects p ON p.id = d.project_id
 		WHERE d.id = $1`, draftID).Scan(&d.OrgID, &d.ProjectID, &d.OrgName, &d.ProjectName, &d.Proposal, &d.Fields)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return store.PublishData{}, store.ErrNotFound
+	}
 	if err != nil {
 		return store.PublishData{}, err
 	}
@@ -155,6 +164,7 @@ type fakePublisher struct {
 	errs     []error // por chamada de Publish; nil = sucesso
 	before   func()  // roda dentro de Publish (ex.: cancelar o contexto do worker)
 	statuses []string
+	firsts   []meta.FirstActivation
 	result   meta.PublishResult
 }
 
@@ -180,6 +190,14 @@ func (p *fakePublisher) SetStatus(_ context.Context, token, campaignID, status s
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.statuses = append(p.statuses, campaignID+":"+status)
+	return nil
+}
+
+func (p *fakePublisher) ActivateFirst(_ context.Context, token string, a meta.FirstActivation) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.statuses = append(p.statuses, a.CampaignID+":ACTIVE")
+	p.firsts = append(p.firsts, a)
 	return nil
 }
 
@@ -283,7 +301,6 @@ func TestPublishAfterPreviewWhenConnected(t *testing.T) {
 		t.Fatalf("Publish chamado %d vezes", pub.calls())
 	}
 	in := pub.inputs[0]
-	start := h.now.Add(10 * time.Minute)
 	switch {
 	case pub.tokens[0] != "token-do-cliente":
 		t.Errorf("token = %q", pub.tokens[0])
@@ -291,7 +308,8 @@ func TestPublishAfterPreviewWhenConnected(t *testing.T) {
 		t.Errorf("conta/página = %s/%s", in.AdAccountID, in.PageID)
 	case in.Objective != "OUTCOME_ENGAGEMENT" || in.DailyBudgetCents != 4000:
 		t.Errorf("objetivo/orçamento = %s/%d", in.Objective, in.DailyBudgetCents)
-	case !in.StartTime.Equal(start) || !in.EndTime.Equal(start.AddDate(0, 0, 7)):
+	case !in.StartTime.IsZero() || !in.EndTime.IsZero():
+		// I6: o período conta da ativação, não da criação
 		t.Errorf("datas = %v até %v", in.StartTime, in.EndTime)
 	case in.LocationQuery != "Campinas" || in.RadiusKM != 8 || in.AgeMin != 25 || in.AgeMax != 55:
 		t.Errorf("segmentação = %q %d %d-%d", in.LocationQuery, in.RadiusKM, in.AgeMin, in.AgeMax)
@@ -743,5 +761,50 @@ func TestActivateByProjectName(t *testing.T) {
 	h.say("ativar rodizio")
 	if pubs.status(2) != "active" || !slices.Equal(pub.statuses, []string{"C2:ACTIVE"}) {
 		t.Fatalf("ativou = %v", pub.statuses)
+	}
+}
+
+// I5/I6: a primeira ativação liga o conjunto e os anúncios gravados, com o fim contado da ativação;
+// depois disso, ATIVAR e PAUSAR só mexem na campanha.
+func TestFirstActivationUsesStoredIDsAndDuration(t *testing.T) {
+	h, _, pub := newPublishHarness(t, "owner")
+	h.connectMeta()
+	pub.result = meta.PublishResult{CampaignID: "C1", AdSetID: "S1", AdIDs: []string{"A1", "A2"}}
+	h.readyProject()
+	h.runKind(engine.JobCreativesPreview)
+	h.runKind(engine.JobMetaPublish)
+	h.now = h.now.Add(3 * time.Hour) // o cliente demora para ativar
+	h.say("ATIVAR")
+	if len(pub.firsts) != 1 {
+		t.Fatalf("primeira ativação = %+v (status %v)", pub.firsts, pub.statuses)
+	}
+	a := pub.firsts[0]
+	if a.CampaignID != "C1" || a.AdSetID != "S1" || !slices.Equal(a.AdIDs, []string{"A1", "A2"}) {
+		t.Fatalf("ativação = %+v", a)
+	}
+	if want := h.now.AddDate(0, 0, 7); !a.EndTime.Equal(want) {
+		t.Fatalf("fim = %v, quer %v", a.EndTime, want)
+	}
+	h.say("PAUSAR")
+	h.say("ATIVAR")
+	if len(pub.firsts) != 1 || !slices.Equal(pub.statuses, []string{"C1:ACTIVE", "C1:PAUSED", "C1:ACTIVE"}) {
+		t.Fatalf("religar = %v %d", pub.statuses, len(pub.firsts))
+	}
+}
+
+// M8: campanha criada com a conexão anterior não é mexida com o token da conexão nova.
+func TestCampaignFromPreviousConnection(t *testing.T) {
+	h, pubs, pub := newPublishHarness(t, "owner")
+	h.connectMeta()
+	now := time.Now()
+	h.seedPubs(pubs,
+		store.Publication{Status: "active", CampaignID: "OLD", ConnectionID: 99, ActivatedAt: &now},
+		store.Publication{Status: "active", CampaignID: "C2", ActivatedAt: &now})
+	h.say("PAUSAR")
+	if !slices.Equal(pub.statuses, []string{"C2:PAUSED"}) || pubs.status(1) != "active" {
+		t.Fatalf("chamadas = %v status = %s", pub.statuses, pubs.status(1))
+	}
+	if msg := h.wa.last().Text; !strings.Contains(msg, "Pausei") || !strings.Contains(msg, "conectada antes") {
+		t.Fatalf("resposta = %q", msg)
 	}
 }

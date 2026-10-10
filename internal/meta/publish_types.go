@@ -68,3 +68,17 @@ type Publisher interface {
 	Publish(ctx context.Context, token string, in PublishInput) (PublishResult, error)
 	SetStatus(ctx context.Context, token, campaignID, status string) error // "ACTIVE" | "PAUSED"
 }
+
+// FirstActivation são os IDs gravados na publicação e o fim do período, contado da ativação.
+type FirstActivation struct {
+	CampaignID string
+	AdSetID    string
+	AdIDs      []string
+	EndTime    time.Time // zero = sem fim
+}
+
+// Activator faz a primeira ativação: liga o conjunto e os anúncios criados na publicação e a campanha.
+// Opcional ao Publisher; *Client implementa.
+type Activator interface {
+	ActivateFirst(ctx context.Context, token string, a FirstActivation) error
+}
