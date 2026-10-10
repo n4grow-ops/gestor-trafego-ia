@@ -15,7 +15,9 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/db"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/engine"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/llm"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/meta"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/mia"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/secretbox"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/signup"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/storage"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
@@ -103,6 +105,21 @@ func run(log *slog.Logger) error {
 			eng.Storage = files
 		}
 	}
+	if cfg.MetaPublishEnabled() {
+		box, err := secretbox.New(cfg.MetaTokenKey)
+		if err != nil {
+			return err
+		}
+		eng.MetaTokenKey = box
+		client := meta.New(cfg.MetaAppID, cfg.MetaAppSecret, cfg.MetaLoginConfigID, cfg.PublicBaseURL+"/meta/callback")
+		// O cliente da Meta passa a ser Publisher quando o publish.go do pacote meta existir;
+		// até lá a publicação fica desligada e o cliente ouve que ela ainda não está ligada.
+		if p, ok := any(client).(meta.Publisher); ok {
+			eng.Publisher = p
+		} else {
+			log.Warn("cliente da Meta ainda sem publicação; publicação automática desligada")
+		}
+	}
 	eng.ReportPhone = whatsapp.Digits(cfg.ReportPhone)
 	if err := eng.EnsureCleanup(ctx); err != nil {
 		log.Error("falha ao agendar limpeza diária", "erro", err)
@@ -113,7 +130,8 @@ func run(log *slog.Logger) error {
 	w := &worker.Worker{Store: st, WA: wa, Parsers: build.Parsers(cfg, wa), Engine: eng, Log: log}
 	log.Info("worker iniciado", "whatsapp", wa.Name(), "atendente", cfg.AttendantModel, "gestor", cfg.ManagerModel,
 		"humano", cfg.Humanize, "voz", eng.Voice != nil, "cadastro", eng.SignupBaseURL != "", "formulario_cadastro", eng.SignupFlowID != "",
-		"anuncios", eng.Storage != nil, "relatorio", eng.ReportPhone != "", "conexao_meta", eng.MetaConnectBaseURL != "")
+		"anuncios", eng.Storage != nil, "relatorio", eng.ReportPhone != "", "conexao_meta", eng.MetaConnectBaseURL != "",
+		"publicacao_meta", eng.Publisher != nil && eng.MetaTokenKey != nil)
 	return w.Run(ctx)
 }
 

@@ -93,7 +93,12 @@ func MetaConnectedJob(convID int64, chatID string, s MetaSummary) store.JobSpec 
 	if !s.PageWhatsApp {
 		parts = append(parts, msgMetaWarnWA)
 	}
-	return humanJob(0, store.Conversation{ID: convID, ChatID: chatID}, join(parts...), false)
+	job := humanJob(0, store.Conversation{ID: convID, ChatID: chatID}, join(parts...), false)
+	// Depois da confirmação, o projeto que já estava pronto vai para a Meta.
+	sj := job.Payload.(SendJob)
+	sj.After = afterMetaConnected
+	job.Payload = sj
+	return job
 }
 
 // MetaRevokedJob avisa que o cliente tirou o acesso do app no Facebook.

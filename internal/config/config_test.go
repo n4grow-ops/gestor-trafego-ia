@@ -118,6 +118,21 @@ func TestMetaConnectEnabled(t *testing.T) {
 	}
 }
 
+func TestMetaPublishEnabled(t *testing.T) {
+	vars := map[string]string{"META_APP_ID": "1", "META_APP_SECRET": "s", "META_TOKEN_KEY": "k"}
+	if !config.Load(env(vars)).MetaPublishEnabled() {
+		t.Fatal("publicação desligada com app e chave")
+	}
+	for _, k := range []string{"META_APP_ID", "META_APP_SECRET", "META_TOKEN_KEY"} {
+		old := vars[k]
+		vars[k] = ""
+		if config.Load(env(vars)).MetaPublishEnabled() {
+			t.Errorf("ligada sem %s", k)
+		}
+		vars[k] = old
+	}
+}
+
 func TestLoadWhatsAppProvider(t *testing.T) {
 	c := config.Load(env(map[string]string{}))
 	if c.WhatsAppProvider != "waha" || c.WameBaseURL != "https://server.wame.api.br" || c.WameOfficial {

@@ -61,6 +61,12 @@ func (e *Engine) HandleJob(ctx context.Context, job store.Job) error {
 			return fmt.Errorf("engine: payload de prévia inválido: %w", err)
 		}
 		return e.sendPreview(ctx, p)
+	case JobMetaPublish:
+		var p PublishJob
+		if err := json.Unmarshal(job.Payload, &p); err != nil {
+			return fmt.Errorf("engine: payload de publicação inválido: %w", err)
+		}
+		return e.publish(ctx, p)
 	default:
 		return fmt.Errorf("engine: job desconhecido %q", job.Kind)
 	}
@@ -95,6 +101,12 @@ func (e *Engine) OnJobFailed(ctx context.Context, job store.Job) error {
 		// Prévia é cortesia: a etapa já fechou, então só registra.
 		e.Log.Error("prévia do anúncio não entregue", "job_id", job.ID)
 		return nil
+	case JobMetaPublish:
+		var p PublishJob
+		if err := json.Unmarshal(job.Payload, &p); err != nil {
+			return fmt.Errorf("engine: %w", err)
+		}
+		return e.publishGaveUp(ctx, p)
 	case JobReply:
 		// Resposta esgotou as tentativas: o cliente não fica sem retorno.
 		var r ReplyJob

@@ -110,7 +110,7 @@ func (e *Engine) creativesTurn(ctx context.Context, conv store.Conversation, msg
 		return err
 	}
 	var parts, warnings, rejected []string
-	var received, failed, done, changed bool
+	var received, failed, done, changed, noted bool
 	for _, m := range msgs {
 		switch {
 		case strings.HasPrefix(m, creativeSaved):
@@ -127,6 +127,14 @@ func (e *Engine) creativesTurn(ctx context.Context, conv store.Conversation, msg
 		default:
 			cmd := parseCreativeCommand(m)
 			if cmd.kind == cmdNone {
+				if !isCopyReference(m) {
+					continue
+				}
+				// texto livre do cliente: referência pros textos do anúncio, usada na publicação
+				if err := e.pubs().AppendClientCopy(ctx, d.ID, strings.TrimSpace(m)); err != nil {
+					return err
+				}
+				noted = true
 				continue
 			}
 			reply, deleted, err := e.applyCreativeCommand(ctx, d.ID, list, cmd)
@@ -158,6 +166,9 @@ func (e *Engine) creativesTurn(ctx context.Context, conv store.Conversation, msg
 	if failed {
 		parts = append(parts, msgCreativeFailed)
 	}
+	if noted {
+		parts = append(parts, msgCopyNoted)
+	}
 	if received {
 		ack := "Recebi! ✅"
 		for _, w := range warnings {
@@ -170,6 +181,10 @@ func (e *Engine) creativesTurn(ctx context.Context, conv store.Conversation, msg
 		parts = append(parts, msgCreativesNeedOne)
 	case received || changed || len(rejected) > 0:
 		parts = append(parts, creativesStatus(list))
+	case noted && n == 0:
+		parts = append(parts, msgCopyNotedNeedMedia)
+	case noted:
+		parts = append(parts, msgCopyNotedMore)
 	case len(parts) == 0 && !failed:
 		parts = append(parts, msgCreativesWaiting)
 	}
@@ -431,6 +446,23 @@ func upperFirst(s string) string {
 	}
 	r[0] = unicode.ToUpper(r[0])
 	return string(r)
+}
+
+// reQuestion: pergunta ou pedido de ajuda, que não é referência de texto.
+// "?" só no fim: headline de referência pode ter pergunta no meio ("Fome? A pizza chega em 30 min").
+var reQuestion = regexp.MustCompile(`\?\s*$|^(?:como|quando|quanto|quantos|quantas|qual|quais|onde|por ?que|porque|o que|pode|posso|consegue|dá pra|da pra|tem como|e se|e agora|e aí|e ai)(?:\s|$)|\b(?:dúvida|duvida|pergunta|ajuda)\b`)
+
+// isCopyReference diz se o texto livre na etapa dos anúncios é uma referência de headline ou texto:
+// não é pergunta nem conversa curta ("ok", "beleza", "obrigado").
+func isCopyReference(s string) bool {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if s == "" || strings.HasPrefix(s, "[") { // marcadores de mídia
+		return false
+	}
+	if reQuestion.MatchString(s) {
+		return false
+	}
+	return len(strings.Fields(s)) >= 4
 }
 
 // isDone reconhece "pronto", "é isso", "só isso", "terminei"...

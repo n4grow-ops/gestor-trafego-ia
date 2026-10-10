@@ -16,7 +16,9 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/campaign"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/humanize"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/llm"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/meta"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/mia"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/secretbox"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp"
 )
@@ -59,6 +61,8 @@ type SendJob struct {
 	Template *whatsapp.Template `json:"template,omitempty"`
 	// Author: nome de quem da equipe escreveu pelo painel; a mensagem é gravada como "staff".
 	Author string `json:"author,omitempty"`
+	// After: o que fazer depois que o último balão sair (ex.: publicar depois da confirmação da conexão Meta).
+	After string `json:"after,omitempty"`
 }
 
 // StaffSendJob é a mensagem que alguém da equipe escreveu no painel durante o atendimento humano.
@@ -121,6 +125,14 @@ type Engine struct {
 
 	// Conexão da conta Meta: base do link (…/m). Vazio = desligada.
 	MetaConnectBaseURL string
+
+	// Publicação na Meta: cria a campanha aprovada, pausada, na conta do cliente. Sem Publisher
+	// ou sem MetaTokenKey (cofre da META_TOKEN_KEY, que abre o token do cliente), o cliente
+	// fica sabendo que a publicação automática está desligada e a equipe é avisada.
+	Publisher    meta.Publisher
+	MetaTokenKey *secretbox.Box
+	// Publications: nil = Store. Os testes trocam por um fake.
+	Publications PublicationStore
 }
 
 func (e *Engine) identityProvider() string {
@@ -240,6 +252,12 @@ func (e *Engine) HandleInbound(ctx context.Context, in whatsapp.Inbound) error {
 // (a aprovação vale a mais nova que tiver código); batch são os ids do lote, fora do histórico
 // (nil = só a última mensagem gravada).
 func (e *Engine) dispatch(ctx context.Context, ident store.Identity, conv store.Conversation, text string, msgs []string, batch []int64) error {
+	// ATIVAR, PAUSAR e "tenta de novo" valem com campanha na Meta, em qualquer etapa.
+	if conv.State != store.StateNeedsHuman && len(msgs) > 0 {
+		if handled, err := e.campaignCommand(ctx, ident, conv, msgs[len(msgs)-1]); handled || err != nil {
+			return err
+		}
+	}
 	if e.MetaConnectBaseURL != "" && isMetaConnectCommand(conv.State, text) {
 		return e.sendMetaLink(ctx, ident, conv, "")
 	}

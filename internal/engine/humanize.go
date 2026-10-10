@@ -126,6 +126,10 @@ func (e *Engine) sendHuman(ctx context.Context, s SendJob) error {
 		return err
 	}
 	if len(s.Next) == 0 {
+		// A mensagem já saiu: erro aqui não pode reenviar o balão.
+		if err := e.afterSendDone(ctx, s); err != nil {
+			e.Log.Error("falha no passo seguinte ao envio", "conversation_id", s.ConversationID, "after", s.After, "erro", err)
+		}
 		return nil
 	}
 	next := s
