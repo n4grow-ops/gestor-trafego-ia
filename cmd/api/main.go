@@ -39,6 +39,10 @@ func main() {
 
 func run(log *slog.Logger) error {
 	cfg := config.Load(os.Getenv)
+	// Login de desenvolvimento em produção: nem sobe.
+	if err := cfg.CheckAdminDevLogin(); err != nil {
+		return err
+	}
 	if err := cfg.Require("DATABASE_URL", "WEBHOOK_SECRET"); err != nil {
 		return err
 	}

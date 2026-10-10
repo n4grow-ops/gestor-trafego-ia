@@ -82,6 +82,18 @@ func (c Config) AdminMode() string {
 	return ""
 }
 
+// CheckAdminDevLogin recusa o login de desenvolvimento (só e-mail, sem código) com cara de produção:
+// PUBLIC_BASE_URL em https ou ADMIN_HOST configurado. A api não sobe nesse caso.
+func (c Config) CheckAdminDevLogin() error {
+	if !c.AdminDevLogin {
+		return nil
+	}
+	if strings.HasPrefix(strings.ToLower(c.PublicBaseURL), "https://") || c.AdminHost != "" {
+		return fmt.Errorf("config: ADMIN_DEV_LOGIN=true não pode ser usado em produção (PUBLIC_BASE_URL em https ou ADMIN_HOST configurado)")
+	}
+	return nil
+}
+
 // SignupEnabled diz se o cadastro está configurado: sem isso, ninguém é barrado pelo portão.
 func (c Config) SignupEnabled() bool {
 	return c.PublicBaseURL != "" && c.SupabaseURL != "" && c.SupabasePublishableKey != ""

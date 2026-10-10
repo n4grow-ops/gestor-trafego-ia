@@ -164,3 +164,27 @@ func TestAdminConfig(t *testing.T) {
 		t.Fatalf("dev com Supabase: %q", c.AdminMode())
 	}
 }
+
+func TestAdminDevLoginRefusedInProduction(t *testing.T) {
+	for name, m := range map[string]map[string]string{
+		"https":      {"ADMIN_DEV_LOGIN": "true", "PUBLIC_BASE_URL": "https://meuanuncio.io"},
+		"HTTPS":      {"ADMIN_DEV_LOGIN": "true", "PUBLIC_BASE_URL": "HTTPS://meuanuncio.io"},
+		"admin host": {"ADMIN_DEV_LOGIN": "true", "ADMIN_HOST": "admin.meuanuncio.io"},
+		"com supabase": {"ADMIN_DEV_LOGIN": "true", "ADMIN_HOST": "admin.meuanuncio.io", "SUPABASE_URL": "https://p.supabase.co",
+			"SUPABASE_PUBLISHABLE_KEY": "pub", "ADMIN_SESSION_KEY": "0123456789abcdef0123456789abcdef"},
+	} {
+		if err := config.Load(env(m)).CheckAdminDevLogin(); err == nil {
+			t.Errorf("%s: modo dev aceito em produção", name)
+		}
+	}
+	for name, m := range map[string]map[string]string{
+		"local":     {"ADMIN_DEV_LOGIN": "true", "PUBLIC_BASE_URL": "http://localhost:8080"},
+		"sem dev":   {"PUBLIC_BASE_URL": "https://meuanuncio.io"},
+		"dev vazio": {"ADMIN_DEV_LOGIN": "true"},
+		"produção":  {"ADMIN_HOST": "admin.meuanuncio.io", "PUBLIC_BASE_URL": "https://meuanuncio.io"},
+	} {
+		if err := config.Load(env(m)).CheckAdminDevLogin(); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}

@@ -31,7 +31,7 @@ assinado (HMAC, 12 h), token CSRF em toda ação e limite de tentativas no login
 | `ADMIN_SESSION_KEY` | api | segredo (32+ caracteres) que assina o cookie da sessão. Sem ele, o painel fica desligado em produção. Gere com `openssl rand -base64 48`. |
 | `ADMIN_EMAILS` | api | e-mails separados por vírgula garantidos como administradores a cada partida (bootstrap). |
 | `ADMIN_HOST` | api | host que responde só o painel (padrão `admin.meuanuncio.io`). Com ele, `/admin` responde 404 em qualquer outro host. Com `ADMIN_DEV_LOGIN=true` e sem `ADMIN_HOST`, fica vazio e o painel responde em `/admin` (desenvolvimento local). |
-| `ADMIN_DEV_LOGIN` | api | `true` = entrar só com o e-mail, sem código. **Só vale sem `SUPABASE_URL`** (desenvolvimento local); com Supabase configurado é ignorado. Usa cookie sem `Secure`. |
+| `ADMIN_DEV_LOGIN` | api | `true` = entrar só com o e-mail, sem código. **Só vale sem `SUPABASE_URL`** (desenvolvimento local); com Supabase configurado é ignorado. Usa cookie sem `Secure`. A api **recusa subir** com `ADMIN_DEV_LOGIN=true` se `PUBLIC_BASE_URL` for https ou `ADMIN_HOST` estiver configurado. |
 | `USD_BRL` | api | cotação para converter o custo de IA no faturamento (padrão `5.5`). |
 | `OPENROUTER_API_KEY`, `ATTENDANT_MODEL` | api (opcional) | liga o "Testar a Mia" no painel (mesma IA do worker). |
 | `TTS_MODEL`, `TTS_VOICE` | api (opcional) | liga o "Ouvir amostra" da voz no painel. |
