@@ -26,30 +26,18 @@ func (e *Engine) approve(ctx context.Context, ident store.Identity, conv store.C
 		return err
 	}
 
-	err = e.Store.ApproveDraft(ctx, d.ID, ident.MemberID, campaign.HashCode(code), e.now())
+	// Aprovada: com Storage, a própria IA pede os anúncios (imagens ou vídeos) que vão subir na Meta.
+	adv := &store.ApprovalAdvance{ConversationID: conv.ID, ConversationState: store.StateIdle,
+		ProjectID: conv.ActiveProjectID, ProjectStage: store.StageApproved}
+	reply := msgApproved
+	if e.Storage != nil {
+		adv.ConversationState, adv.ProjectStage, reply = store.StateAwaitingCreatives, store.StageAwaitingCreatives, msgApprovedAskCreatives
+	}
+	err = e.Store.ApproveDraftAdvance(ctx, d.ID, ident.MemberID, campaign.HashCode(code), e.now(), adv)
 	switch {
 	case err == nil:
 		e.audit(ctx, ident.OrgID, member(ident), "approval_granted", map[string]any{"draft_id": d.ID, "proposal_hash": d.ProposalHash})
-		if conv.ActiveProjectID != nil {
-			stage := store.StageApproved
-			if e.Storage != nil {
-				stage = store.StageAwaitingCreatives // próxima etapa do projeto: os anúncios
-			}
-			if err := e.Store.SetProjectStage(ctx, *conv.ActiveProjectID, stage); err != nil {
-				return err
-			}
-		}
-		// Aprovada: a própria IA pede os anúncios (imagens ou vídeos) que vão subir na Meta.
-		if e.Storage != nil {
-			if err := e.Store.UpdateConversation(ctx, conv.ID, store.StateAwaitingCreatives, contract.Fields{}); err != nil {
-				return err
-			}
-			return e.send(ctx, conv, msgApprovedAskCreatives)
-		}
-		if err := e.Store.UpdateConversation(ctx, conv.ID, store.StateIdle, contract.Fields{}); err != nil {
-			return err
-		}
-		return e.send(ctx, conv, msgApproved)
+		return e.send(ctx, conv, reply)
 	case errors.Is(err, store.ErrCodeInvalid):
 		e.audit(ctx, ident.OrgID, member(ident), "approval_refused", map[string]any{"draft_id": d.ID, "reason": "code"})
 		return e.send(ctx, conv, msgCodeInvalid)

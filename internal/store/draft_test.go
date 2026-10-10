@@ -156,3 +156,25 @@ func TestRecordUsageAndAudit(t *testing.T) {
 		t.Errorf("audit = %s %d", action, draftID)
 	}
 }
+
+// Aprovação, etapa do projeto e estado da conversa vão juntos: falha em um desfaz todos.
+func TestApproveDraftAdvanceIsAtomic(t *testing.T) {
+	f := seedDraft(t)
+	bad := &store.ApprovalAdvance{ConversationID: f.conv.ID, ConversationState: "estado-que-nao-existe"}
+	if err := f.st.ApproveDraftAdvance(ctx, f.draftID, f.ident.MemberID, goodCode, t0.Add(time.Minute), bad); err == nil {
+		t.Fatal("estado inválido deveria falhar")
+	}
+	if status, _ := f.status(t); status != "proposed" {
+		t.Fatalf("aprovação ficou gravada pela metade: %s", status)
+	}
+	adv := &store.ApprovalAdvance{ConversationID: f.conv.ID, ConversationState: store.StateIdle}
+	must(t, f.st.ApproveDraftAdvance(ctx, f.draftID, f.ident.MemberID, goodCode, t0.Add(time.Minute), adv))
+	if status, _ := f.status(t); status != "approved" {
+		t.Fatalf("status = %s", status)
+	}
+	conv, err := f.st.GetConversation(ctx, f.conv.ID)
+	must(t, err)
+	if conv.State != store.StateIdle {
+		t.Fatalf("conversa = %s", conv.State)
+	}
+}

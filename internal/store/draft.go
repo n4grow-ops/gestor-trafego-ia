@@ -116,7 +116,21 @@ func (s *Store) SetDraftStatus(ctx context.Context, id int64, status string) err
 }
 
 // ApproveDraft confere o código mais recente não usado do rascunho e aprova.
+// ApprovalAdvance é o que muda junto com a aprovação: etapa do projeto e estado da conversa.
+// Vai na mesma transação para o projeto não ficar preso se o processo cair no meio.
+type ApprovalAdvance struct {
+	ConversationID    int64
+	ConversationState string
+	ProjectID         *int64
+	ProjectStage      string
+}
+
 func (s *Store) ApproveDraft(ctx context.Context, draftID, memberID int64, codeHash string, now time.Time) error {
+	return s.ApproveDraftAdvance(ctx, draftID, memberID, codeHash, now, nil)
+}
+
+// ApproveDraftAdvance aprova e, com adv, avança projeto e conversa na mesma transação.
+func (s *Store) ApproveDraftAdvance(ctx context.Context, draftID, memberID int64, codeHash string, now time.Time, adv *ApprovalAdvance) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -165,6 +179,16 @@ func (s *Store) ApproveDraft(ctx context.Context, draftID, memberID int64, codeH
 	if _, err := tx.Exec(ctx, `UPDATE campaign_drafts SET status = 'approved', approved_by = $2, approved_at = $3 WHERE id = $1`,
 		draftID, memberID, now); err != nil {
 		return err
+	}
+	if adv != nil {
+		if adv.ProjectID != nil {
+			if _, err := tx.Exec(ctx, `UPDATE projects SET stage = $2, updated_at = now() WHERE id = $1`, *adv.ProjectID, adv.ProjectStage); err != nil {
+				return err
+			}
+		}
+		if err := updateConversation(ctx, tx, adv.ConversationID, adv.ConversationState, contract.Fields{}); err != nil {
+			return err
+		}
 	}
 	return tx.Commit(ctx)
 }
