@@ -611,3 +611,34 @@ func TestPublishQuotesClientReferences(t *testing.T) {
 		t.Fatalf("referência sem aspas seguras: %s", req)
 	}
 }
+
+// C1: conta de anúncios fora de BRL (ou sem moeda) não recebe o orçamento em reais.
+func TestPublishRefusesNonBRLAccount(t *testing.T) {
+	for _, currency := range []string{"USD", ""} {
+		t.Run("moeda="+currency, func(t *testing.T) {
+			h, pubs, pub := newPublishHarness(t, "owner")
+			h.connectMeta()
+			_, err := h.pool.Exec(ctx, `UPDATE meta_connections SET currency = nullif($1, '')`, currency)
+			h.must(err)
+			h.readyProject()
+			h.runKind(engine.JobCreativesPreview)
+			h.runKind(engine.JobMetaPublish)
+			if pub.calls() != 0 {
+				t.Fatalf("publicou em conta %q", currency)
+			}
+			if p := pubs.latest(); p.Status != "failed" || !strings.Contains(p.Error, "moeda") {
+				t.Fatalf("publicação = %+v", p)
+			}
+			if msg := h.lastClient(); !strings.Contains(msg, "reais") {
+				t.Fatalf("cliente = %q", msg)
+			}
+			if h.pendingJobs(engine.JobMetaPublish) != 0 {
+				t.Fatal("moeda errada não deve tentar de novo")
+			}
+			h.runKind(engine.JobSend)
+			if ops := h.wa.to(operatorChat); len(ops) != 1 || !strings.Contains(ops[0], "moeda") {
+				t.Fatalf("equipe = %v", ops)
+			}
+		})
+	}
+}

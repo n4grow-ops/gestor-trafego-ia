@@ -119,6 +119,9 @@ func (e *Engine) publish(ctx context.Context, j PublishJob) error {
 	if err != nil {
 		return err
 	}
+	if conn.Currency != "BRL" {
+		return e.refuseCurrency(ctx, ident, conv, pub, conn.Currency)
+	}
 	in, err := e.publishInput(ctx, ident, conn, data)
 	if err == nil {
 		var res meta.PublishResult
@@ -161,6 +164,22 @@ func (e *Engine) published(ctx context.Context, ident store.Identity, conv store
 	return e.send(ctx, conv, text)
 }
 
+// refuseCurrency: o orçamento da proposta é em reais e a Meta cobra na moeda da conta. Conta em outra moeda
+// (ou sem moeda conhecida) não é publicada: a publicação fica failed, sem nova tentativa automática.
+func (e *Engine) refuseCurrency(ctx context.Context, ident store.Identity, conv store.Conversation, pub store.Publication, currency string) error {
+	bg := context.WithoutCancel(ctx)
+	if currency == "" {
+		currency = "desconhecida"
+	}
+	reason := fmt.Sprintf("conta de anúncios com moeda %s: só publicamos em contas em reais (BRL)", currency)
+	if err := e.pubs().FailPublication(bg, pub.ID, reason); err != nil {
+		e.Log.Error("falha ao marcar publicação com erro", "publication_id", pub.ID, "erro", err)
+	}
+	e.audit(bg, ident.OrgID, "system", "meta_publish_failed", map[string]any{"draft_id": pub.DraftID, "error": reason})
+	e.alertTeam(bg, ident, reason)
+	return e.send(bg, conv, msgPublishCurrency)
+}
+
 // askMetaToPublish: projeto pronto, mas sem conta conectada.
 func (e *Engine) askMetaToPublish(ctx context.Context, ident store.Identity, conv store.Conversation) error {
 	if e.MetaConnectBaseURL == "" {
@@ -184,10 +203,6 @@ func (e *Engine) publishInput(ctx context.Context, ident store.Identity, conn st
 		if err := json.Unmarshal(data.Fields, &fields); err != nil {
 			return meta.PublishInput{}, fmt.Errorf("engine: campos inválidos no rascunho %d: %w", data.DraftID, err)
 		}
-	}
-	if conn.Currency != "" && conn.Currency != "BRL" {
-		// o orçamento da proposta é em reais; a conta cobra na moeda dela
-		e.Log.Warn("conta de anúncios fora de BRL: orçamento enviado no valor em reais", "org_id", data.OrgID, "moeda", conn.Currency)
 	}
 	start := e.now().Add(publishLead)
 	in := meta.PublishInput{

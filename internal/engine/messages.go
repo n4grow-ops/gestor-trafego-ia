@@ -62,6 +62,7 @@ const (
 	msgPublishFailedHint    = "A última tentativa de criar a campanha na Meta não deu certo. Me fala *tenta de novo* que eu tento outra vez."
 	msgPublishGaveUp        = "Tive um problema pra criar sua campanha na Meta agora 😕 A equipe já foi avisada. Se quiser, me fala *tenta de novo* daqui a pouco."
 	msgPublishTech          = "Tive um problema técnico pra criar sua campanha na Meta 😕 A equipe já foi avisada e resolve rapidinho."
+	msgPublishCurrency      = "Sua conta de anúncios da Meta não está em reais (R$) 😕 Por enquanto eu só consigo publicar em contas em reais, porque o orçamento do projeto é em R$.\n\nSe tiver outra conta de anúncios em reais, conecta ela mandando *conectar meta*. A equipe já foi avisada e te ajuda com isso."
 	msgPublishOff           = "Seu projeto tá pronto ✅ Só que a publicação automática na Meta ainda não está ligada por aqui. A equipe já foi avisada e te chama assim que subir."
 	msgPublishNeedsMeta     = "Seu projeto tá pronto pra subir! Só falta conectar sua conta de anúncios."
 	msgPublishing           = "Tô criando sua campanha na Meta agora, já já te aviso 🙂"
