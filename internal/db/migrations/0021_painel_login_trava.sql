@@ -20,7 +20,7 @@ CREATE TABLE admin_login_events (
   kind text NOT NULL CHECK (kind IN ('code_request', 'code_sent', 'failure')),
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX admin_login_events_email_idx ON admin_login_events (email, kind, created_at);
-CREATE INDEX admin_login_events_sent_idx ON admin_login_events (created_at) WHERE kind = 'code_sent';
-CREATE INDEX admin_login_events_created_idx ON admin_login_events (created_at);
+CREATE INDEX IF NOT EXISTS admin_login_events_email_idx ON admin_login_events (email, kind, created_at);
+CREATE INDEX IF NOT EXISTS admin_login_events_sent_idx ON admin_login_events (created_at) WHERE kind = 'code_sent';
+CREATE INDEX IF NOT EXISTS admin_login_events_created_idx ON admin_login_events (created_at);
 ALTER TABLE admin_login_events ENABLE ROW LEVEL SECURITY;
