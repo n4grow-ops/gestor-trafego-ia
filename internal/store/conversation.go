@@ -140,6 +140,25 @@ func (s *Store) LastInboundAt(ctx context.Context, convID int64) (time.Time, boo
 	return *at, true, nil
 }
 
+// LastInboundByChat é a última mensagem recebida do chat: base da janela de 24 h dos avisos que
+// saem fora de conversa (equipe). Casa pelo chat da conversa ou pelo telefone cadastrado.
+func (s *Store) LastInboundByChat(ctx context.Context, chatID string) (time.Time, bool, error) {
+	if chatID == "" {
+		return time.Time{}, false, nil
+	}
+	var at *time.Time
+	err := s.pool.QueryRow(ctx, `SELECT max(m.created_at) FROM messages m
+		WHERE m.direction = 'in' AND m.conversation_id IN (
+			SELECT c.id FROM conversations c WHERE c.chat_id = $1
+			UNION
+			SELECT c.id FROM conversations c JOIN whatsapp_identities wi ON wi.id = c.identity_id WHERE wi.phone_e164 = $1)`,
+		chatID).Scan(&at)
+	if err != nil || at == nil {
+		return time.Time{}, false, err
+	}
+	return *at, true, nil
+}
+
 // HasPendingSends diz se a conversa ainda tem envios na fila (balões de uma resposta anterior).
 func (s *Store) HasPendingSends(ctx context.Context, convID int64) (bool, error) {
 	var ok bool

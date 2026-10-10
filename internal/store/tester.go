@@ -192,11 +192,15 @@ func (s *Store) MarkTesterReminded(ctx context.Context, id int64) error {
 	return nil
 }
 
+// appTestersInit é a linha-marca de "já houve uma leitura". Sem ela, uma primeira leitura vazia
+// deixaria a tabela vazia e o primeiro testador real viraria linha de base, sem aviso.
+const appTestersInit = "__init__"
+
 // SyncAppTesters grava os testadores vistos na Meta e devolve os que não eram conhecidos.
-// Na primeira chamada (tabela vazia) grava todos e devolve nenhum.
+// Na primeira chamada (tabela vazia) grava todos (e a marca) e devolve nenhum.
 func (s *Store) SyncAppTesters(ctx context.Context, userIDs []string) ([]string, error) {
-	seen := map[string]bool{}
-	var ids []string
+	seen := map[string]bool{appTestersInit: true}
+	ids := []string{appTestersInit}
 	for _, id := range userIDs {
 		if id = strings.TrimSpace(id); id != "" && !seen[id] {
 			seen[id] = true
@@ -236,10 +240,57 @@ func (s *Store) SyncAppTesters(ctx context.Context, userIDs []string) ([]string,
 		isNew[id] = true
 	}
 	var fresh []string
-	for _, id := range ids {
+	for _, id := range ids[1:] { // ids[0] é a marca
 		if isNew[id] {
 			fresh = append(fresh, id)
 		}
 	}
 	return fresh, nil
+}
+
+// TesterRequestByID devolve um pedido pelo id, em qualquer status (ErrNotFound se não existir).
+func (s *Store) TesterRequestByID(ctx context.Context, id int64) (TesterRequestView, error) {
+	return scanTesterView(s.pool.QueryRow(ctx, `SELECT `+testerViewCols+` FROM tester_requests t`+testerViewFrom+`
+		WHERE t.id = $1`, id))
+}
+
+// MarkTesterNotified grava o aviso de pedido novo à equipe só se o último foi há mais de within
+// (ou nunca houve). false = avisado há pouco (ou pedido inexistente): não avisar de novo.
+func (s *Store) MarkTesterNotified(ctx context.Context, id int64, within time.Duration) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `UPDATE tester_requests SET notified_at = now()
+		WHERE id = $1 AND (notified_at IS NULL OR notified_at <= now() - $2 * interval '1 millisecond')`, id, within.Milliseconds())
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+// MarkTesterAcceptNotified grava que o "Vi que você aceitou" saiu (uma vez só por pedido).
+// ErrNotFound se o pedido não existe ou já foi marcado: serve de trava, como MarkTesterReminded.
+func (s *Store) MarkTesterAcceptNotified(ctx context.Context, id int64) error {
+	tag, err := s.pool.Exec(ctx, `UPDATE tester_requests SET accept_notified_at = now() WHERE id = $1 AND accept_notified_at IS NULL`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// OpenTestersWithoutMeta lista os pedidos abertos (requested e added) de organizações sem conexão
+// Meta ativa: os candidatos a "quem aceitou o convite" (mais antigos primeiro, no máximo 500).
+func (s *Store) OpenTestersWithoutMeta(ctx context.Context) ([]TesterRequestView, error) {
+	return s.queryTesterViews(ctx, `SELECT `+testerViewCols+` FROM tester_requests t`+testerViewFrom+`
+		WHERE t.status IN ('requested', 'added') AND NOT EXISTS (
+			SELECT 1 FROM meta_connections mc WHERE mc.organization_id = t.organization_id AND mc.status = 'active')
+		ORDER BY t.requested_at, t.id LIMIT $1`, testerListLimit)
+}
+
+// MarkTesterAcceptedByOrg fecha como accepted todos os pedidos abertos da organização: com a conta
+// conectada, ninguém dela precisa mais ser testador.
+func (s *Store) MarkTesterAcceptedByOrg(ctx context.Context, orgID int64) error {
+	_, err := s.pool.Exec(ctx, `UPDATE tester_requests SET status = 'accepted', accepted_at = now()
+		WHERE organization_id = $1 AND status IN ('requested', 'added')`, orgID)
+	return err
 }
