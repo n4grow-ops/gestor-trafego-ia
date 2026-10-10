@@ -378,7 +378,8 @@ function exportCSV() {
   const cols = [['Cliente', c => c.name], ['Contato', c => c.contact], ['Telefone', c => c.phone], ['E-mail', c => c.email], ['Segmento', c => c.segment],
     ['Cidade', c => c.city], ['UF', c => c.uf], ['Plano', c => c.plan_name], ['Etapa', c => c.stage_label], ['Meta', c => c.meta_connected ? 'sim' : 'não'],
     ['Situação', c => c.status === 'blocked' ? 'bloqueado' : 'ativo'], ['Última atividade', c => c.last_activity]];
-  const cell = v => { const s = String(v ?? ''); return /[";\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  // Célula que começa com = + - @ vira fórmula no Excel/Sheets: o apóstrofo a deixa como texto.
+  const cell = v => { let s = String(v ?? ''); if (/^[=+\-@]/.test(s)) s = "'" + s; return /[";\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
   const csv = [cols.map(c => c[0]).join(';'), ...state.clientList.map(r => cols.map(c => cell(c[1](r))).join(';'))].join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
