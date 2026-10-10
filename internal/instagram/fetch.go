@@ -163,6 +163,10 @@ func (f *Fetcher) Public(ctx context.Context, l Link, max int) (Post, error) {
 		return Post{}, fmt.Errorf("%w: %v", ErrUnavailable, err)
 	}
 	videos, images, caption := parseEmbed(string(page.data))
+	if len(videos) == 0 && (l.Kind == KindReel || l.Kind == KindTV) {
+		// reel sem o endereço do vídeo na página: a imagem seria só a capa, não o anúncio que o cliente mandou
+		return Post{}, fmt.Errorf("%w: reel sem vídeo na página pública", ErrUnavailable)
+	}
 	type src struct{ kind, url string }
 	var srcs []src
 	for _, v := range videos {

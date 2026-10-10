@@ -334,3 +334,18 @@ func TestOwnPermissionError(t *testing.T) {
 		t.Fatalf("erro = %v", err)
 	}
 }
+
+// Reel/IGTV público sem video_url (só a capa) não vira anúncio de imagem estática.
+func TestPublicReelWithoutVideoIsUnavailable(t *testing.T) {
+	c := newCDN(t, false) // página só com imagens
+	f := testFetcher(c.srv.URL)
+	for _, kind := range []string{KindReel, KindTV} {
+		_, err := f.Public(ctx, Link{Shortcode: "REEL2", Kind: kind, URL: "https://www.instagram.com/reel/REEL2/"}, 5)
+		if !errors.Is(err, ErrUnavailable) {
+			t.Fatalf("%s sem vídeo: erro = %v", kind, err)
+		}
+	}
+	if c.hits.Load() != 0 {
+		t.Fatalf("baixou a capa do reel: %d acessos", c.hits.Load())
+	}
+}
