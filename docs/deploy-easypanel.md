@@ -130,7 +130,7 @@ WHATSAPP_SWAGGER_USERNAME / WHATSAPP_SWAGGER_PASSWORD
 
 ## Operação
 
-- Atendimento humano: o operador recebe aviso no `OPERATOR_PHONE` (número exatamente como registrado no WhatsApp; se o aviso não chegar, teste com ou sem o nono dígito). Ao terminar: `/app/admin resolve-human --phone 55DDDNUMERO`.
+- Atendimento humano: cada número de `TEAM_PHONES` (vírgulas; vazio = `OPERATOR_PHONE`) recebe aviso no privado com o motivo (última fala do cliente, cortada e sem segredos) e o link do painel (números exatamente como registrados no WhatsApp; se o aviso não chegar, teste com ou sem o nono dígito). Fora da janela de 24 h vai o modelo `aviso_equipe`. Opcional: grupo da equipe por instância Wame não oficial com `TEAM_GROUP_JID` (`…@g.us`) + `TEAM_GROUP_WAME_KEY` (+ `TEAM_GROUP_WAME_TOKEN`). Ao terminar: `/app/admin resolve-human --phone 55DDDNUMERO`.
 - Custo por agente: `SELECT agent, model, sum(cost_usd) FROM llm_usage GROUP BY 1, 2;`
 - Auditoria: `SELECT created_at, actor, action, data FROM audit_events ORDER BY id DESC LIMIT 50;`
 

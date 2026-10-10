@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp"
 )
 
 type Config struct {
@@ -27,6 +29,13 @@ type Config struct {
 	WameToken        string
 	WameOfficial     bool
 	OperatorPhone    string
+
+	// Canal da equipe: privado de cada número (padrão OPERATOR_PHONE) e, opcional, um grupo
+	// por uma instância Wame não oficial (QR); o número oficial não manda para grupo.
+	TeamPhones         []string
+	TeamGroupJID       string
+	TeamGroupWameKey   string
+	TeamGroupWameToken string
 
 	// Cadastro automático de número novo.
 	AutoSignup       bool
@@ -156,6 +165,11 @@ func Load(getenv func(string) string) Config {
 		AdminHost:       adminHost(getenv),
 		AdminDevLogin:   getenv("ADMIN_DEV_LOGIN") == "true",
 		USDBRL:          positiveFloat(strings.Replace(getenv("USD_BRL"), ",", ".", 1), 5.5),
+
+		TeamPhones:         teamPhones(orDefault(getenv("TEAM_PHONES"), getenv("OPERATOR_PHONE"))),
+		TeamGroupJID:       groupJID(getenv("TEAM_GROUP_JID")),
+		TeamGroupWameKey:   strings.TrimSpace(getenv("TEAM_GROUP_WAME_KEY")),
+		TeamGroupWameToken: strings.TrimSpace(getenv("TEAM_GROUP_WAME_TOKEN")),
 	}
 }
 
@@ -170,6 +184,34 @@ func adminHost(getenv func(string) string) string {
 }
 
 // splitList separa uma lista por vírgulas, sem espaços nem itens vazios.
+// TeamGroupEnabled: grupo da equipe ligado (JID e key da instância não oficial; o token é opcional).
+func (c Config) TeamGroupEnabled() bool { return c.TeamGroupJID != "" && c.TeamGroupWameKey != "" }
+
+// teamPhones lê a lista de números da equipe. Sem normalizar o nono dígito: o aviso precisa ir
+// ao número exatamente como está registrado no WhatsApp. Repetidos e inválidos ficam de fora.
+func teamPhones(v string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, s := range splitList(v) {
+		d := whatsapp.Digits(s)
+		if len(d) < 10 || len(d) > 15 || seen[d] {
+			continue
+		}
+		seen[d] = true
+		out = append(out, d)
+	}
+	return out
+}
+
+// groupJID aceita o id do grupo com ou sem o sufixo @g.us.
+func groupJID(v string) string {
+	v = strings.TrimSpace(v)
+	if v != "" && !strings.Contains(v, "@") {
+		v += "@g.us"
+	}
+	return v
+}
+
 func splitList(v string) []string {
 	var out []string
 	for _, s := range strings.Split(v, ",") {

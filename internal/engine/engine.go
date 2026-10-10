@@ -87,9 +87,10 @@ type Engine struct {
 	Manager          *manager.Agent
 	Transcriber      llm.Provider
 	TranscribeModel  string
-	OperatorPhone    string
-	Now              func() time.Time
-	Log              *slog.Logger
+	// OperatorPhone: aviso à equipe quando TeamPhones está vazio (compatibilidade).
+	OperatorPhone string
+	Now           func() time.Time
+	Log           *slog.Logger
 
 	// Cadastro automático de número novo, com limites de custo.
 	AutoSignup       bool
@@ -133,6 +134,12 @@ type Engine struct {
 	MetaTokenKey *secretbox.Box
 	// Publications: nil = Store. Os testes trocam por um fake.
 	Publications PublicationStore
+	// Canal da equipe: privado de cada número (vazio = OperatorPhone) e, opcional, o grupo pela
+	// instância não oficial. AdminURL vai no aviso de atendimento humano; vazio = sem link.
+	TeamPhones   []string
+	TeamGroup    TeamGroupSender
+	TeamGroupJID string
+	AdminURL     string
 }
 
 func (e *Engine) identityProvider() string {
@@ -383,7 +390,7 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 	case contract.IntentSwitchProject:
 		return e.switchProject(ctx, ident, conv, turn, projects)
 	case contract.IntentHuman:
-		return e.escalate(ctx, ident, conv, "cliente pediu atendimento humano", msgHuman)
+		return e.escalateWith(ctx, ident, conv, e.humanNotice(ident, text), "cliente pediu atendimento humano", msgHuman)
 	case contract.IntentReject:
 		rejectedDraft := conv.State == store.StateAwaitingApproval
 		if rejectedDraft {
@@ -503,15 +510,15 @@ func (e *Engine) history(ctx context.Context, convID int64, batch []int64) ([]at
 	return turns, nil
 }
 
-// escalate passa a conversa para um humano: o bot para de responder e o operador é avisado.
-// Os avisos vão pelo outbox na mesma transação do estado, para sobreviver ao WhatsApp fora do ar.
+// escalate passa a conversa para um humano: o bot para de responder e a equipe é avisada.
 func (e *Engine) escalate(ctx context.Context, ident store.Identity, conv store.Conversation, reason, clientMsg string) error {
-	jobs := []store.JobSpec{sendJob(conv.ID, conv.ChatID, clientMsg)}
-	if e.OperatorPhone != "" {
-		note := fmt.Sprintf(msgOperator, ident.MemberName, ident.OrgName, ident.Phone, reason)
-		jobs = append(jobs, systemSendJob(0, e.WA.ChatIDForPhone(e.OperatorPhone), note,
-			TeamAlertTemplate(ident.MemberName, ident.OrgName, ident.Phone, reason)))
-	}
+	return e.escalateWith(ctx, ident, conv, TeamNotice{Kind: TeamAlert, Ident: ident, Reason: reason}, reason, clientMsg)
+}
+
+// escalateWith escala com o aviso dado; reason fica na auditoria. Os avisos vão pelo outbox na
+// mesma transação do estado, para sobreviver ao WhatsApp fora do ar.
+func (e *Engine) escalateWith(ctx context.Context, ident store.Identity, conv store.Conversation, n TeamNotice, reason, clientMsg string) error {
+	jobs := append([]store.JobSpec{sendJob(conv.ID, conv.ChatID, clientMsg)}, e.teamJobs(ctx, n)...)
 	if err := e.Store.SetStateAndEnqueue(ctx, conv.ID, store.StateNeedsHuman, conv.Fields, jobs...); err != nil {
 		return err
 	}
