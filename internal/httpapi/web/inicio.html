@@ -3,95 +3,354 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>meuanuncio.io · anúncio no Instagram e no Facebook pelo WhatsApp</title>
-<meta name="description" content="Conte no WhatsApp o que você quer vender. A IA do meuanuncio.io monta a campanha no Facebook e no Instagram e nada vai ao ar sem o seu OK.">
-<meta name="theme-color" content="#0b120f">
+<title>meuanuncio.io · seu anúncio no Instagram e no Facebook pelo WhatsApp</title>
+<meta name="description" content="Conte no WhatsApp o que você quer vender. A IA do meuanuncio.io monta a campanha no Facebook e no Instagram, você aprova por mensagem e ela é publicada na sua conta de anúncios.">
+<meta name="theme-color" content="#06122e">
+<meta property="og:title" content="meuanuncio.io · mais que anúncios. É movimento.">
+<meta property="og:description" content="Você conversa no WhatsApp, aprova por mensagem e a campanha vai pro Instagram e pro Facebook.">
+<meta property="og:type" content="website">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="icon" type="image/png" href="/static/favicon.png">
-<link rel="apple-touch-icon" href="/static/icon.png?v=2">
-<link rel="preload" href="/static/bricolage.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/static/cadastro.css?v=2">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<link rel="preload" href="/static/urbanist.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/figtree.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/inicio.css?v=4">
+<script src="/static/inicio.js?v=4" defer></script>
 </head>
-<body class="home">
-<main class="shell">
-  <header class="home-top">
-    <a href="/"><img src="/static/logo.png?v=2" alt="meuanuncio.io" width="280" height="92"></a>
-    <a class="pill" href="{{WHATSAPP}}">Falar no WhatsApp</a>
-  </header>
+<body>
+<a class="skip" href="#conteudo">Pular para o conteúdo</a>
 
-  <section class="hero">
-    <div class="hero-copy">
-      <h1>Você fala no WhatsApp. <em>O anúncio sai pronto.</em></h1>
-      <p class="lede">Conta o que quer vender, pra quem e onde. A IA do meuanuncio.io monta a campanha no Instagram e no Facebook, e nada vai ao ar sem o seu OK.</p>
-      <div class="cta">
-        <a class="btn whatsapp" href="{{WHATSAPP}}">
+<header class="site-top" id="topo">
+  <div class="wrap top-row">
+    <a class="brand" href="/" aria-label="meuanuncio.io, início">
+      <svg class="mark" viewBox="-1 0 122 74" aria-hidden="true">
+        <defs>
+          <linearGradient id="hg" gradientUnits="userSpaceOnUse" x1="8" y1="72" x2="112" y2="8"><stop offset="0" stop-color="#0b2a92"/><stop offset=".5" stop-color="#1f5cff"/><stop offset="1" stop-color="#46a8ff"/></linearGradient>
+          <linearGradient id="hs" gradientUnits="userSpaceOnUse" x1="0" y1="14" x2="0" y2="64"><stop offset="0" stop-color="#03113f" stop-opacity=".05"/><stop offset="1" stop-color="#03113f" stop-opacity=".55"/></linearGradient>
+          <linearGradient id="he" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#cdeeff"/><stop offset="1" stop-color="#fff"/></linearGradient>
+          <mask id="hm" maskUnits="userSpaceOnUse" x="-10" y="-10" width="140" height="90"><polyline points="9 86 35 13 60 60 85 13 111 86" fill="none" stroke="#fff" stroke-width="20" stroke-linejoin="round"/></mask>
+          <clipPath id="hk"><rect x="-10" y="-10" width="140" height="82"/></clipPath>
+        </defs>
+        <g clip-path="url(#hk)">
+          <polyline class="mark-stroke" pathLength="100" points="9 86 35 13 60 60 85 13 111 86" fill="none" stroke="url(#hg)" stroke-width="20" stroke-linejoin="round"/>
+          <line class="mark-fold" mask="url(#hm)" x1="35" y1="13" x2="66.6" y2="72.4" stroke="url(#hs)" stroke-width="20"/>
+        </g>
+        <path class="mark-arrow" fill="url(#he)" d="M70.6 22.5L81.5 36.5H75.4V52H65.8V36.5H59.7Z"/>
+      </svg>
+      <span class="wordmark">meu anúncio<span class="io">.io</span></span>
+    </a>
+    <nav class="top-nav" aria-label="Seções">
+      <a href="#como-funciona">Como funciona</a>
+      <a href="#planos">Planos</a>
+      <a href="#duvidas">Dúvidas</a>
+    </nav>
+    <a class="btn btn-small" href="{{WHATSAPP}}"><span>Começar<span class="hide-xs"> pelo WhatsApp</span></span></a>
+  </div>
+</header>
+
+<main id="conteudo">
+
+  <!-- ========== topo: promessa + demonstração viva ========== -->
+  <section class="hero" aria-labelledby="titulo">
+    <div class="wrap hero-grid">
+      <div class="hero-copy">
+        <h1 id="titulo">Você conversa no WhatsApp. <span class="accent">A IA coloca seu anúncio no ar.</span></h1>
+        <p class="lede">Conta o que quer vender, pra quem e onde. O meuanuncio.io monta a campanha no Instagram e no Facebook, te mostra tudo antes e só publica na sua conta de anúncios quando você responder <strong>SIM</strong>.</p>
+        <div class="cta-row">
+          <a class="btn btn-wa" href="{{WHATSAPP}}">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12.04 2a9.9 9.9 0 0 0-8.5 15l-1.4 5 5.1-1.3A9.9 9.9 0 1 0 12.04 2Zm0 18.1c-1.5 0-3-.4-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3a8.2 8.2 0 1 1 6.9 3.8Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.2-.4.7-1.3.1-.1 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3c-.2.3-.9.9-.9 2.2s.9 2.5 1 2.7c.1.2 1.8 2.8 4.4 3.9 1.6.7 2.3.8 3.1.6.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.3-.2-.6-.3Z"/></svg>
+            Começar pelo WhatsApp
+          </a>
+          <a class="btn btn-ghost" href="#como-funciona">Ver como funciona</a>
+        </div>
+        <p class="fine">Grátis pra começar · cadastro em 2 minutos · nada vai ao ar sem o seu OK</p>
+      </div>
+
+      <div class="stage" role="img" aria-label="Demonstração: uma conversa no WhatsApp vira um anúncio no Instagram">
+       <div class="stage-row">
+        <figure class="phone" aria-hidden="true">
+          <div class="chat-head">
+            <svg class="chat-av" viewBox="0 0 128 128"><rect width="128" height="128" rx="64" fill="#1f5cff"/><g transform="translate(10.5 32) scale(.89)"><polyline points="9 86 35 13 60 60 85 13 111 86" fill="none" stroke="#fff" stroke-width="20" stroke-linejoin="round" clip-path="url(#avk)"/><path fill="#fff" stroke="#1f5cff" stroke-width="4.5" stroke-linejoin="round" paint-order="stroke" d="M70.6 22.5L81.5 36.5H75.4V52H65.8V36.5H59.7Z"/></g><defs><clipPath id="avk"><rect x="-10" y="-10" width="140" height="82"/></clipPath></defs></svg>
+            <div><strong>meuanuncio.io</strong><span class="online">online</span></div>
+          </div>
+          <div class="chat" data-demo>
+            <div class="b out voice" data-step="1">
+              <span class="play"></span>
+              <span class="wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+              <span class="t">0:07 <span class="seen">✓✓</span></span>
+            </div>
+            <div class="typing" data-step="2"><i></i><i></i><i></i></div>
+            <div class="b in" data-step="3">Pizzaria em Campinas, bora! 🍕 Quanto você quer investir por dia?<span class="t">19:02</span></div>
+            <div class="b out" data-step="4">Uns 30 reais<span class="t">19:02 <span class="seen">✓✓</span></span></div>
+            <div class="typing" data-step="5"><i></i><i></i><i></i></div>
+            <div class="b in proposal" data-step="6">
+              <strong>Sua proposta tá pronta</strong>
+              <span class="kv"><span>Público</span>famílias, 25 a 55 anos, até 8 km</span>
+              <span class="kv"><span>Investimento</span>R$ 30 por dia, 7 dias</span>
+              <span class="kv"><span>Onde</span>Instagram e Facebook</span>
+              Pra aprovar, responda <b class="code">SIM 482913</b>
+              <span class="t">19:03</span>
+            </div>
+            <div class="b out" data-step="7">SIM 482913<span class="t">19:03 <span class="seen">✓✓</span></span></div>
+            <div class="b in" data-step="8">Aprovada ✅ Agora me manda a foto do anúncio.<span class="t">19:03</span></div>
+            <div class="b out photo" data-step="9">
+              <span class="thumb"></span>
+              <span class="t">19:04 <span class="seen">✓✓</span></span>
+            </div>
+            <div class="b in" data-step="10">Prévia pronta 👉 é assim que aparece no Instagram.<span class="t">19:04</span></div>
+          </div>
+        </figure>
+
+        <figure class="ad" aria-hidden="true" data-ad>
+          <div class="ad-head">
+            <span class="ad-av">FB</span>
+            <span class="ad-who"><strong>Forno Bom Pizzaria</strong><small>Patrocinado</small></span>
+            <span class="ad-status"><span class="st-draft">Montando</span><span class="st-ready">Prévia</span><span class="st-live">No ar</span></span>
+          </div>
+          <div class="ad-media">
+            <svg class="pizza" viewBox="0 0 200 200">
+              <defs>
+                <radialGradient id="pz-bg" cx=".5" cy=".42" r=".75"><stop offset="0" stop-color="#5a2e18"/><stop offset="1" stop-color="#1c0d07"/></radialGradient>
+                <radialGradient id="pz-cheese" cx=".45" cy=".4" r=".6"><stop offset="0" stop-color="#ffd977"/><stop offset="1" stop-color="#f0a83a"/></radialGradient>
+              </defs>
+              <rect width="200" height="200" fill="url(#pz-bg)"/>
+              <circle cx="100" cy="104" r="78" fill="#c9792f"/>
+              <circle cx="100" cy="104" r="70" fill="#b33a1d"/>
+              <circle cx="100" cy="104" r="66" fill="url(#pz-cheese)"/>
+              <g fill="#a3261a"><circle cx="72" cy="80" r="10"/><circle cx="122" cy="74" r="9"/><circle cx="132" cy="118" r="10"/><circle cx="88" cy="128" r="9"/><circle cx="104" cy="100" r="8"/><circle cx="64" cy="112" r="7"/><circle cx="116" cy="146" r="7"/></g>
+              <g fill="#2f8a3c"><ellipse cx="94" cy="78" rx="7" ry="3.5" transform="rotate(-30 94 78)"/><ellipse cx="140" cy="96" rx="7" ry="3.5" transform="rotate(40 140 96)"/><ellipse cx="74" cy="140" rx="7" ry="3.5" transform="rotate(10 74 140)"/></g>
+              <g stroke="#7a3a12" stroke-width="2" opacity=".5"><line x1="100" y1="38" x2="100" y2="170"/><line x1="34" y1="104" x2="166" y2="104"/></g>
+            </svg>
+            <span class="ad-skel"></span>
+          </div>
+          <div class="ad-cta"><span>Enviar mensagem</span><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12.04 2a9.9 9.9 0 0 0-8.5 15l-1.4 5 5.1-1.3A9.9 9.9 0 1 0 12.04 2Z"/></svg></div>
+          <p class="ad-copy"><strong>Forno Bom</strong> Sexta é dia de pizza grande + refri por R$ 59. Pede pelo WhatsApp e recebe quentinha em até 40 min.</p>
+          <p class="ad-meta"><span>Famílias · até 8 km</span><span>R$ 30/dia</span></p>
+        </figure>
+       </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== como funciona: 3 passos reais ========== -->
+  <section class="how" id="como-funciona" aria-labelledby="como-titulo">
+    <div class="wrap">
+      <h2 id="como-titulo" class="section-title">Do "quero anunciar" ao anúncio no ar, sem planilha e sem painel.</h2>
+      <ol class="steps">
+        <li class="step" data-reveal>
+          <span class="step-n" aria-hidden="true">1</span>
+          <h3>Conversa</h3>
+          <p>Por texto ou áudio: o que vender, pra quem e em qual cidade. A IA pergunta o que faltar, do jeito que um bom gestor de tráfego perguntaria.</p>
+          <div class="step-art art-talk" aria-hidden="true">
+            <span class="mini out">Quero anunciar o rodízio de sexta</span>
+            <span class="mini in">Bora! Qual bairro você atende?</span>
+          </div>
+        </li>
+        <li class="step" data-reveal>
+          <span class="step-n" aria-hidden="true">2</span>
+          <h3>Aprova</h3>
+          <p>Chega uma proposta com público, orçamento, tempo de campanha e textos. Gostou? Responde com o código. Quer mudar algo? É só falar.</p>
+          <div class="step-art art-code" aria-hidden="true">
+            <span class="code-lbl">Responda</span>
+            <span class="code-big">SIM <b>482913</b></span>
+          </div>
+        </li>
+        <li class="step" data-reveal>
+          <span class="step-n" aria-hidden="true">3</span>
+          <h3>Publica</h3>
+          <p>Você manda as fotos ou vídeos, vê a prévia e a campanha é publicada na sua conta de anúncios da Meta, no Instagram e no Facebook.</p>
+          <div class="step-art art-live" aria-hidden="true">
+            <span class="live-dot"></span>
+            <span><strong>Campanha publicada</strong><small>Instagram · Facebook</small></span>
+          </div>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ========== pilares ========== -->
+  <section class="pillars" aria-labelledby="pilares-titulo">
+    <div class="wrap">
+      <div class="pillars-head">
+        <h2 id="pilares-titulo" class="section-title">Tráfego, WhatsApp, controle e resultado. No mesmo lugar onde você já atende.</h2>
+        <p class="section-lede">Quatro coisas que o meuanuncio.io cuida pra você não precisar abrir o Gerenciador de Anúncios.</p>
+      </div>
+
+      <div class="bento">
+        <article class="pillar p-traffic" data-reveal>
+          <div class="pillar-text">
+            <h3>Tráfego</h3>
+            <p>Público por cidade, raio, idade e interesse, montado a partir do que você contou sobre o negócio. A verba vai pra quem tem chance de comprar.</p>
+          </div>
+          <div class="chart" data-anim>
+            <div class="chart-top">
+              <span class="chart-num"><b data-count="18400" data-format="mil">18,4 mil</b> pessoas alcançadas</span>
+              <span class="chart-tag">ilustração · 7 dias</span>
+            </div>
+            <svg viewBox="0 0 400 140" preserveAspectRatio="none" aria-hidden="true">
+              <defs><linearGradient id="ch-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2fb8ff" stop-opacity=".35"/><stop offset="1" stop-color="#2fb8ff" stop-opacity="0"/></linearGradient></defs>
+              <g class="grid-lines" stroke="currentColor" stroke-width="1"><line x1="0" y1="35" x2="400" y2="35"/><line x1="0" y1="70" x2="400" y2="70"/><line x1="0" y1="105" x2="400" y2="105"/></g>
+              <path class="chart-area" fill="url(#ch-fill)" d="M0 128 C40 124 60 112 90 108 S150 92 180 86 S240 62 270 58 S330 30 360 26 L400 16 V140 H0Z"/>
+              <path class="chart-line" pathLength="100" fill="none" stroke="#2fb8ff" stroke-width="3" stroke-linecap="round" d="M0 128 C40 124 60 112 90 108 S150 92 180 86 S240 62 270 58 S330 30 360 26 L400 16"/>
+            </svg>
+            <div class="chart-days" aria-hidden="true"><span>seg</span><span>ter</span><span>qua</span><span>qui</span><span>sex</span><span>sáb</span><span>dom</span></div>
+          </div>
+        </article>
+
+        <article class="pillar p-whats" data-reveal>
+          <div class="pillar-text">
+            <h3>WhatsApp</h3>
+            <p>Sem app novo, sem senha nova. Pede outra campanha, troca a foto ou chama alguém da equipe pela mesma conversa.</p>
+          </div>
+          <div class="cmds" aria-hidden="true">
+            <span class="mini out">Quero anunciar também o delivery</span>
+            <span class="mini in">Abri o projeto <b>Delivery</b>. Pra qual região você entrega?</span>
+            <span class="mini out">Troca a 2 por essa foto</span>
+            <span class="mini in">Trocado ✅</span>
+          </div>
+        </article>
+
+        <article class="pillar p-control" data-reveal>
+          <div class="pillar-text">
+            <h3>Controle</h3>
+            <p>Seu dinheiro só sai quando você disser que sim. O limite por dia é seu, e a campanha fica na sua própria conta da Meta.</p>
+          </div>
+          <div class="meter" data-anim aria-hidden="true">
+            <div class="meter-row"><span>Investimento por dia</span><b>R$ 30 <small>de R$ 50</small></b></div>
+            <div class="meter-bar"><span></span></div>
+            <ul class="locks">
+              <li><span class="lk"></span>Nada vai ao ar sem o seu SIM</li>
+              <li><span class="lk"></span>Prévia antes de publicar</li>
+              <li><span class="lk"></span>Conta de anúncios no seu nome</li>
+            </ul>
+          </div>
+        </article>
+
+        <article class="pillar p-results" data-reveal>
+          <div class="pillar-text">
+            <h3>Resultados</h3>
+            <p>O anúncio leva a pessoa direto pro seu WhatsApp. Quem viu no Instagram chega na conversa pronto pra perguntar o preço.</p>
+          </div>
+          <div class="pings" data-anim aria-hidden="true">
+            <span class="ping"><b>Ana</b> Vi no Instagram, ainda tem a promoção da grande?</span>
+            <span class="ping"><b>Carlos</b> Entrega no Cambuí?</span>
+            <span class="ping"><b>Juliana</b> Quero 2 pizzas pra hoje às 20h</span>
+            <span class="pings-count"><b data-count="37">37</b> conversas pelo anúncio <small>ilustração</small></span>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== planos ========== -->
+  <section class="plans" id="planos" aria-labelledby="planos-titulo">
+    <div class="wrap">
+      <h2 id="planos-titulo" class="section-title">Comece grátis. Os planos maiores estão chegando.</h2>
+      <div class="plans-grid">
+        <div class="plan plan-free" data-reveal>
+          <div class="plan-head">
+            <h3>Free</h3>
+            <span class="tag tag-on">Disponível</span>
+          </div>
+          <p class="price"><b>R$ 0</b> por mês</p>
+          <ul class="plan-list">
+            <li>Campanhas no Instagram e no Facebook montadas pela IA</li>
+            <li>Até 60 mensagens por dia com a IA</li>
+            <li>Investimento de até R$ 50 por dia nos anúncios</li>
+            <li>Até 3 projetos ao mesmo tempo</li>
+          </ul>
+          <a class="btn btn-wa" href="{{WHATSAPP}}">Começar pelo WhatsApp</a>
+          <p class="fine">O valor dos anúncios é cobrado pela Meta, direto na sua conta de anúncios.</p>
+        </div>
+        <div class="plan-soon">
+          <div class="plan plan-mini" data-reveal>
+            <div class="plan-head"><h3>Starter</h3><span class="tag">Em breve</span></div>
+            <p>Pra quem anuncia toda semana: mais conversa com a IA, orçamento maior e mais projetos rodando.</p>
+          </div>
+          <div class="plan plan-mini" data-reveal>
+            <div class="plan-head"><h3>Pro</h3><span class="tag">Em breve</span></div>
+            <p>Pra operação com várias frentes ao mesmo tempo e verba de anúncio mais alta.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== perguntas frequentes ========== -->
+  <section class="faq" id="duvidas" aria-labelledby="duvidas-titulo">
+    <div class="wrap faq-grid">
+      <div class="faq-side">
+        <h2 id="duvidas-titulo" class="section-title">Perguntas que a gente mais ouve.</h2>
+        <p class="section-lede">Não achou a sua? Manda no <a href="{{WHATSAPP}}">WhatsApp</a> que a gente responde.</p>
+      </div>
+      <div class="faq-list">
+        <details>
+          <summary>Preciso entender de anúncio?</summary>
+          <p>Não. Você conta do seu negócio como contaria pra um amigo. A IA transforma isso em público, orçamento e textos, e te explica a proposta antes de qualquer coisa.</p>
+        </details>
+        <details>
+          <summary>A campanha vai ao ar sozinha?</summary>
+          <p>Nunca. Toda proposta chega com um código de 6 dígitos. Só depois que você responde <strong>SIM</strong> com o código é que ela segue pra publicação.</p>
+        </details>
+        <details>
+          <summary>Onde o anúncio aparece?</summary>
+          <p>No Instagram e no Facebook. Ele é publicado na sua conta de anúncios da Meta, então os dados e o histórico ficam com você.</p>
+        </details>
+        <details>
+          <summary>Quanto custa?</summary>
+          <p>O plano Free não tem mensalidade. O que você investe nos anúncios é cobrado pela Meta, direto na sua conta de anúncios, no limite por dia que você aprovou.</p>
+        </details>
+        <details>
+          <summary>Como conecto minha conta do Facebook?</summary>
+          <p>Pelo próprio WhatsApp: a IA te manda um link seguro, você entra com o seu Facebook e escolhe a conta de anúncios e a Página. Leva cerca de 1 minuto.</p>
+        </details>
+        <details>
+          <summary>Posso mandar áudio?</summary>
+          <p>Pode. Áudio, texto, foto e vídeo. As fotos e os vídeos que você manda viram os anúncios.</p>
+        </details>
+        <details>
+          <summary>E se eu quiser falar com uma pessoa?</summary>
+          <p>É só pedir na conversa. Alguém da nossa equipe assume o atendimento pelo mesmo número.</p>
+        </details>
+        <details>
+          <summary>O que vocês fazem com os meus dados?</summary>
+          <p>Usamos só o necessário pra montar e publicar suas campanhas. Os detalhes estão na <a href="/privacidade">Política de Privacidade</a> e nos <a href="/termos">Termos de Uso</a>.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== chamada final ========== -->
+  <section class="closer" aria-labelledby="final-titulo">
+    <div class="wrap closer-grid">
+      <svg class="closer-mark" viewBox="-1 0 122 74" aria-hidden="true">
+        <defs><clipPath id="ck"><rect x="-10" y="-10" width="140" height="82"/></clipPath></defs>
+        <polyline class="mark-stroke" pathLength="100" clip-path="url(#ck)" points="9 86 35 13 60 60 85 13 111 86" fill="none" stroke="currentColor" stroke-width="20" stroke-linejoin="round"/>
+        <path class="mark-arrow" d="M70.6 22.5L81.5 36.5H75.4V52H65.8V36.5H59.7Z"/>
+      </svg>
+      <div class="closer-copy">
+        <h2 id="final-titulo">Mais que anúncios. É movimento.</h2>
+        <p>Seu próximo cliente tá rolando o Instagram agora. Começa grátis e coloca seu negócio na frente dele hoje.</p>
+        <a class="btn btn-light" href="{{WHATSAPP}}">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12.04 2a9.9 9.9 0 0 0-8.5 15l-1.4 5 5.1-1.3A9.9 9.9 0 1 0 12.04 2Zm0 18.1c-1.5 0-3-.4-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3a8.2 8.2 0 1 1 6.9 3.8Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.2-.4.7-1.3.1-.1 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3c-.2.3-.9.9-.9 2.2s.9 2.5 1 2.7c.1.2 1.8 2.8 4.4 3.9 1.6.7 2.3.8 3.1.6.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.3-.2-.6-.3Z"/></svg>
-          Começar no WhatsApp
+          Começar pelo WhatsApp
         </a>
-        <small>Grátis pra começar · cadastro em 2 minutos</small>
+        <p class="closer-num">ou salva o número: <a href="{{WHATSAPP}}">{{WHATSAPP_NUMERO}}</a></p>
       </div>
     </div>
-
-    <figure class="phone" aria-label="Exemplo de conversa com o meuanuncio.io no WhatsApp">
-      <div class="screen">
-        <div class="chat-head">
-          <img src="/static/icon.png?v=2" alt="" width="36" height="36">
-          <div><strong>meuanuncio.io</strong><span>online</span></div>
-        </div>
-        <div class="chat">
-          <div class="b out voice" data-step="1">
-            <span class="play" aria-hidden="true"></span>
-            <span class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
-            <span class="t">0:07 <span class="seen">✓✓</span></span>
-            <span class="sr-only">Áudio: quero anunciar minha pizzaria em Campinas.</span>
-          </div>
-          <div class="typing" data-step="2" aria-hidden="true"><i></i><i></i><i></i></div>
-          <div class="b in" data-step="3">Pizzaria em Campinas, bora! 🍕 Quanto você quer investir por dia?<span class="t">19:02</span></div>
-          <div class="b out" data-step="4">Uns 30 reais<span class="t">19:02 <span class="seen">✓✓</span></span></div>
-          <div class="typing" data-step="5" aria-hidden="true"><i></i><i></i><i></i></div>
-          <div class="b in proposal" data-step="6">
-            <strong>Sua proposta tá pronta</strong>
-            <dl>
-              <dt>Público</dt><dd>famílias, 25 a 55 anos, até 8 km</dd>
-              <dt>Investimento</dt><dd>R$ 30 por dia, 7 dias</dd>
-              <dt>Onde</dt><dd>Instagram e Facebook</dd>
-            </dl>
-            Pra aprovar, responda <span class="code">SIM 482913</span>
-            <span class="t">19:03</span>
-          </div>
-          <div class="b out" data-step="7">SIM 482913<span class="t">19:03 <span class="seen">✓✓</span></span></div>
-        </div>
-      </div>
-    </figure>
   </section>
-
-  <section class="how" aria-labelledby="como">
-    <h2 id="como">Do "quero anunciar" ao anúncio no ar, sem planilha e sem painel.</h2>
-    <ol>
-      <li><h3>Conta pra gente</h3><p>Por texto ou áudio: o que vender, pra quem e em qual cidade. Do jeito que você falaria com um amigo.</p></li>
-      <li><h3>Receba a proposta</h3><p>Público, orçamento, tempo de campanha e os textos do anúncio, tudo numa mensagem só.</p></li>
-      <li><h3>Aprove com um código</h3><p>Gostou? Responde com o código e pronto. Quer mudar algo? É só falar.</p></li>
-    </ol>
-  </section>
-
-  <section class="promise" aria-labelledby="promessa">
-    <h2 id="promessa">Seu dinheiro só sai quando você disser que sim.</h2>
-    <ul>
-      <li><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M5 12.5l4.5 4.5L19 7.5"/></svg>Nenhuma campanha vai ao ar sem a sua aprovação.</li>
-      <li><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M5 12.5l4.5 4.5L19 7.5"/></svg>Você vê público, orçamento e textos antes de qualquer gasto.</li>
-      <li><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M5 12.5l4.5 4.5L19 7.5"/></svg>Limite diário de investimento definido por você.</li>
-      <li><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M5 12.5l4.5 4.5L19 7.5"/></svg>Precisa de gente? Chama que alguém da equipe assume.</li>
-    </ul>
-  </section>
-
-  <section class="closer">
-    <div>
-      <h2>Bora colocar seu negócio na frente de quem compra?</h2>
-      <p>Começa grátis. Leva menos tempo que responder um cliente.</p>
-    </div>
-    <a class="btn" href="{{WHATSAPP}}">Chamar no WhatsApp</a>
-  </section>
-
-  <footer class="foot"><a href="/termos">Termos de Uso</a> · <a href="/privacidade">Política de Privacidade</a></footer>
 </main>
+
+<footer class="site-foot">
+  <div class="wrap foot-row">
+    <a class="brand brand-foot" href="/" aria-label="meuanuncio.io, início"><img src="/static/logo.svg" alt="" width="200" height="29"></a>
+    <nav class="foot-nav" aria-label="Rodapé">
+      <a href="/termos">Termos de Uso</a>
+      <a href="/privacidade">Política de Privacidade</a>
+      <a href="{{WHATSAPP}}">WhatsApp</a>
+    </nav>
+    <p class="foot-note">© 2026 meuanuncio.io · Mais que anúncios. É movimento.</p>
+  </div>
+</footer>
 </body>
 </html>
