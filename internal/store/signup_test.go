@@ -200,3 +200,19 @@ func TestAutoSignupGetsFreeLimits(t *testing.T) {
 }
 
 func ptr(s string) *string { return &s }
+
+// Cadastro pelo formulário do WhatsApp: sem login do Supabase, e-mail não confirmado.
+func TestCompleteRegistrationWithoutAuth(t *testing.T) {
+	st, pool := newStore(t)
+	ident := pendingIdentity(t, st, "owner", "5511988887777")
+	must(t, st.CreateSignupLink(ctx, ident.ID, "h", time.Now().Add(time.Hour)))
+	_, err := st.CompleteRegistration(ctx, store.Registration{TokenHash: "h", Email: "a@b.com", Form: regForm(),
+		PlanCode: "free", TermsVersion: "v1", Welcome: welcome})
+	must(t, err)
+	var email string
+	var verified, authID *string
+	must(t, pool.QueryRow(ctx, `SELECT email, email_verified_at::text, auth_user_id::text FROM members WHERE id = $1`, ident.MemberID).Scan(&email, &verified, &authID))
+	if email != "a@b.com" || verified != nil || authID != nil {
+		t.Fatalf("email=%q verificado=%v auth=%v", email, verified, authID)
+	}
+}
