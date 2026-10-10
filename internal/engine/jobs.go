@@ -35,6 +35,9 @@ func (e *Engine) HandleJob(ctx context.Context, job store.Job) error {
 		if s.ConversationID == 0 {
 			return nil // aviso ao operador: fora de conversa
 		}
+		if s.Author != "" {
+			return e.Store.AddStaffMessage(ctx, s.ConversationID, redactLinks(s.Text), s.Author)
+		}
 		return e.Store.AddMessage(ctx, s.ConversationID, "out", "text", redactLinks(s.Text))
 	case JobReply:
 		var r ReplyJob

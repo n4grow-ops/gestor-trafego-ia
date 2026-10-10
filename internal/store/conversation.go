@@ -172,7 +172,8 @@ func (s *Store) MarkReplied(ctx context.Context, convID, upTo int64) error {
 
 // ResetConversation devolve a conversa da identidade ao estado inicial (usado ao encerrar atendimento humano).
 func (s *Store) ResetConversation(ctx context.Context, identityID int64) error {
-	tag, err := s.pool.Exec(ctx, `UPDATE conversations SET state = 'idle', fields = '{}', updated_at = now() WHERE identity_id = $1`, identityID)
+	tag, err := s.pool.Exec(ctx, `UPDATE conversations SET state = 'idle', fields = '{}', updated_at = now(),
+		human_by = NULL, human_since = NULL, human_prev_state = NULL WHERE identity_id = $1`, identityID)
 	if err != nil {
 		return err
 	}

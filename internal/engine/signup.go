@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -69,4 +70,33 @@ func WelcomeJob(convID int64, chatID, fullName, email string) store.JobSpec {
 	}
 	conv := store.Conversation{ID: convID, ChatID: chatID}
 	return humanJob(0, conv, fmt.Sprintf(msgWelcome, name, email), false)
+}
+
+// ResendSignupLink manda um link novo de cadastro pedido pela equipe no painel. chatID é o destino
+// quando o cliente ainda não tem conversa (trazido à mão). Na Cloud API, fora da janela de 24 h,
+// vai o modelo aprovado do lembrete.
+func ResendSignupLink(ctx context.Context, st *store.Store, baseURL string, ident store.Identity, chatID string, now time.Time) error {
+	if baseURL == "" {
+		return errors.New("engine: cadastro desligado (sem PUBLIC_BASE_URL)")
+	}
+	if ident.RegistrationStatus == "complete" {
+		return store.ErrAlreadyRegistered
+	}
+	conv, err := st.GetOrCreateConversation(ctx, ident.ID, chatID)
+	if err != nil {
+		return err
+	}
+	raw, hash, err := signup.NewToken()
+	if err != nil {
+		return err
+	}
+	if err := st.CreateSignupLink(ctx, ident.ID, hash, now.Add(signupLinkTTL)); err != nil {
+		return err
+	}
+	link := strings.TrimRight(baseURL, "/") + "/" + raw
+	tpl := &whatsapp.Template{Name: TplSignupReminder, Params: []string{link}}
+	if err := st.Enqueue(ctx, systemSendJob(conv.ID, conv.ChatID, fmt.Sprintf(msgSignupLink, link), tpl)); err != nil {
+		return err
+	}
+	return st.Audit(ctx, ident.OrgID, "admin", "signup_link_sent", map[string]any{"identity_id": ident.ID})
 }

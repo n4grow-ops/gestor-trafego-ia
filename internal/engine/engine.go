@@ -56,6 +56,14 @@ type SendJob struct {
 	Typed          bool     `json:"typed,omitempty"` // "digitando…" já apareceu: agora é entregar
 	// Template: modelo aprovado usado no lugar do texto fora da janela de 24 h (Cloud API).
 	Template *whatsapp.Template `json:"template,omitempty"`
+	// Author: nome de quem da equipe escreveu pelo painel; a mensagem é gravada como "staff".
+	Author string `json:"author,omitempty"`
+}
+
+// StaffSendJob é a mensagem que alguém da equipe escreveu no painel durante o atendimento humano.
+// Sai como texto simples (sem "digitando…" nem voz) e é gravada com o nome de quem escreveu.
+func StaffSendJob(convID int64, chatID, text, author string) store.JobSpec {
+	return store.JobSpec{Kind: JobSend, Payload: SendJob{ConversationID: convID, ChatID: chatID, Text: text, Author: author}, MaxAttempts: sendAttempts}
 }
 
 // ReplyJob responde as mensagens seguidas de uma conversa depois do debounce.
