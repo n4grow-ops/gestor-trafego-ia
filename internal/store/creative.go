@@ -1,10 +1,12 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/jackc/pgx/v5"
 
@@ -51,6 +53,32 @@ type Creative struct {
 	DurationMS int
 	Format     string // square, portrait, vertical, landscape, other
 	Placement  string // feed ou stories
+	// Origin: upload (WhatsApp), instagram_own (post da conta conectada) ou instagram_public. Vazio = upload.
+	Origin    string
+	IGMediaID string // id do post na Graph API (só instagram_own)
+	// RightsPending: post público sem o cliente confirmar que pode usar; não vai para a Meta.
+	RightsPending bool
+	SourceURL     string // link do post
+	SourceCaption string // legenda do post (vira referência no SÓ REFERÊNCIA)
+}
+
+// Origens dos anúncios.
+const (
+	OriginUpload          = "upload"
+	OriginInstagramOwn    = "instagram_own"
+	OriginInstagramPublic = "instagram_public"
+)
+
+const creativeCols = `id, organization_id, draft_id, project_id, kind, storage_path, mime, size_bytes,
+	coalesce(width, 0), coalesce(height, 0), coalesce(duration_ms, 0), format, placement,
+	origin, ig_media_id, NOT rights_confirmed, source_url, source_caption`
+
+func scanCreative(r pgx.Row) (Creative, error) {
+	var c Creative
+	err := r.Scan(&c.ID, &c.OrgID, &c.DraftID, &c.ProjectID, &c.Kind, &c.Path, &c.Mime, &c.Size,
+		&c.Width, &c.Height, &c.DurationMS, &c.Format, &c.Placement,
+		&c.Origin, &c.IGMediaID, &c.RightsPending, &c.SourceURL, &c.SourceCaption)
+	return c, err
 }
 
 func (s *Store) AddCreative(ctx context.Context, c Creative) (int64, error) {
@@ -60,11 +88,15 @@ func (s *Store) AddCreative(ctx context.Context, c Creative) (int64, error) {
 	if c.Placement == "" {
 		c.Placement = "feed"
 	}
+	if c.Origin == "" {
+		c.Origin = OriginUpload
+	}
 	var id int64
 	err := s.pool.QueryRow(ctx, `INSERT INTO creatives (organization_id, draft_id, project_id, kind, storage_path, mime, size_bytes,
-			width, height, duration_ms, format, placement)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, nullif($8, 0), nullif($9, 0), nullif($10, 0), $11, $12) RETURNING id`,
-		c.OrgID, c.DraftID, c.ProjectID, c.Kind, c.Path, c.Mime, c.Size, c.Width, c.Height, c.DurationMS, c.Format, c.Placement).Scan(&id)
+			width, height, duration_ms, format, placement, origin, ig_media_id, rights_confirmed, source_url, source_caption)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, nullif($8, 0), nullif($9, 0), nullif($10, 0), $11, $12, $13, $14, $15, $16, $17) RETURNING id`,
+		c.OrgID, c.DraftID, c.ProjectID, c.Kind, c.Path, c.Mime, c.Size, c.Width, c.Height, c.DurationMS, c.Format, c.Placement,
+		c.Origin, c.IGMediaID, !c.RightsPending, c.SourceURL, c.SourceCaption).Scan(&id)
 	return id, err
 }
 
@@ -76,18 +108,29 @@ func (s *Store) CountCreatives(ctx context.Context, draftID int64) (int, error) 
 
 // ListCreatives devolve os anúncios do rascunho na ordem de envio (a numeração que o cliente vê).
 func (s *Store) ListCreatives(ctx context.Context, draftID int64) ([]Creative, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id, organization_id, draft_id, project_id, kind, storage_path, mime, size_bytes,
-			coalesce(width, 0), coalesce(height, 0), coalesce(duration_ms, 0), format, placement
-		FROM creatives WHERE draft_id = $1 ORDER BY id`, draftID)
+	rows, err := s.pool.Query(ctx, `SELECT `+creativeCols+` FROM creatives WHERE draft_id = $1 ORDER BY id`, draftID)
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Creative, error) {
-		var c Creative
-		err := r.Scan(&c.ID, &c.OrgID, &c.DraftID, &c.ProjectID, &c.Kind, &c.Path, &c.Mime, &c.Size,
-			&c.Width, &c.Height, &c.DurationMS, &c.Format, &c.Placement)
-		return c, err
-	})
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Creative, error) { return scanCreative(r) })
+}
+
+// ConfirmCreativeRights: o cliente disse que o post público é dele (ou que tem autorização). Devolve quantos mudaram.
+func (s *Store) ConfirmCreativeRights(ctx context.Context, draftID int64) (int64, error) {
+	tag, err := s.pool.Exec(ctx, `UPDATE creatives SET rights_confirmed = true WHERE draft_id = $1 AND NOT rights_confirmed`, draftID)
+	return tag.RowsAffected(), err
+}
+
+// DeletePendingCreatives apaga os posts públicos sem confirmação (SÓ REFERÊNCIA) e devolve os apagados,
+// na ordem de envio, para apagar os arquivos no Storage e guardar link e legenda como referência.
+func (s *Store) DeletePendingCreatives(ctx context.Context, draftID int64) ([]Creative, error) {
+	rows, err := s.pool.Query(ctx, `DELETE FROM creatives WHERE draft_id = $1 AND NOT rights_confirmed RETURNING `+creativeCols, draftID)
+	if err != nil {
+		return nil, err
+	}
+	list, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Creative, error) { return scanCreative(r) })
+	slices.SortFunc(list, func(a, b Creative) int { return cmp.Compare(a.ID, b.ID) })
+	return list, err
 }
 
 // DeleteCreative apaga o registro e devolve o caminho do arquivo, para apagar também no Storage.
