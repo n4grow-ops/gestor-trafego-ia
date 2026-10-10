@@ -135,7 +135,7 @@ func (e *Engine) publish(ctx context.Context, j PublishJob) error {
 		var res meta.PublishResult
 		res, err = e.Publisher.Publish(ctx, string(token), in)
 		if err == nil {
-			return e.published(ctx, ident, conv, pub, res)
+			return e.published(ctx, ident, conv, pub, res, in.Copies)
 		}
 	}
 	// Sem cancelamento: a publicação precisa ficar failed para a nova tentativa reaproveitar a linha.
@@ -162,7 +162,7 @@ func (e *Engine) publish(ctx context.Context, j PublishJob) error {
 	return e.send(ctx, conv, fmt.Sprintf(msgPublishFailed, user))
 }
 
-func (e *Engine) published(ctx context.Context, ident store.Identity, conv store.Conversation, pub store.Publication, res meta.PublishResult) error {
+func (e *Engine) published(ctx context.Context, ident store.Identity, conv store.Conversation, pub store.Publication, res meta.PublishResult, copies []meta.PublishCopy) error {
 	// A campanha já existe na Meta: prazo do job ou worker parando não podem impedir gravar e avisar.
 	ctx = context.WithoutCancel(ctx)
 	if err := e.pubs().FinishPublication(ctx, pub.ID, store.PublicationResult{CampaignID: res.CampaignID, AdSetID: res.AdSetID,
@@ -172,7 +172,12 @@ func (e *Engine) published(ctx context.Context, ident store.Identity, conv store
 		e.alertTeam(ctx, ident, fmt.Sprintf("campanha %s criada na Meta, mas a publicação %d não foi gravada no banco", res.CampaignID, pub.ID))
 	}
 	e.audit(ctx, ident.OrgID, member(ident), "meta_published", map[string]any{"draft_id": pub.DraftID, "campaign_id": res.CampaignID})
+	// Os textos que vão no ar (podem ter sido reescritos com as referências do cliente depois da aprovação):
+	// o cliente confere antes do ATIVAR.
 	text := msgPublished
+	if list := copiesList(copies); list != "" {
+		text = join(text, fmt.Sprintf(msgPublishedCopies, list))
+	}
 	if len(res.Warnings) > 0 {
 		text = join(text, fmt.Sprintf(msgPublishedWarnings, "• "+strings.Join(res.Warnings, "\n• ")))
 	}
@@ -271,6 +276,24 @@ func campaignName(d store.PublishData, now time.Time, pubID int64) string {
 	return strings.Join(slices.DeleteFunc(parts, func(s string) bool { return s == "" }), " · ")
 }
 
+// copiesList mostra os textos dos anúncios em poucas linhas: headline em negrito e o texto embaixo.
+func copiesList(cs []meta.PublishCopy) string {
+	var parts []string
+	for i, c := range cs {
+		head := strings.TrimSpace(c.Headline)
+		body := strings.TrimSpace(c.Text)
+		if head == "" && body == "" {
+			continue
+		}
+		item := fmt.Sprintf("%d. *%s*", i+1, head)
+		if body != "" {
+			item += "\n" + body
+		}
+		parts = append(parts, item)
+	}
+	return strings.Join(parts, "\n\n")
+}
+
 func toPublishCopies(cs []contract.Copy) []meta.PublishCopy {
 	out := make([]meta.PublishCopy, 0, len(cs))
 	for _, c := range cs {
@@ -307,6 +330,12 @@ func (e *Engine) publishCopies(ctx context.Context, orgID int64, prop contract.C
 	if err := json.Unmarshal([]byte(llm.StripFences(resp.Content)), &out); err != nil {
 		e.Log.Warn("reescrita dos textos sem JSON válido; seguem os da proposta", "org_id", orgID, "erro", err)
 		return base
+	}
+	// O botão é o da proposta aprovada: a reescrita mexe só no texto.
+	if n := len(prop.Copies); n > 0 {
+		for i := range out.Copies {
+			out.Copies[i].CTA = prop.Copies[min(i, n-1)].CTA
+		}
 	}
 	if err := validateCopies(out.Copies); err != nil {
 		e.Log.Warn("reescrita dos textos fora das regras; seguem os da proposta", "org_id", orgID, "erro", err)

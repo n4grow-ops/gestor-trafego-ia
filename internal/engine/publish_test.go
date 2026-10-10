@@ -906,3 +906,26 @@ func TestPublishOmitsUnknownPageWhatsAppNumber(t *testing.T) {
 		t.Fatalf("número do WhatsApp = %q", pub.inputs[0].WhatsAppNumber)
 	}
 }
+
+// I4: textos reescritos depois da aprovação aparecem na mensagem da campanha criada, antes do ATIVAR,
+// e o botão (CTA) continua o da proposta aprovada.
+func TestPublishedMessageShowsFinalCopiesAndLocksCTA(t *testing.T) {
+	h, _, pub := newPublishHarness(t, "owner")
+	h.connectMeta()
+	h.say("SIM " + h.reachApproval())
+	h.say("Curto anúncio direto tipo: Fome? A pizza chega em 30 minutos.")
+	h.sendFile(square)
+	h.say("pronto")
+	h.say("pronto")
+	h.mgr.Responses = append(h.mgr.Responses,
+		`{"copies":[{"headline":"Fome? Pizza em 30 min","text":"A pizza quentinha chega rapidinho.","cta":"LEARN_MORE"}]}`)
+	h.runKind(engine.JobCreativesPreview)
+	h.runKind(engine.JobMetaPublish)
+	if c := pub.inputs[0].Copies; len(c) != 1 || c[0].Headline != "Fome? Pizza em 30 min" || c[0].CTA != "WHATSAPP_MESSAGE" {
+		t.Fatalf("copies = %+v", c)
+	}
+	msg := h.lastClient()
+	if !strings.Contains(msg, "*pausada*") || !strings.Contains(msg, "Fome? Pizza em 30 min") || !strings.Contains(msg, "A pizza quentinha chega rapidinho.") {
+		t.Fatalf("mensagem sem os textos finais: %q", msg)
+	}
+}

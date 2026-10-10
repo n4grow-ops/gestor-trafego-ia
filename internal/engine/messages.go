@@ -56,6 +56,7 @@ const (
 	msgCopyNotedMore      = "Pode mandar mais ou escrever PRONTO."
 
 	msgPublished               = "Prontinho! Criei a campanha na sua conta de anúncios, *pausada* ⏸️\n\nDá uma olhada no Gerenciador de Anúncios e, se estiver tudo certo, me responde *ATIVAR* pra colocar no ar."
+	msgPublishedCopies         = "Os textos que vão no ar:\n\n%s"
 	msgPublishedWarnings       = "Uns detalhes que ajustei no caminho:\n%s"
 	msgPublishFailed           = "Tentei criar sua campanha na Meta, mas não rolou 😕\n\n%s\n\nAssim que resolver, me fala que eu tento de novo."
 	msgPublishMetaRefused      = "A Meta recusou a criação da campanha agora."
