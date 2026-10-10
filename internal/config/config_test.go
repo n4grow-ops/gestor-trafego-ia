@@ -155,6 +155,10 @@ func TestAdminConfig(t *testing.T) {
 	if c.AdminMode() != "dev" {
 		t.Fatalf("dev: %q", c.AdminMode())
 	}
+	// No desenvolvimento local sem ADMIN_HOST, o painel fica em /admin (o host padrão o esconderia).
+	if c.AdminHost != "" {
+		t.Fatalf("dev sem ADMIN_HOST: host=%q", c.AdminHost)
+	}
 	c = config.Load(env(map[string]string{"ADMIN_DEV_LOGIN": "true", "ADMIN_SESSION_KEY": key, "SUPABASE_URL": "https://p.supabase.co", "SUPABASE_PUBLISHABLE_KEY": "pub"}))
 	if c.AdminMode() != "otp" {
 		t.Fatalf("dev com Supabase: %q", c.AdminMode())

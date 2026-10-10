@@ -140,12 +140,26 @@ func (a *Admin) asset(name, contentType string) http.HandlerFunc {
 }
 
 // WithAdminHost faz o host do painel responder só o painel, sem o prefixo /admin
-// (admin.meuanuncio.io/ = /admin/). O health check continua igual em qualquer host.
+// (admin.meuanuncio.io/ = /admin/). Com o host configurado, /admin não existe em nenhum outro
+// host (404). Vazio (desenvolvimento local), o painel fica em /admin de qualquer host.
+// O health check continua igual em qualquer host.
 func WithAdminHost(adminHost string, next http.Handler) http.Handler {
 	adminHost = strings.ToLower(strings.TrimSpace(adminHost))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if adminHost != "" && hostOnly(r.Host) == adminHost && r.URL.Path != "/healthz" &&
-			r.URL.Path != "/admin" && !strings.HasPrefix(r.URL.Path, "/admin/") {
+		if adminHost == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		isAdminPath := r.URL.Path == "/admin" || strings.HasPrefix(r.URL.Path, "/admin/")
+		if hostOnly(r.Host) != adminHost {
+			if isAdminPath {
+				http.NotFound(w, r)
+				return
+			}
+			next.ServeHTTP(w, r)
+			return
+		}
+		if r.URL.Path != "/healthz" && !isAdminPath {
 			r2 := r.Clone(r.Context())
 			r2.URL.Path = "/admin" + r.URL.Path
 			r2.URL.RawPath = ""

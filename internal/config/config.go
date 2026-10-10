@@ -62,7 +62,7 @@ type Config struct {
 	// Painel da equipe (admin).
 	AdminSessionKey string   // assina o cookie de sessão; 32 caracteres ou mais
 	AdminEmails     []string // garantidos como administradores na partida
-	AdminHost       string   // host que responde só o painel (além de /admin em qualquer host)
+	AdminHost       string   // host que responde só o painel; com ele, /admin não existe em outro host
 	AdminDevLogin   bool     // login só com e-mail, aceito apenas sem SUPABASE_URL (desenvolvimento local)
 	USDBRL          float64  // cotação para o custo de IA no faturamento
 }
@@ -135,10 +135,20 @@ func Load(getenv func(string) string) Config {
 
 		AdminSessionKey: getenv("ADMIN_SESSION_KEY"),
 		AdminEmails:     splitList(getenv("ADMIN_EMAILS")),
-		AdminHost:       strings.ToLower(strings.TrimSpace(orDefault(getenv("ADMIN_HOST"), "admin.meuanuncio.io"))),
+		AdminHost:       adminHost(getenv),
 		AdminDevLogin:   getenv("ADMIN_DEV_LOGIN") == "true",
 		USDBRL:          positiveFloat(strings.Replace(getenv("USD_BRL"), ",", ".", 1), 5.5),
 	}
+}
+
+// adminHost: ADMIN_HOST ou admin.meuanuncio.io. Com ADMIN_DEV_LOGIN=true e sem ADMIN_HOST fica vazio:
+// no desenvolvimento local o painel responde em /admin de qualquer host.
+func adminHost(getenv func(string) string) string {
+	h := strings.ToLower(strings.TrimSpace(getenv("ADMIN_HOST")))
+	if h == "" && getenv("ADMIN_DEV_LOGIN") != "true" {
+		h = "admin.meuanuncio.io"
+	}
+	return h
 }
 
 // splitList separa uma lista por vírgulas, sem espaços nem itens vazios.

@@ -178,7 +178,7 @@ func TestAdminHostRouting(t *testing.T) {
 		return rec
 	}
 	for _, c := range []struct{ host, path string }{
-		{adminHost, "/"}, {"ADMIN.meuanuncio.io:443", "/"}, {adminHost, "/admin/"}, {"api.meuanuncio.io", "/admin/"}, {"localhost:8080", "/admin/"},
+		{adminHost, "/"}, {"ADMIN.meuanuncio.io:443", "/"}, {adminHost, "/admin/"},
 	} {
 		rec := get(c.host, c.path)
 		if rec.Code != 200 || !strings.Contains(rec.Header().Get("Content-Security-Policy"), "script-src 'self'") ||
@@ -186,8 +186,21 @@ func TestAdminHostRouting(t *testing.T) {
 			t.Errorf("%s%s = %d %v", c.host, c.path, rec.Code, rec.Header())
 		}
 	}
-	if rec := get("api.meuanuncio.io", "/admin"); rec.Code != http.StatusMovedPermanently || rec.Header().Get("Location") != "/admin/" {
-		t.Errorf("/admin sem barra = %d %q", rec.Code, rec.Header().Get("Location"))
+	// Com o host do painel configurado, /admin não existe em nenhum outro host (nem a API, nem os arquivos).
+	for _, c := range []struct{ method, host, path string }{
+		{"GET", "api.meuanuncio.io", "/admin"}, {"GET", "api.meuanuncio.io", "/admin/"}, {"GET", "localhost:8080", "/admin/"},
+		{"GET", "meuanuncio.io", "/admin/static/admin.js"}, {"GET", "api.meuanuncio.io", "/admin/api/session"},
+		{"POST", "api.meuanuncio.io", "/admin/api/login/start"}, {"GET", "admin.meuanuncio.io.evil.com", "/admin/"},
+	} {
+		req := httptest.NewRequest(c.method, "https://"+c.host+c.path, strings.NewReader(`{"email":"dono@meuanuncio.io"}`))
+		rec := httptest.NewRecorder()
+		e.h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound || strings.Contains(rec.Body.String(), "admin.js") {
+			t.Errorf("%s %s%s fora do host do painel = %d", c.method, c.host, c.path, rec.Code)
+		}
+	}
+	if len(e.otp.sent) != 0 {
+		t.Errorf("código enviado por fora do host do painel: %v", e.otp.sent)
 	}
 	if rec := get(adminHost, "/static/admin.css"); rec.Code != 200 || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/css") {
 		t.Errorf("css no host do painel = %d", rec.Code)
@@ -204,6 +217,26 @@ func TestAdminHostRouting(t *testing.T) {
 	e.h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("webhook no host do painel = %d", rec.Code)
+	}
+}
+
+// Sem host do painel configurado (desenvolvimento local), o painel continua em /admin.
+func TestAdminWithoutHostServesUnderPrefix(t *testing.T) {
+	e := newAdminEnv(t, "dev")
+	h := httpapi.WithAdminHost("", httpapi.NewMux(e.pool, http.NotFoundHandler(), e.admin.Register))
+	for _, path := range []string{"/admin/", "/admin/static/admin.js", "/admin/api/session"} {
+		req := httptest.NewRequest("GET", "http://localhost:8080"+path, nil)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != 200 {
+			t.Errorf("local %s = %d", path, rec.Code)
+		}
+	}
+	req := httptest.NewRequest("GET", "http://localhost:8080/admin", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusMovedPermanently || rec.Header().Get("Location") != "/admin/" {
+		t.Errorf("/admin sem barra = %d %q", rec.Code, rec.Header().Get("Location"))
 	}
 }
 
