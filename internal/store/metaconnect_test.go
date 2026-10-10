@@ -43,7 +43,7 @@ func (e metaEnv) count(t *testing.T, sql string) int {
 
 var (
 	metaAcc  = meta.AdAccount{ID: "act_1", Name: "Loja", Currency: "BRL", Timezone: "America/Sao_Paulo", BusinessID: "B1", Status: 1}
-	metaPage = meta.Page{ID: "P1", Name: "Loja Page", InstagramID: "IG1", InstagramUsername: "loja", WhatsApp: true}
+	metaPage = meta.Page{ID: "P1", Name: "Loja Page", InstagramID: "IG1", InstagramUsername: "loja", WhatsApp: true, WhatsAppNumber: "+55 49 3333-4444"}
 	metaOne  = store.MetaCandidates{AdAccounts: []meta.AdAccount{metaAcc}, Pages: []meta.Page{metaPage}}
 )
 
@@ -89,7 +89,8 @@ func TestCompleteMetaActivatesAndReplaces(t *testing.T) {
 		t.Fatalf("segunda conclusão: %v", err)
 	}
 	c, ok, err := e.st.ActiveMeta(ctx, e.ident.OrgID)
-	if err != nil || !ok || c.AdAccountID != "act_1" || c.PageName != "Loja Page" || c.InstagramUsername != "loja" || !c.PageWhatsApp || c.Currency != "BRL" {
+	if err != nil || !ok || c.AdAccountID != "act_1" || c.PageName != "Loja Page" || c.InstagramUsername != "loja" || !c.PageWhatsApp || c.Currency != "BRL" ||
+		c.PageWhatsAppNumber != "+55 49 3333-4444" {
 		t.Fatalf("ativa = %+v %v %v", c, ok, err)
 	}
 

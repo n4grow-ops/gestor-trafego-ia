@@ -69,7 +69,7 @@ Se perguntarem, diga que é a Mia, a agente de inteligência artificial do Meu A
 				Objective: "O cliente aprova (SIM + código) ou pede ajuste.", Exit: "Proposta aprovada, ajustada ou recusada.",
 				Instructions: "Se o estado for awaiting_approval: para aprovar, o cliente deve responder SIM seguido do código de 6 dígitos enviado na proposta; se quiser mudar algo, basta dizer o quê."},
 			{Key: "anuncios", Name: "Anúncios (imagens e vídeos)", State: "awaiting_creatives", Order: 6, Active: true,
-				Objective: "Receber as imagens e vídeos da campanha aprovada.", Exit: "O cliente escreve PRONTO com ao menos um anúncio."},
+				Objective: "Receber as imagens e vídeos da campanha aprovada (pelo menos um) e, se o cliente quiser, referências de headlines, textos ou anúncios de que ele gosta.", Exit: "O cliente escreve PRONTO com ao menos um anúncio."},
 		},
 		Segments: []Segment{},
 		Voice:    Voice{Enabled: true},

@@ -103,11 +103,14 @@ func enqueue(ctx context.Context, q querier, j JobSpec) error {
 	return err
 }
 
-// ClaimJob pega o job pronto mais antigo e o trava por 5 minutos.
+// ClaimJob pega o job pronto mais antigo e o trava por 5 minutos. A publicação na Meta (upload e
+// processamento de vídeo, prazo de 15 minutos no worker) fica travada por 20: outro worker não pega o
+// mesmo job no meio e cria a campanha duas vezes.
 func (s *Store) ClaimJob(ctx context.Context) (Job, bool, error) {
 	var j Job
 	err := s.pool.QueryRow(ctx, `UPDATE outbox_jobs
-		SET attempts = attempts + 1, locked_until = now() + interval '5 minutes', updated_at = now()
+		SET attempts = attempts + 1, updated_at = now(),
+		    locked_until = now() + CASE WHEN kind = 'meta.publish' THEN interval '20 minutes' ELSE interval '5 minutes' END
 		WHERE id = (
 			SELECT id FROM outbox_jobs
 			WHERE status = 'pending' AND run_after <= now() AND (locked_until IS NULL OR locked_until < now())

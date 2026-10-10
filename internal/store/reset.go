@@ -146,6 +146,7 @@ func resetOrganizations(ctx context.Context, tx pgx.Tx, orgIDs []int64, phones [
 	steps := []struct{ table, sql string }{
 		{"subscriptions", `DELETE FROM subscriptions WHERE organization_id = ANY($1)`},
 		{"consents", `DELETE FROM consents WHERE member_id IN (SELECT id FROM members WHERE organization_id = ANY($1))`},
+		{"meta_publications", `DELETE FROM meta_publications WHERE organization_id = ANY($1)`},
 		{"creatives", `DELETE FROM creatives WHERE organization_id = ANY($1)`},
 		{"approval_codes", `DELETE FROM approval_codes WHERE draft_id IN (SELECT id FROM campaign_drafts WHERE organization_id = ANY($1))`},
 		{"campaign_drafts", `DELETE FROM campaign_drafts WHERE organization_id = ANY($1)`},
@@ -182,7 +183,7 @@ func resetOrganizations(ctx context.Context, tx pgx.Tx, orgIDs []int64, phones [
 	return rep, nil
 }
 
-var secretPattern = regexp.MustCompile(`(?i)\b(token|key|apikey|api_key|secret|password|senha|authorization|bearer)([=: ]+)("?)[A-Za-z0-9._\-]{8,}`)
+var secretPattern = regexp.MustCompile(`(?i)\b(access_token|appsecret_proof|token|key|apikey|api_key|secret|password|senha|authorization|bearer)([=: ]+)("?)[A-Za-z0-9._\-]{8,}`)
 
 // RedactSecrets troca valores com cara de segredo (token=..., key: ..., Bearer ...) por [oculto].
 func RedactSecrets(s string) string {

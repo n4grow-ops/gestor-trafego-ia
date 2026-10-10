@@ -26,9 +26,10 @@ type PublishInput struct {
 	AdAccountID      string // com ou sem "act_"
 	PageID           string
 	InstagramActorID string // opcional
-	WhatsAppNumber   string // E.164 sem +, opcional
+	WhatsAppNumber   string // número do WhatsApp da Página, só dígitos; opcional (vazio = fica de fora)
+	PageWhatsApp     bool   // a Página tem WhatsApp vinculado (mesmo sem o número conhecido)
 	LinkURL          string // opcional; vazio = página do Facebook
-	Name             string
+	Name             string // terminando em "#p<id>", a campanha de tentativa anterior é procurada e apagada antes
 	Objective        string // OUTCOME_ENGAGEMENT | OUTCOME_LEADS | OUTCOME_TRAFFIC
 	DailyBudgetCents int64  // na moeda da conta
 	StartTime        time.Time
@@ -57,6 +58,9 @@ type PublishError struct {
 	Subcode     int
 	Message     string // técnico
 	UserMessage string // pt-BR, para o cliente
+	// Orphan é a campanha que ficou na conta porque o rollback falhou (a equipe apaga ou a próxima
+	// tentativa acha pela marca do nome).
+	Orphan string
 }
 
 func (e *PublishError) Error() string {
@@ -67,4 +71,18 @@ func (e *PublishError) Error() string {
 type Publisher interface {
 	Publish(ctx context.Context, token string, in PublishInput) (PublishResult, error)
 	SetStatus(ctx context.Context, token, campaignID, status string) error // "ACTIVE" | "PAUSED"
+}
+
+// FirstActivation são os IDs gravados na publicação e o fim do período, contado da ativação.
+type FirstActivation struct {
+	CampaignID string
+	AdSetID    string
+	AdIDs      []string
+	EndTime    time.Time // zero = sem fim
+}
+
+// Activator faz a primeira ativação: liga o conjunto e os anúncios criados na publicação e a campanha.
+// Opcional ao Publisher; *Client implementa.
+type Activator interface {
+	ActivateFirst(ctx context.Context, token string, a FirstActivation) error
 }

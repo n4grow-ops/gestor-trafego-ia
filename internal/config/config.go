@@ -104,6 +104,12 @@ func (c Config) MetaConnectEnabled() bool {
 	return c.PublicBaseURL != "" && c.MetaAppID != "" && c.MetaAppSecret != "" && c.MetaLoginConfigID != "" && c.MetaTokenKey != ""
 }
 
+// MetaPublishEnabled diz se o worker pode publicar na conta do cliente: app da Meta e a chave
+// que abre os tokens guardados pela api.
+func (c Config) MetaPublishEnabled() bool {
+	return c.MetaAppID != "" && c.MetaAppSecret != "" && c.MetaTokenKey != ""
+}
+
 func Load(getenv func(string) string) Config {
 	return Config{
 		DatabaseURL:       getenv("DATABASE_URL"),

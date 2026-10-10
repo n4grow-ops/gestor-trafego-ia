@@ -145,3 +145,25 @@ func TestSetStateAndEnqueue(t *testing.T) {
 		t.Error("job da transação que falhou não deveria existir")
 	}
 }
+
+// I1: a publicação na Meta (upload e processamento de vídeo) passa de 5 minutos; a trava cobre o prazo dela.
+func TestClaimJobLocksPublishLonger(t *testing.T) {
+	st, pool := newStore(t)
+	must(t, st.EnqueueJob(ctx, "meta.publish", map[string]int{"draft_id": 1}))
+	must(t, st.EnqueueJob(ctx, "whatsapp.send", map[string]int{"x": 1}))
+	for range 2 {
+		job, ok, err := st.ClaimJob(ctx)
+		must(t, err)
+		if !ok {
+			t.Fatal("sem job")
+		}
+		var mins float64
+		must(t, pool.QueryRow(ctx, `SELECT extract(epoch FROM locked_until - now()) / 60 FROM outbox_jobs WHERE id = $1`, job.ID).Scan(&mins))
+		if job.Kind == "meta.publish" && mins < 19 {
+			t.Fatalf("trava da publicação = %.1f min", mins)
+		}
+		if job.Kind != "meta.publish" && (mins < 4 || mins > 6) {
+			t.Fatalf("trava de %s = %.1f min", job.Kind, mins)
+		}
+	}
+}

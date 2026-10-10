@@ -29,6 +29,8 @@ type Client struct {
 	GraphURL                                string
 	DialogURL                               string
 	HTTP                                    *http.Client
+	// Sleep espera entre as consultas do processamento de vídeo; nil = espera real (testes trocam).
+	Sleep func(ctx context.Context, d time.Duration) error
 }
 
 func New(appID, appSecret, configID, redirectURI string) *Client {
@@ -52,6 +54,8 @@ type Page struct {
 	InstagramID       string `json:"instagram_id,omitempty"`
 	InstagramUsername string `json:"instagram_username,omitempty"`
 	WhatsApp          bool   `json:"whatsapp"`
+	// WhatsAppNumber é o número vinculado à Página, como a Meta devolve (vazio = sem número ou sem permissão).
+	WhatsAppNumber string `json:"whatsapp_number,omitempty"`
 }
 
 // Assets é o que o cliente liberou no login.
@@ -139,22 +143,23 @@ func (c *Client) Assets(ctx context.Context, token string) (Assets, error) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			a.Pages[i].WhatsApp = c.pageWhatsApp(ctx, token, x.ID)
+			num := c.pageWhatsApp(ctx, token, x.ID)
+			a.Pages[i].WhatsApp, a.Pages[i].WhatsAppNumber = num != "", num
 		}()
 	}
 	wg.Wait()
 	return a, nil
 }
 
-// pageWhatsApp diz se a Página tem número de WhatsApp vinculado. Erro (campo sem permissão) conta como não.
-func (c *Client) pageWhatsApp(ctx context.Context, token, pageID string) bool {
+// pageWhatsApp devolve o número de WhatsApp vinculado à Página. Erro (campo sem permissão) conta como sem número.
+func (c *Client) pageWhatsApp(ctx context.Context, token, pageID string) string {
 	var p struct {
 		WhatsApp string `json:"whatsapp_number"`
 	}
 	if err := c.get(ctx, "/"+url.PathEscape(pageID), c.auth(token, url.Values{"fields": {"whatsapp_number"}}), &p); err != nil {
-		return false
+		return ""
 	}
-	return strings.TrimSpace(p.WhatsApp) != ""
+	return strings.TrimSpace(p.WhatsApp)
 }
 
 func (c *Client) auth(token string, q url.Values) url.Values {

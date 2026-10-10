@@ -23,6 +23,25 @@ type Worker struct {
 	Timeout time.Duration // prazo de cada evento ou job (padrão 2 min)
 }
 
+// Prazos próprios por tipo de job: a publicação na Meta sobe vídeos e espera a Meta processar (até ~10 min).
+// A trava do job no store (ClaimJob) é maior que esses prazos.
+var jobTimeouts = map[string]time.Duration{
+	engine.JobMetaPublish: engine.PublishTimeout,
+}
+
+// TimeoutFor é o prazo de um job do tipo: o próprio do tipo, senão Timeout (padrão 2 min).
+func (w *Worker) TimeoutFor(kind string) time.Duration {
+	if d, ok := jobTimeouts[kind]; ok {
+		return d
+	}
+	if w.Timeout > 0 {
+		return w.Timeout
+	}
+	return defaultTimeout
+}
+
+const defaultTimeout = 2 * time.Minute
+
 // Run processa até o contexto ser cancelado.
 func (w *Worker) Run(ctx context.Context) error {
 	idle := w.Idle
@@ -64,7 +83,7 @@ func (w *Worker) inbox(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	var kind whatsapp.Kind
-	procErr := w.safely(ctx, func(ctx context.Context) error {
+	procErr := w.safely(ctx, w.TimeoutFor(""), func(ctx context.Context) error {
 		parser := w.WA
 		if p, ok := w.Parsers[ev.Provider]; ok && p != nil {
 			parser = p
@@ -94,7 +113,7 @@ func (w *Worker) job(ctx context.Context) (bool, error) {
 	if err != nil || !ok {
 		return false, err
 	}
-	procErr := w.safely(ctx, func(ctx context.Context) error { return w.Engine.HandleJob(ctx, job) })
+	procErr := w.safely(ctx, w.TimeoutFor(job.Kind), func(ctx context.Context) error { return w.Engine.HandleJob(ctx, job) })
 	if procErr != nil {
 		w.Log.Error("job falhou", "job_id", job.ID, "tipo", job.Kind, "tentativa", job.Attempts, "erro", procErr)
 	}
@@ -103,7 +122,7 @@ func (w *Worker) job(ctx context.Context) (bool, error) {
 		return true, err
 	}
 	if failed {
-		if err := w.safely(ctx, func(ctx context.Context) error { return w.Engine.OnJobFailed(ctx, job) }); err != nil {
+		if err := w.safely(ctx, w.TimeoutFor(""), func(ctx context.Context) error { return w.Engine.OnJobFailed(ctx, job) }); err != nil {
 			w.Log.Error("falha ao tratar job esgotado", "job_id", job.ID, "erro", err)
 		}
 	}
@@ -111,11 +130,7 @@ func (w *Worker) job(ctx context.Context) (bool, error) {
 }
 
 // safely aplica o prazo e transforma panic em erro, para um evento ruim não derrubar o worker.
-func (w *Worker) safely(ctx context.Context, fn func(context.Context) error) (err error) {
-	timeout := w.Timeout
-	if timeout <= 0 {
-		timeout = 2 * time.Minute
-	}
+func (w *Worker) safely(ctx context.Context, timeout time.Duration, fn func(context.Context) error) (err error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	defer func() {

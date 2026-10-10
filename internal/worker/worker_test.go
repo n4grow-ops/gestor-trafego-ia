@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -180,5 +181,20 @@ func TestTickRedactsFlowAnswers(t *testing.T) {
 	}
 	if payload != `{"redacted": true}` {
 		t.Fatalf("payload = %s", payload)
+	}
+}
+
+// I1: a publicação na Meta tem prazo próprio, maior que o padrão de 2 minutos e menor que a trava do job.
+func TestPublishJobHasLongerTimeout(t *testing.T) {
+	w := &worker.Worker{}
+	if got := w.TimeoutFor(engine.JobMetaPublish); got != 15*time.Minute {
+		t.Fatalf("prazo da publicação = %v", got)
+	}
+	if got := w.TimeoutFor(engine.JobSend); got != 2*time.Minute {
+		t.Fatalf("prazo padrão = %v", got)
+	}
+	w.Timeout = time.Minute
+	if got := w.TimeoutFor(engine.JobMetaPublish); got != 15*time.Minute {
+		t.Fatalf("prazo da publicação com Timeout curto = %v", got)
 	}
 }

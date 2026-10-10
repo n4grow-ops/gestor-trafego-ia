@@ -96,7 +96,9 @@ func TestExchangeCodeAndAssets(t *testing.T) {
 	if a.UserID != "U1" || len(a.AdAccounts) != 1 || a.AdAccounts[0].BusinessID != "B1" || a.AdAccounts[0].Currency != "BRL" || a.AdAccounts[0].Status != 1 {
 		t.Fatalf("contas = %+v", a)
 	}
-	if len(a.Pages) != 2 || a.Pages[0].InstagramUsername != "loja" || !a.Pages[0].WhatsApp || a.Pages[1].WhatsApp {
+	// I3: o número da Página é guardado para o promoted_object (não o do membro do chat)
+	if len(a.Pages) != 2 || a.Pages[0].InstagramUsername != "loja" || !a.Pages[0].WhatsApp || a.Pages[1].WhatsApp ||
+		a.Pages[0].WhatsAppNumber != "+5511999990000" || a.Pages[1].WhatsAppNumber != "" {
 		t.Fatalf("páginas = %+v", a.Pages)
 	}
 }
