@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
-
 	"image"
+	"time"
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/media"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/preview"
@@ -70,23 +70,27 @@ func (e *Engine) sendPreview(ctx context.Context, j PreviewJob) error {
 	if err := e.Store.AddMessage(ctx, conv.ID, "out", "image", "[prévia do anúncio no Instagram enviada]"); err != nil {
 		return err
 	}
-	if e.MetaConnectBaseURL == "" {
-		return nil
-	}
-	// Projeto pronto sem conta conectada: já pede a conexão. Falha aqui não reenvia a prévia.
-	if err := e.askMetaAfterPreview(ctx, conv); err != nil {
-		e.Log.Error("falha ao pedir conexão meta depois da prévia", "conversation_id", conv.ID, "erro", err)
+	// Projeto pronto: com conta conectada vai para a Meta; sem ela, já pede a conexão.
+	// Falha aqui não reenvia a prévia.
+	if err := e.afterPreview(ctx, conv, j.DraftID); err != nil {
+		e.Log.Error("falha ao seguir depois da prévia", "conversation_id", conv.ID, "erro", err)
 	}
 	return nil
 }
 
-func (e *Engine) askMetaAfterPreview(ctx context.Context, conv store.Conversation) error {
+func (e *Engine) afterPreview(ctx context.Context, conv store.Conversation, draftID int64) error {
 	ident, err := e.Store.GetIdentity(ctx, conv.IdentityID)
 	if err != nil {
 		return err
 	}
-	if _, ok, err := e.Store.ActiveMeta(ctx, ident.OrgID); err != nil || ok {
+	_, ok, err := e.Store.ActiveMeta(ctx, ident.OrgID)
+	switch {
+	case err != nil:
 		return err
+	case ok:
+		return e.Store.Enqueue(ctx, publishJob(conv.ID, draftID, 2*time.Second))
+	case e.MetaConnectBaseURL == "":
+		return nil
 	}
 	return e.sendMetaLink(ctx, ident, conv, "")
 }
