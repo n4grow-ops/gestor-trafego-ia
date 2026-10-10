@@ -37,7 +37,8 @@
   --t-fast: 150ms; --t: 200ms; --t-slow: 250ms;
   --font: "Figtree", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --z-sticky: 10; --z-side: 20; --z-backdrop: 30; --z-drawer: 40; --z-toast: 60;
-  --side-w: 15.5rem;
+  --side-w: 15.5rem; --rail-w: 4.5rem;
+  --t-side: 240ms; --side-shadow: 24px 0 48px -18px oklch(0.05 0.03 264 / 0.8);
 }
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); }
@@ -92,27 +93,38 @@ a { color: var(--blue-text); }
 @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 
 /* ============ estrutura ============ */
-.app { display: grid; grid-template-columns: var(--side-w) 1fr; height: 100dvh; }
-.side { background: var(--side); border-right: 1px solid var(--line-soft); display: flex; flex-direction: column; min-height: 0; z-index: var(--z-side); }
-.brand { display: flex; align-items: center; gap: 0.7rem; padding: 1.15rem 1.1rem 1rem; }
-.brand img { width: 2.6rem; height: auto; }
+/* Menu lateral: no desktop é um trilho só de ícones (--rail-w) que se abre por cima do conteúdo
+   no hover/foco de teclado (body.side-x), sem empurrar a página. Fixado (body.side-pinned) vira coluna.
+   No celular é uma gaveta (body.side-open) aberta pelo botão do topo. */
+.app { display: grid; grid-template-columns: minmax(0, 1fr); height: 100dvh; }
+.side {
+  position: fixed; inset: 0 auto 0 0; background: var(--side); border-right: 1px solid var(--line-soft);
+  display: flex; flex-direction: column; min-height: 0; z-index: var(--z-side); overflow: hidden;
+}
+.brand { display: flex; align-items: center; gap: 0.7rem; padding: 1.15rem 0.75rem 1rem 0.95rem; min-height: 4.25rem; }
+.brand img { width: 2.6rem; height: auto; flex: none; }
+.brand-t { min-width: 0; flex: 1; white-space: nowrap; }
 .brand .wordmark { font-size: 1rem; display: block; line-height: 1.1; }
 .brand small { display: block; font-size: 0.75rem; color: var(--faint); margin-top: 0.15rem; }
-.nav { flex: 1; overflow-y: auto; padding: 0.25rem 0.6rem 1rem; display: grid; align-content: start; gap: 2px; }
-.nav-group { font-size: 0.75rem; color: var(--faint); padding: 1rem 0.6rem 0.35rem; }
+.pin-btn { width: 2rem; height: 2rem; }
+.pin-btn[aria-pressed="true"] { color: var(--cyan); background: var(--cyan-soft); border-color: oklch(0.76 0.145 237 / 0.4); }
+.nav { flex: 1; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; padding: 0.25rem 0.75rem 1rem; display: grid; align-content: start; gap: 2px; }
+.nav-group { position: relative; font-size: 0.75rem; color: var(--faint); padding: 1rem 0.6rem 0.35rem; white-space: nowrap; }
 .nav a {
-  position: relative; display: flex; align-items: center; gap: 0.7rem; padding: 0.5rem 0.6rem; border-radius: var(--r-sm);
-  color: var(--muted); text-decoration: none; font-weight: 500;
+  position: relative; display: flex; align-items: center; gap: 0.75rem; min-height: 2.75rem; padding: 0.5rem 0.9375rem; border-radius: var(--r-sm);
+  color: var(--muted); text-decoration: none; font-weight: 500; white-space: nowrap;
   transition: color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease);
 }
 .nav a:hover { color: var(--text); background: var(--surface); }
-.nav a[aria-current="page"] { color: var(--text); background: var(--surface-2); }
-.nav a[aria-current="page"]::before { content: ""; position: absolute; left: -0.6rem; top: 0.45rem; bottom: 0.45rem; width: 3px; border-radius: 0 3px 3px 0; background: var(--brand-grad); }
+.nav a[aria-current="page"] { color: var(--text); background: var(--blue-soft); }
+.nav a[aria-current="page"]:hover { background: oklch(0.6 0.215 263 / 0.26); }
 .nav a[aria-current="page"] .ico { color: var(--cyan); }
+.nav a:focus-visible { outline-offset: -2px; }
+.nav-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .nav .count { margin-left: auto; font-size: 0.75rem; font-weight: 700; min-width: 1.4rem; text-align: center; padding: 0.1rem 0.4rem; border-radius: 999px; background: var(--surface-3); color: var(--text-2); }
 .nav .count.hot { background: var(--warn-soft); color: var(--warn); }
 body:not(.is-admin) [data-admin] { display: none; }
-.me { border-top: 1px solid var(--line-soft); padding: 0.8rem; }
+.me { border-top: 1px solid var(--line-soft); padding: 0.8rem 0.8rem 0.8rem 1.25rem; }
 .me-row { display: flex; align-items: center; gap: 0.65rem; }
 .me-txt { min-width: 0; flex: 1; }
 .me-row b { font-size: 0.875rem; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -124,7 +136,7 @@ body:not(.is-admin) [data-admin] { display: none; }
 .mini-av { width: 2rem; height: 2rem; font-size: 0.75rem; background: var(--surface-3); color: var(--text-2); }
 .mini-av.hot { background: var(--warn-soft); color: var(--warn); }
 
-.main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.main { grid-column: -2 / -1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .top { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1.5rem; min-height: 3.75rem; border-bottom: 1px solid var(--line-soft); background: var(--bg); z-index: var(--z-sticky); }
 .search {
   display: flex; align-items: center; gap: 0.6rem; flex: 0 1 22rem; min-width: 0; padding: 0.45rem 0.75rem; border-radius: 999px;
@@ -550,6 +562,30 @@ textarea.field { resize: vertical; min-height: 5rem; line-height: 1.45; }
   .savebar .field { width: 100%; order: 3; }
 }
 
+/* ============ menu lateral: trilho retrátil (desktop) ============ */
+@media (min-width: 901px) {
+  .app { grid-template-columns: var(--rail-w) minmax(0, 1fr); transition: grid-template-columns var(--t-side) var(--ease-out); }
+  .side { width: var(--rail-w); transition: width var(--t-side) var(--ease-out), box-shadow var(--t-side) var(--ease-out), border-color var(--t-side) var(--ease-out); }
+  .side > * { width: var(--side-w); flex-shrink: 0; }
+  .side > .nav { flex-shrink: 1; }
+  body.side-x .side { width: var(--side-w); }
+  body.side-x:not(.side-pinned) .side { box-shadow: var(--side-shadow); border-right-color: var(--line); }
+  body.side-pinned .app { grid-template-columns: var(--side-w) minmax(0, 1fr); }
+  /* textos somem no trilho e entram logo depois da abertura */
+  .side .nav-t, .side .brand-t, .side .pin-btn, .side .me-txt, .side #logout { opacity: 0; transition: opacity 110ms var(--ease); }
+  body.side-x .side .nav-t, body.side-x .side .brand-t, body.side-x .side .pin-btn, body.side-x .side .me-txt, body.side-x .side #logout { opacity: 1; transition: opacity 180ms var(--ease-out) 80ms; }
+  /* grupo vira um fio horizontal no trilho */
+  .nav-group::after { content: ""; position: absolute; left: 0.9375rem; width: 1.125rem; bottom: 0.85rem; height: 1px; background: var(--line); transition: opacity 110ms var(--ease); }
+  body.side-x .nav-group::after { opacity: 0; }
+  /* contadores viram selo no canto do ícone enquanto fechado */
+  body:not(.side-x) .nav .count { position: absolute; top: 0.2rem; left: 1.55rem; margin: 0; min-width: 1.1rem; padding: 0 0.25rem; font-size: 0.625rem; line-height: 1.1rem; box-shadow: 0 0 0 2px var(--side); }
+  body:not(.side-x) .nav .count.hot { background: var(--warn); color: var(--side); }
+}
+/* telas largas sem mouse (tablet deitado): o botão do topo abre o menu por cima */
+@media (min-width: 901px) and (hover: none) {
+  .icon-btn.menu-btn { display: grid; }
+}
+
 /* ============ responsivo ============ */
 @media (max-width: 1280px) {
   .chat-wrap { grid-template-columns: 18rem minmax(0, 1fr); }
@@ -565,8 +601,8 @@ textarea.field { resize: vertical; min-height: 5rem; line-height: 1.45; }
   .l-head > :nth-child(2), .l-row > :nth-child(2), .l-head > :nth-child(4), .l-row > :nth-child(4) { display: none; }
 }
 @media (max-width: 900px) {
-  .app { grid-template-columns: 1fr; }
-  .side { position: fixed; inset: 0 auto 0 0; width: 17rem; transform: translateX(-104%); transition: transform var(--t-slow) var(--ease-out); z-index: var(--z-drawer); }
+  .pin-btn { display: none; }
+  .side { width: 17rem; transform: translateX(-104%); transition: transform var(--t-slow) var(--ease-out); z-index: var(--z-drawer); }
   body.side-open .side { transform: none; }
   .icon-btn.menu-btn { display: grid; }
   .top { padding: 0.6rem 1rem; gap: 0.5rem; }

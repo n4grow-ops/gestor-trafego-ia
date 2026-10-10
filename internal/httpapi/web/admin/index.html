@@ -51,6 +51,7 @@
     <symbol id="i-down-c" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></symbol>
     <symbol id="i-play" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l12-7.5z"/></symbol>
     <symbol id="i-history" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.2V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.8a2 2 0 0 0-1.1-1.8l-1.8-.9a2 2 0 0 1-1.1-1.8V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></symbol>
     <symbol id="i-mail" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></symbol>
   </defs>
 </svg>
@@ -84,18 +85,19 @@
   <aside class="side" id="side" aria-label="Menu">
     <div class="brand">
       <img src="static/marca.png" alt="" width="46" height="25">
-      <div><b class="wordmark small">meu anúncio<span>.io</span></b><small>Painel da equipe</small></div>
+      <div class="brand-t"><b class="wordmark small">meu anúncio<span>.io</span></b><small>Painel da equipe</small></div>
+      <button class="icon-btn pin-btn" id="pin-side" type="button" aria-pressed="false" aria-label="Fixar menu aberto" title="Fixar menu aberto"><svg class="ico-sm" aria-hidden="true"><use href="#i-pin"/></svg></button>
     </div>
     <nav class="nav" id="nav" aria-label="Seções">
-      <a href="#/visao" data-route="visao"><svg class="ico"><use href="#i-home"/></svg><span>Visão geral</span></a>
-      <a href="#/clientes" data-route="clientes"><svg class="ico"><use href="#i-users"/></svg><span>Clientes</span><span class="count num" id="nav-clients" hidden></span></a>
-      <a href="#/conversas" data-route="conversas"><svg class="ico"><use href="#i-chat"/></svg><span>Conversas</span><span class="count hot num" id="nav-human" hidden></span></a>
-      <a href="#/faturamento" data-route="faturamento" data-admin><svg class="ico"><use href="#i-money"/></svg><span>Faturamento</span></a>
-      <a href="#/mia" data-route="mia" data-admin><svg class="ico"><use href="#i-bot"/></svg><span>Mia</span></a>
-      <div class="nav-group">Operação</div>
-      <a href="#/whatsapp" data-route="whatsapp"><svg class="ico"><use href="#i-wa"/></svg><span>WhatsApp</span></a>
-      <a href="#/equipe" data-route="equipe" data-admin><svg class="ico"><use href="#i-team"/></svg><span>Equipe</span></a>
-      <a href="#/registro" data-route="registro"><svg class="ico"><use href="#i-log"/></svg><span>Registro de ações</span></a>
+      <a href="#/visao" data-route="visao"><svg class="ico" aria-hidden="true"><use href="#i-home"/></svg><span class="nav-t">Visão geral</span></a>
+      <a href="#/clientes" data-route="clientes"><svg class="ico" aria-hidden="true"><use href="#i-users"/></svg><span class="nav-t">Clientes</span><span class="count num" id="nav-clients" hidden></span></a>
+      <a href="#/conversas" data-route="conversas"><svg class="ico" aria-hidden="true"><use href="#i-chat"/></svg><span class="nav-t">Conversas</span><span class="count hot num" id="nav-human" hidden></span></a>
+      <a href="#/faturamento" data-route="faturamento" data-admin><svg class="ico" aria-hidden="true"><use href="#i-money"/></svg><span class="nav-t">Faturamento</span></a>
+      <a href="#/mia" data-route="mia" data-admin><svg class="ico" aria-hidden="true"><use href="#i-bot"/></svg><span class="nav-t">Mia</span></a>
+      <div class="nav-group"><span class="nav-t">Operação</span></div>
+      <a href="#/whatsapp" data-route="whatsapp"><svg class="ico" aria-hidden="true"><use href="#i-wa"/></svg><span class="nav-t">WhatsApp</span></a>
+      <a href="#/equipe" data-route="equipe" data-admin><svg class="ico" aria-hidden="true"><use href="#i-team"/></svg><span class="nav-t">Equipe</span></a>
+      <a href="#/registro" data-route="registro"><svg class="ico" aria-hidden="true"><use href="#i-log"/></svg><span class="nav-t">Registro de ações</span></a>
     </nav>
     <div class="me">
       <div class="me-row"><span class="avatar" id="me-avatar"></span><div class="me-txt"><b id="me-name"></b><small id="me-role"></small></div>
@@ -106,7 +108,7 @@
 
   <div class="main">
     <header class="top">
-      <button class="icon-btn menu-btn" id="menu-btn" type="button" aria-label="Abrir menu"><svg class="ico"><use href="#i-menu"/></svg></button>
+      <button class="icon-btn menu-btn" id="menu-btn" type="button" aria-label="Abrir menu" aria-controls="side" aria-expanded="false"><svg class="ico"><use href="#i-menu"/></svg></button>
       <button class="search" id="open-cmdk" type="button"><svg class="ico-sm"><use href="#i-search"/></svg><span>Buscar cliente, conversa ou ação</span><kbd>Ctrl K</kbd></button>
       <div class="pulse-row">
         <a class="status-pill" href="#/whatsapp" id="pill-wa"><span class="dot off" id="dot-wa"></span><span class="lbl">WhatsApp</span></a>

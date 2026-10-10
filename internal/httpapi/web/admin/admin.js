@@ -749,7 +749,7 @@ async function render(quiet = false) {
   if (name !== 'conversas') state.conv.sel = null;
   state.route = name;
   $$('#nav a').forEach(a => a.dataset.route === name ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current'));
-  document.body.classList.remove('side-open'); $('#side-backdrop').classList.remove('on');
+  setSideOpen(false);
   const view = $('#view'), seq = ++renderSeq;
   try {
     if (DIRECT.has(name)) { await views[name](view); return; }
@@ -825,7 +825,8 @@ document.addEventListener('click', async e => {
     if (ok) { toast(ds.email + ' saiu da equipe. A sessão dela cai na hora.', 'warn', 'trash'); rerender(); }
     return;
   }
-  if (t.id === 'menu-btn') { document.body.classList.add('side-open'); $('#side-backdrop').classList.add('on'); return; }
+  if (t.id === 'menu-btn') { setSideOpen(!document.body.classList.contains('side-open'), true); return; }
+  if (t.id === 'pin-side') { togglePin(); return; }
   if (t.id === 'open-cmdk') { openCmdk(); return; }
 });
 document.addEventListener('submit', async e => {
@@ -840,7 +841,55 @@ document.addEventListener('submit', async e => {
   if (ok) { ta.value = ''; ta.style.height = ''; ta.focus(); pollThread(); }
 });
 $('#drawer-backdrop').addEventListener('click', closeDrawer);
-$('#side-backdrop').addEventListener('click', () => { document.body.classList.remove('side-open'); $('#side-backdrop').classList.remove('on'); });
+$('#side-backdrop').addEventListener('click', () => setSideOpen(false));
+
+/* ===================== menu lateral ===================== */
+/* Desktop com mouse: trilho de ícones que abre por cima do conteúdo no hover (atraso curto na saída
+   para não piscar) e no foco por teclado. Fixar mantém aberto e vira coluna (localStorage).
+   Celular e telas sem mouse: o botão do topo abre; Esc, toque fora ou navegar fecham. */
+const sideEl = $('#side'), menuBtn = $('#menu-btn'), pinBtn = $('#pin-side');
+const wide = matchMedia('(min-width: 901px)');
+const SIDE_KEY = 'meuanuncio.admin.sidePinned';
+const side = { hover: false, kbd: false, pinned: false, timer: 0 };
+try { side.pinned = localStorage.getItem(SIDE_KEY) === '1'; } catch { /* sem armazenamento: começa recolhido */ }
+function syncSide() {
+  const open = document.body.classList.contains('side-open');
+  document.body.classList.toggle('side-x', wide.matches && (side.hover || side.kbd || side.pinned || open));
+  document.body.classList.toggle('side-pinned', wide.matches && side.pinned);
+  menuBtn.setAttribute('aria-expanded', String(open));
+  menuBtn.setAttribute('aria-label', open ? 'Fechar menu' : 'Abrir menu');
+  pinBtn.setAttribute('aria-pressed', String(side.pinned));
+  pinBtn.setAttribute('aria-label', side.pinned ? 'Soltar menu' : 'Fixar menu aberto');
+  pinBtn.title = pinBtn.getAttribute('aria-label');
+  sideEl.inert = !wide.matches && !open; // gaveta fechada no celular fica fora do Tab
+}
+function setSideOpen(on, moveFocus = false) {
+  const was = document.body.classList.contains('side-open');
+  document.body.classList.toggle('side-open', on);
+  $('#side-backdrop').classList.toggle('on', on && !wide.matches);
+  syncSide();
+  if (!moveFocus) return;
+  if (on) ($('#nav a[aria-current="page"]') || $('#nav a')).focus();
+  else if (was && getComputedStyle(menuBtn).display !== 'none') menuBtn.focus();
+}
+function togglePin() {
+  side.pinned = !side.pinned;
+  try { localStorage.setItem(SIDE_KEY, side.pinned ? '1' : '0'); } catch { /* vale só nesta aba */ }
+  syncSide();
+}
+function hoverSide(on, delay) {
+  clearTimeout(side.timer);
+  side.timer = setTimeout(() => { side.hover = on; syncSide(); }, delay);
+}
+sideEl.addEventListener('pointerenter', e => { if (e.pointerType !== 'touch' && wide.matches) hoverSide(true, 40); });
+sideEl.addEventListener('pointerleave', e => { if (e.pointerType !== 'touch') hoverSide(false, 200); });
+sideEl.addEventListener('focusin', e => { if (wide.matches && e.target.matches(':focus-visible')) { side.kbd = true; syncSide(); } });
+sideEl.addEventListener('focusout', e => { if (!sideEl.contains(e.relatedTarget)) { side.kbd = false; syncSide(); } });
+document.addEventListener('pointerdown', e => {
+  if (wide.matches && document.body.classList.contains('side-open') && !sideEl.contains(e.target) && !menuBtn.contains(e.target)) setSideOpen(false);
+});
+wide.addEventListener('change', () => { side.hover = side.kbd = false; setSideOpen(false); });
+syncSide();
 
 /* ===================== Ctrl+K ===================== */
 const CMDS = [
@@ -884,6 +933,8 @@ $('#cmdk').addEventListener('click', e => { if (e.target === $('#cmdk')) $('#cmd
 document.addEventListener('keydown', e => {
   if (!state.me) return;
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openCmdk(); return; }
+  if (e.key === 'Escape' && document.body.classList.contains('side-open') && !$('#cmdk').open) { setSideOpen(false, true); return; }
+  if (e.key === 'Escape' && side.kbd && sideEl.contains(document.activeElement) && !$('#cmdk').open) { $('#view').focus(); return; }
   if (e.key === 'Escape' && $('#drawer').classList.contains('on') && !$('#cmdk').open) { closeDrawer(); return; }
   const d = $('#cmdk');
   if (d.open && ['ArrowDown', 'ArrowUp', 'Enter'].includes(e.key)) {
