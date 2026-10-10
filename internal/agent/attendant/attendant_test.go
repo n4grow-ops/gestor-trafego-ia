@@ -185,3 +185,18 @@ func TestPromptCarriesMetaConnection(t *testing.T) {
 		t.Fatal("função desligada não deve aparecer no prompt")
 	}
 }
+
+// A Atendente é a Mia: persona com nome, jeito e limites claros.
+func TestSystemPromptHasMiaPersona(t *testing.T) {
+	fake := &llm.Fake{Responses: []string{validTurn}}
+	a := attendant.Agent{LLM: fake, Model: "flash"}
+	if _, _, err := a.Reply(ctx, attendant.Input{OrgName: "X", State: "collecting", Message: "oi"}); err != nil {
+		t.Fatal(err)
+	}
+	sys := fake.Requests[0].Messages[0].Content
+	for _, want := range []string{"Você é a Mia", "Personalidade da Mia", "PENSE COMO ESTRATEGISTA", "Minha sugestão é", "Nunca invente", "Nunca diga que é uma IA genérica"} {
+		if !strings.Contains(sys, want) {
+			t.Errorf("persona sem %q", want)
+		}
+	}
+}

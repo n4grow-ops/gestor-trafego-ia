@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	msgSignupFlow      = "Pra gente começar, faz seu cadastro aqui mesmo no WhatsApp. Leva uns 2 minutos e, assim que terminar, a gente continua a conversa."
+	msgSignupFlow      = "Oi! Eu sou a Mia, do Meu Anúncio. Antes de montarmos seus anúncios, preciso do seu cadastro, que é feito aqui mesmo no WhatsApp e leva uns 2 minutos. Assim que terminar, seguimos a conversa."
 	msgSignupFlowFix   = "Quase lá! Só falta ajustar: %s. Toca no botão de novo pra corrigir."
 	msgSignupFlowRetry = "Não consegui ler seu cadastro. Toca no botão abaixo pra preencher de novo, por favor."
 	msgSignupDone      = "Seu cadastro já está concluído 🙂 Pode seguir por aqui."
