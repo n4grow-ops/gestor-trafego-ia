@@ -60,6 +60,8 @@ type Creative struct {
 	RightsPending bool
 	SourceURL     string // link do post
 	SourceCaption string // legenda do post (vira referência no SÓ REFERÊNCIA)
+	// SourcePosition: posição do item no post (0 = primeira mídia); nil = upload. Só gravado, não lido.
+	SourcePosition *int
 }
 
 // Origens dos anúncios.
@@ -93,11 +95,23 @@ func (s *Store) AddCreative(ctx context.Context, c Creative) (int64, error) {
 	}
 	var id int64
 	err := s.pool.QueryRow(ctx, `INSERT INTO creatives (organization_id, draft_id, project_id, kind, storage_path, mime, size_bytes,
-			width, height, duration_ms, format, placement, origin, ig_media_id, rights_confirmed, source_url, source_caption)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, nullif($8, 0), nullif($9, 0), nullif($10, 0), $11, $12, $13, $14, $15, $16, $17) RETURNING id`,
+			width, height, duration_ms, format, placement, origin, ig_media_id, rights_confirmed, source_url, source_caption,
+			source_position)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, nullif($8, 0), nullif($9, 0), nullif($10, 0), $11, $12, $13, $14, $15, $16, $17, $18) RETURNING id`,
 		c.OrgID, c.DraftID, c.ProjectID, c.Kind, c.Path, c.Mime, c.Size, c.Width, c.Height, c.DurationMS, c.Format, c.Placement,
-		c.Origin, c.IGMediaID, !c.RightsPending, c.SourceURL, c.SourceCaption).Scan(&id)
+		c.Origin, c.IGMediaID, !c.RightsPending, c.SourceURL, c.SourceCaption, c.SourcePosition).Scan(&id)
 	return id, err
+}
+
+// HasInstagramCreative diz se o item do post (posição pos) já está no rascunho: pelo link do post ou,
+// vindo da Graph API, pelo id do post. A nova tentativa do job pula o que já guardou.
+func (s *Store) HasInstagramCreative(ctx context.Context, draftID int64, sourceURL, igMediaID string, pos int) (bool, error) {
+	var ok bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM creatives
+		WHERE draft_id = $1 AND source_position = $4
+		  AND ((source_url <> '' AND source_url = $2) OR (ig_media_id <> '' AND ig_media_id = $3)))`,
+		draftID, sourceURL, igMediaID, pos).Scan(&ok)
+	return ok, err
 }
 
 func (s *Store) CountCreatives(ctx context.Context, draftID int64) (int, error) {

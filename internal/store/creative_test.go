@@ -86,3 +86,35 @@ func TestCreativeOriginAndRights(t *testing.T) {
 		}
 	}
 }
+
+// Item do post já guardado no rascunho: mesmo link e posição, ou mesmo post da Graph API e posição.
+func TestHasInstagramCreative(t *testing.T) {
+	f := seedDraft(t)
+	must(t, f.st.ApproveDraft(ctx, f.draftID, f.ident.MemberID, goodCode, t0))
+	pos := func(n int) *int { return &n }
+	_, err := f.st.AddCreative(ctx, store.Creative{OrgID: f.ident.OrgID, DraftID: f.draftID, Kind: "image", Mime: "image/jpeg", Path: "a.jpg",
+		Origin: store.OriginInstagramOwn, IGMediaID: "1789", SourceURL: "https://www.instagram.com/p/A/", SourcePosition: pos(1)})
+	must(t, err)
+	_, err = f.st.AddCreative(ctx, store.Creative{OrgID: f.ident.OrgID, DraftID: f.draftID, Kind: "image", Mime: "image/jpeg", Path: "up.jpg"})
+	must(t, err)
+	for _, c := range []struct {
+		url, media string
+		pos        int
+		want       bool
+	}{
+		{"https://www.instagram.com/p/A/", "", 1, true},
+		{"https://www.instagram.com/p/OUTRO/", "1789", 1, true}, // mesmo post pela API
+		{"https://www.instagram.com/p/A/", "", 0, false},        // outro item do carrossel
+		{"https://www.instagram.com/p/B/", "", 1, false},
+		{"", "", 1, false}, // link vazio não casa com upload
+	} {
+		got, err := f.st.HasInstagramCreative(ctx, f.draftID, c.url, c.media, c.pos)
+		must(t, err)
+		if got != c.want {
+			t.Errorf("HasInstagramCreative(%q, %q, %d) = %v", c.url, c.media, c.pos, got)
+		}
+	}
+	if got, _ := f.st.HasInstagramCreative(ctx, f.draftID+999, "https://www.instagram.com/p/A/", "", 1); got {
+		t.Error("outro rascunho")
+	}
+}

@@ -435,6 +435,48 @@ func TestInstagramSavesEachItemBeforeNext(t *testing.T) {
 	}
 }
 
+// I6: nova tentativa do mesmo job não duplica os anúncios já guardados (nem baixa de novo).
+func TestInstagramRetryDoesNotDuplicate(t *testing.T) {
+	for _, own := range []bool{true, false} {
+		h, _, _, ig, fs := newIGHarness(t)
+		post := instagram.Post{Permalink: "https://www.instagram.com/p/CAR1/", Items: []instagram.Item{igSquare, igVertical}}
+		if own {
+			h.connectMetaIG()
+			post.MediaID = "1789"
+			ig.own["CAR1"] = post
+		} else {
+			ig.pub["CAR1"] = post
+		}
+		h.say("SIM " + h.reachApproval())
+		h.say("https://www.instagram.com/p/CAR1/")
+		h.runKind(engine.JobInstagramFetch)
+		saves := 0
+		ig.afterSave = func(int) { saves++ }
+		// o job roda de novo (worker caiu depois de guardar, antes de fechar o job)
+		_, err := h.pool.Exec(ctx, `INSERT INTO outbox_jobs (kind, payload) SELECT kind, payload FROM outbox_jobs WHERE kind = $1`, engine.JobInstagramFetch)
+		h.must(err)
+		h.runKind(engine.JobInstagramFetch)
+		if h.creatives() != 2 || fs.count() != 2 || saves != 0 {
+			t.Fatalf("own=%v: criativos = %d arquivos = %d guardados de novo = %d", own, h.creatives(), fs.count(), saves)
+		}
+	}
+}
+
+// I6: guardou e o aviso não saiu: o job fica concluído, sem baixar tudo de novo.
+func TestInstagramSendFailureDoesNotRetry(t *testing.T) {
+	h, _, _, ig, _ := newIGHarness(t)
+	h.connectMetaIG()
+	ig.own["MEU1"] = instagram.Post{MediaID: "1789", Items: []instagram.Item{igSquare}}
+	h.say("SIM " + h.reachApproval())
+	h.say("https://www.instagram.com/p/MEU1/")
+	h.wa.fail = true
+	h.runKind(engine.JobInstagramFetch)
+	h.wa.fail = false
+	if n := h.count(`SELECT count(*) FROM outbox_jobs WHERE kind = $1 AND status = 'done'`, engine.JobInstagramFetch); n != 1 || h.creatives() != 1 {
+		t.Fatalf("jobs concluídos = %d criativos = %d", n, h.creatives())
+	}
+}
+
 // I5: prazo total de 3 min para baixar; acabou o prazo do job no meio, o que baixou fica e o aviso sai
 // (gravação e aviso com contexto próprio).
 func TestInstagramBudgetKeepsDownloadedAndNotifies(t *testing.T) {

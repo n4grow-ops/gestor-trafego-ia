@@ -68,6 +68,7 @@ type creativeFile struct {
 	rightsPending bool
 	sourceURL     string
 	caption       string
+	position      *int // posição do item no post do Instagram (nil = upload)
 }
 
 // keepCreative confere a qualidade, sobe no Storage e registra. Devolve o marcador do resultado
@@ -76,7 +77,8 @@ func (e *Engine) keepCreative(ctx context.Context, ident store.Identity, convID 
 	mime, kind, data := f.mime, f.kind, f.data
 	c := store.Creative{OrgID: ident.OrgID, DraftID: d.ID, ProjectID: d.ProjectID, Kind: kind, Mime: mime,
 		Size: int64(len(data)), Format: string(media.Other), Placement: string(media.Feed),
-		Origin: f.origin, IGMediaID: f.igMediaID, RightsPending: f.rightsPending, SourceURL: f.sourceURL, SourceCaption: f.caption}
+		Origin: f.origin, IGMediaID: f.igMediaID, RightsPending: f.rightsPending, SourceURL: f.sourceURL, SourceCaption: f.caption,
+		SourcePosition: f.position}
 	warning := ""
 	if mime == "" {
 		mime = kind + "/*"

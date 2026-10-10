@@ -169,7 +169,7 @@ type igFetch struct {
 	job  InstagramJob
 	link instagram.Link
 
-	saved              int
+	saved, skipped     int // skipped: itens que uma tentativa anterior já guardou
 	warnings, rejected []string
 	failed             bool
 	gone               bool  // a conversa não espera mais os anúncios deste rascunho
@@ -178,11 +178,28 @@ type igFetch struct {
 
 // sink é o destino dos itens de uma origem (conta conectada ou página pública).
 func (f *igFetch) sink(origin string) instagram.Sink {
-	return instagram.Sink{Save: func(p instagram.Post, pos int, it instagram.Item) error { return f.save(origin, p, pos, it) }}
+	return instagram.Sink{
+		Skip: f.already,
+		Save: func(p instagram.Post, pos int, it instagram.Item) error { return f.save(origin, p, pos, it) },
+	}
 }
 
+// already: o item já foi guardado neste rascunho (nova tentativa do job). Na dúvida (banco), baixa: o save
+// confere de novo dentro da trava.
+func (f *igFetch) already(p instagram.Post, pos int) bool {
+	ctx, cancel := writeCtx(f.ctx, igWriteTimeout)
+	defer cancel()
+	ok, err := f.e.Store.HasInstagramCreative(ctx, f.job.DraftID, f.sourceURL(p), p.MediaID, pos)
+	if ok {
+		f.skipped++
+	}
+	return err == nil && ok
+}
+
+func (f *igFetch) sourceURL(p instagram.Post) string { return firstText(p.Permalink, f.link.URL) }
+
 // stopped: a busca não deve tentar outra origem (já guardou algo, a conversa seguiu ou o banco caiu).
-func (f *igFetch) stopped() bool { return f.saved > 0 || f.gone || f.fatal != nil }
+func (f *igFetch) stopped() bool { return f.saved > 0 || f.skipped > 0 || f.gone || f.fatal != nil }
 
 // save guarda um item: trava a conversa só durante a gravação e confere de novo se ela ainda espera os
 // anúncios do mesmo rascunho.
@@ -220,9 +237,16 @@ func (f *igFetch) save(origin string, p instagram.Post, pos int, it instagram.It
 	if n >= maxCreatives {
 		return instagram.ErrStop
 	}
+	if dup, err := e.Store.HasInstagramCreative(ctx, d.ID, f.sourceURL(p), p.MediaID, pos); err != nil {
+		f.fatal = err
+		return err
+	} else if dup {
+		f.skipped++
+		return nil
+	}
 	mark := e.keepCreative(ctx, ident, conv.ID, d, creativeFile{data: it.Data, mime: it.Mime, kind: it.Kind,
 		name: fmt.Sprintf("ig%s%d", safeName(f.link.Shortcode), pos+1), origin: origin, igMediaID: p.MediaID,
-		rightsPending: origin == store.OriginInstagramPublic, sourceURL: firstText(p.Permalink, f.link.URL), caption: p.Caption})
+		rightsPending: origin == store.OriginInstagramPublic, sourceURL: f.sourceURL(p), caption: p.Caption, position: &pos})
 	switch {
 	case strings.HasPrefix(mark, creativeWarned):
 		f.warnings = append(f.warnings, strings.TrimSuffix(strings.TrimPrefix(mark, creativeWarned), "]"))
