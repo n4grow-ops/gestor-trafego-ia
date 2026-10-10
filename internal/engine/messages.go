@@ -83,15 +83,17 @@ const (
 	msgDailyReport = "📊 meuanuncio.io — resumo das últimas 24 h\n\n👤 Contatos novos: %d\n✅ Cadastros concluídos: %d\n⏳ Cadastros pendentes (com link): %d\n💬 Mensagens recebidas: %d\n📝 Propostas geradas: %d\n👍 Propostas aprovadas: %d\n🖼️ Anúncios recebidos: %d\n💸 Custo de IA: US$ %s"
 
 	// Testador do app da Meta (enquanto o app está em desenvolvimento).
-	msgTesterReceived   = "Recebi! Já pedi pra equipe te liberar como testador, te aviso aqui 🙂"
-	msgTesterAlready    = "Esse perfil eu já recebi e já pedi pra equipe te liberar 🙂 Assim que liberarem, te aviso aqui."
-	msgTesterAddressBar = "Não consegui abrir esse link 😅 Abre o seu perfil do Facebook no navegador e me manda o endereço que aparece lá em cima, na barra de endereço (tipo facebook.com/seu.nome)?"
-	msgTesterAdded      = "Te adicionei como testador! ✅ Agora aceita o convite: abre o Facebook → Notificações (ou https://developers.facebook.com/requests) e confirma. Depois é só tocar aqui pra conectar sua conta:"
-	msgTesterAccepted   = "Vi que você aceitou o convite ✅ Toca aqui pra conectar sua conta:"
-	msgTesterReminder   = "Oi! Só lembrando: pra conectar sua conta, falta aceitar o convite de testador no Facebook (Notificações ou https://developers.facebook.com/requests). Depois é só tocar aqui:"
-	msgTeamTester       = "🧪 Cliente enviou ID, preciso que adicione como testador — %s (%s), WhatsApp %s. ID/usuário: %s. Link: %s."
-	msgTeamTesterWhere  = " Adicionar em: https://developers.facebook.com/apps/%s/roles/roles/"
-	msgTeamTesterLate   = "⏰ Cliente ainda não aceitou o convite de testador (24 h) — %s (%s), WhatsApp %s. ID/usuário: %s. Lembrei o cliente uma vez."
+	msgTesterReceived        = "Recebi! Já pedi pra equipe te liberar como testador, te aviso aqui 🙂"
+	msgTesterAlready         = "Esse perfil eu já recebi e já pedi pra equipe te liberar 🙂 Assim que liberarem, te aviso aqui."
+	msgTesterAddressBar      = "Não consegui abrir esse link 😅 Abre o seu perfil do Facebook no navegador e me manda o endereço que aparece lá em cima, na barra de endereço (tipo facebook.com/seu.nome)?"
+	msgTesterAdded           = "Te adicionei como testador! ✅ Agora aceita o convite: abre o Facebook → Notificações (ou https://developers.facebook.com/requests) e confirma. Depois é só tocar aqui pra conectar sua conta:"
+	msgTesterAccepted        = "Vi que você aceitou o convite ✅ Toca aqui pra conectar sua conta:"
+	msgTesterReminder        = "Oi! Só lembrando: pra conectar sua conta, falta aceitar o convite de testador no Facebook (Notificações ou https://developers.facebook.com/requests). Depois é só tocar aqui:"
+	msgTeamTester            = "🧪 Cliente enviou ID, preciso que adicione como testador — %s (%s), WhatsApp %s. ID/usuário: %s. Link: %s."
+	msgTeamTesterWhere       = " Adicionar em: https://developers.facebook.com/apps/%s/roles/roles/"
+	msgTeamTesterLate        = "⏰ Cliente ainda não aceitou o convite de testador (24 h) — %s (%s), WhatsApp %s. ID/usuário: %s. Lembrei o cliente uma vez."
+	msgTeamTesterLateOutside = "⏰ Cliente ainda não aceitou o convite de testador (24 h) — %s (%s), WhatsApp %s. ID/usuário: %s. Ele está fora da janela de 24 h: chame pelo painel/WhatsApp."
+	msgTeamTesterOutside     = "🧪 Testador: %s, mas o cliente está fora da janela de 24 h — %s (%s), WhatsApp %s. ID/usuário: %s. Mande o link de conexão pelo painel/WhatsApp."
 
 	msgSignupOwner = "Oi! Antes de começar, o cadastro da conta precisa ser feito pelo responsável. Pede pra ele mandar uma mensagem aqui, que eu envio o link."
 )

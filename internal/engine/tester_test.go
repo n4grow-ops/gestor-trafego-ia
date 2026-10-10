@@ -22,6 +22,9 @@ type fakeTesters struct {
 	known    map[string]bool
 	accepted []int64
 	reminded []int64
+
+	notified       map[int64]time.Time
+	acceptNotified map[int64]bool
 }
 
 func (f *fakeTesters) open(identityID int64) int {
@@ -82,6 +85,69 @@ func (f *fakeTesters) MarkTesterAcceptedByIdentity(_ context.Context, identityID
 
 func (f *fakeTesters) TestersAwaitingAcceptance(context.Context) ([]store.TesterRequestView, error) {
 	return f.ListTesterRequests(context.Background(), store.TesterAdded)
+}
+
+func (f *fakeTesters) OpenTestersWithoutMeta(context.Context) ([]store.TesterRequestView, error) {
+	return f.ListTesterRequests(context.Background(), "")
+}
+
+func (f *fakeTesters) TesterRequestByID(_ context.Context, id int64) (store.TesterRequestView, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, r := range f.reqs {
+		if r.ID == id {
+			return r, nil
+		}
+	}
+	return store.TesterRequestView{}, store.ErrNotFound
+}
+
+func (f *fakeTesters) MarkTesterAcceptedByOrg(_ context.Context, orgID int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i, r := range f.reqs {
+		if r.OrgID == orgID && (r.Status == store.TesterRequested || r.Status == store.TesterAdded) {
+			f.reqs[i].Status = store.TesterAccepted
+			f.accepted = append(f.accepted, r.IdentityID)
+		}
+	}
+	return nil
+}
+
+// MarkTesterNotified segue a regra do store: avisa se nunca avisou ou se passou o intervalo.
+func (f *fakeTesters) MarkTesterNotified(_ context.Context, id int64, within time.Duration) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.notified == nil {
+		f.notified = map[int64]time.Time{}
+	}
+	if at, ok := f.notified[id]; ok && time.Since(at) < within {
+		return false, nil
+	}
+	f.notified[id] = time.Now()
+	return true, nil
+}
+
+// backdateNotified simula que o último aviso à equipe foi há muito tempo.
+func (f *fakeTesters) backdateNotified() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for id := range f.notified {
+		f.notified[id] = time.Now().Add(-time.Hour)
+	}
+}
+
+func (f *fakeTesters) MarkTesterAcceptNotified(_ context.Context, id int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.acceptNotified == nil {
+		f.acceptNotified = map[int64]bool{}
+	}
+	if f.acceptNotified[id] {
+		return store.ErrNotFound
+	}
+	f.acceptNotified[id] = true
+	return nil
 }
 
 func (f *fakeTesters) MarkTesterReminded(_ context.Context, id int64) error {
@@ -204,6 +270,7 @@ func TestProfileChangedAfterAddedNotifiesTeamAgain(t *testing.T) {
 	h, ft := newTesterHarness(t)
 	id := openRequest(h, ft)
 	ft.markAdded(id, h.now)
+	ft.backdateNotified() // o limite é um aviso a cada 30 min
 	h.say("na verdade é este: https://www.facebook.com/joao.silva")
 	h.runJobs()
 	ops := h.wa.to(operatorChat)
@@ -252,13 +319,18 @@ func TestProfileLinkIgnoredWithoutMetaConnect(t *testing.T) {
 	}
 }
 
+// Na aprovação, link de página com conversa em volta vai para a Atendente (parser real, sem contexto
+// de testador) e a aprovação segue.
 func TestProfileLinkKeepsApprovalFlow(t *testing.T) {
 	h, ft := newTesterHarness(t)
+	h.eng.ParseProfile = nil // parser real
 	code := h.reachApproval()
-	h.say(profileLink)
+	calls := h.att.Calls()
+	h.att.Responses = append(h.att.Responses, `{"intent":"question","reply":"Legal!"}`)
+	h.say("olha a página facebook.com/pizzariaboa, dá pra usar essas fotos no anúncio?")
 	h.runJobs()
-	if len(ft.all()) != 1 || h.conv().State != store.StateAwaitingApproval {
-		t.Fatalf("pedidos=%d estado=%s", len(ft.all()), h.conv().State)
+	if len(ft.all()) != 0 || h.att.Calls() != calls+1 || h.conv().State != store.StateAwaitingApproval {
+		t.Fatalf("pedidos=%d ia=%d estado=%s", len(ft.all()), h.att.Calls()-calls, h.conv().State)
 	}
 	h.say("SIM " + code)
 	if h.conv().State == store.StateAwaitingApproval {

@@ -69,6 +69,8 @@ func (e *Engine) HandleJob(ctx context.Context, job store.Job) error {
 		return e.testerAdded(ctx, j)
 	case JobTesterPoll:
 		return e.testerPoll(ctx)
+	case JobTesterResolve:
+		return e.testerResolve(ctx, job.Payload)
 	case JobCreativesPreview:
 		var p PreviewJob
 		if err := json.Unmarshal(job.Payload, &p); err != nil {
