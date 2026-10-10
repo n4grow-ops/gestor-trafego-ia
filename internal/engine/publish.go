@@ -193,6 +193,7 @@ func (e *Engine) publishInput(ctx context.Context, ident store.Identity, conn st
 	in := meta.PublishInput{
 		AdAccountID:      conn.AdAccountID,
 		PageID:           conn.PageID,
+		InstagramActorID: conn.InstagramID,
 		Name:             campaignName(data, e.now()),
 		Objective:        prop.Objective,
 		DailyBudgetCents: int64(math.Round(prop.DailyBudgetBRL * 100)),

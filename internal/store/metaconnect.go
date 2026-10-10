@@ -162,6 +162,7 @@ type MetaConnection struct {
 	Currency          string
 	PageID            string
 	PageName          string
+	InstagramID       string
 	InstagramUsername string
 	PageWhatsApp      bool
 }
@@ -170,9 +171,9 @@ type MetaConnection struct {
 func (s *Store) ActiveMeta(ctx context.Context, orgID int64) (MetaConnection, bool, error) {
 	var c MetaConnection
 	err := s.pool.QueryRow(ctx, `SELECT id, ad_account_id, coalesce(ad_account_name, ''), coalesce(currency, ''), page_id, coalesce(page_name, ''),
-			coalesce(instagram_username, ''), page_whatsapp
+			coalesce(instagram_id, ''), coalesce(instagram_username, ''), page_whatsapp
 		FROM meta_connections WHERE organization_id = $1 AND status = 'active'`, orgID).
-		Scan(&c.ID, &c.AdAccountID, &c.AdAccountName, &c.Currency, &c.PageID, &c.PageName, &c.InstagramUsername, &c.PageWhatsApp)
+		Scan(&c.ID, &c.AdAccountID, &c.AdAccountName, &c.Currency, &c.PageID, &c.PageName, &c.InstagramID, &c.InstagramUsername, &c.PageWhatsApp)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return MetaConnection{}, false, nil
 	}
