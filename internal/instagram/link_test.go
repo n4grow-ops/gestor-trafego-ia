@@ -48,6 +48,21 @@ func TestParseLink(t *testing.T) {
 	}
 }
 
+func TestStripLinks(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://www.instagram.com/p/A1/":                            "",
+		"https://www.instagram.com/p/A1/ pronto":                     "pronto",
+		"olha esse https://instagram.com/reel/B2/?igsh=x, e esse aí": "olha esse e esse aí",
+		"https://www.instagram.com/p/A1/\napaga a 1":                 "apaga a 1",
+		"perfil https://www.instagram.com/pizzariaboa/ fica":         "perfil https://www.instagram.com/pizzariaboa/ fica", // não é post
+		"texto:\n\"Pizza boa\"  https://www.instagram.com/p/A1/":     "texto:\n\"Pizza boa\"",
+	} {
+		if got := StripLinks(in); got != want {
+			t.Errorf("StripLinks(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestParseLinksDistinct(t *testing.T) {
 	got := ParseLinks("https://www.instagram.com/p/A1/ e https://instagram.com/reel/B2/ e de novo https://www.instagram.com/p/A1/?x=1")
 	if len(got) != 2 || got[0].Shortcode != "A1" || got[1].Shortcode != "B2" {

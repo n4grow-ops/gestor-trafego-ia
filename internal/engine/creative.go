@@ -12,6 +12,7 @@ import (
 	"unicode"
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/humanize"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/instagram"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/media"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp"
@@ -134,6 +135,15 @@ func (e *Engine) creativesTurn(ctx context.Context, conv store.Conversation, msg
 	var parts, warnings, rejected []string
 	var received, failed, done, changed, noted, fetching bool
 	for _, m := range msgs {
+		if ok, err := e.enqueueInstagram(ctx, conv, d.ID, m); err != nil {
+			return err
+		} else if ok {
+			// o link vira busca do post; o resto da mensagem (PRONTO, comando, referência) segue abaixo
+			fetching = true
+			if m = instagram.StripLinks(m); m == "" {
+				continue
+			}
+		}
 		if a := parseRights(m); a != rightsNone && hasPendingRights(list) {
 			// resposta à pergunta do direito de uso do post público
 			reply, err := e.applyRights(ctx, list[0].OrgID, d.ID, a)
@@ -145,12 +155,6 @@ func (e *Engine) creativesTurn(ctx context.Context, conv store.Conversation, msg
 			if list, err = e.Store.ListCreatives(ctx, d.ID); err != nil {
 				return err
 			}
-			continue
-		}
-		if ok, err := e.enqueueInstagram(ctx, conv, d.ID, m); err != nil {
-			return err
-		} else if ok {
-			fetching = true
 			continue
 		}
 		switch {

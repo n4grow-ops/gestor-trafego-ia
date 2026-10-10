@@ -62,6 +62,27 @@ func candidates(text string) []string {
 	return out
 }
 
+// StripLinks tira do texto os links de post (os que ParseLinks acha) e devolve o resto, com os espaços que
+// sobraram arrumados em cada linha. Link de perfil ou de outro site fica.
+func StripLinks(text string) string {
+	var b strings.Builder
+	last := 0
+	for _, m := range reCandidate.FindAllStringSubmatchIndex(text, -1) {
+		start, end := m[2], m[3]
+		if _, ok := parseURL(text[start:end]); !ok {
+			continue
+		}
+		b.WriteString(text[last:start])
+		last = end
+	}
+	b.WriteString(text[last:])
+	lines := strings.Split(b.String(), "\n")
+	for i, l := range lines {
+		lines[i] = strings.Join(strings.Fields(l), " ")
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
 func parseURL(raw string) (Link, bool) {
 	raw = strings.TrimRight(raw, ".,;:!?")
 	if !strings.Contains(strings.ToLower(raw), "://") {

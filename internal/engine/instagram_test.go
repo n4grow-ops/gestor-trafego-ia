@@ -319,6 +319,30 @@ const (
 	msgIGLate = "O post chegou depois que fechamos os anúncios, então não entrou nessa campanha."
 )
 
+// I8: o link sai do texto e o resto da mensagem segue (comando, referência de texto, PRONTO).
+func TestInstagramLinkKeepsRestOfMessage(t *testing.T) {
+	h, pubs, _, ig, _ := newIGHarness(t)
+	ig.pub["X1"] = instagram.Post{Items: []instagram.Item{igSquare}}
+	h.say("SIM " + h.reachApproval())
+	h.sendFile(square)
+	h.say("https://www.instagram.com/p/X1/\napaga a 1")
+	if h.creatives() != 0 || h.pendingJobs(engine.JobInstagramFetch) != 1 {
+		t.Fatalf("comando junto do link: criativos = %d jobs = %d msg = %q", h.creatives(), h.pendingJobs(engine.JobInstagramFetch), h.lastClient())
+	}
+	if msg := h.lastClient(); !strings.Contains(msg, "apaguei a 1") || !strings.Contains(msg, "vou buscar esse post") {
+		t.Fatalf("resposta = %q", msg)
+	}
+	h.say(`olha esse post https://www.instagram.com/p/X2/ headline: "Pizza quentinha na sua porta em 30 minutos"`)
+	refs := strings.Join(mapValues(pubs.copies), "\n")
+	if !strings.Contains(refs, `headline: "Pizza quentinha na sua porta em 30 minutos"`) || strings.Contains(refs, "instagram.com") {
+		t.Fatalf("referência = %q", refs)
+	}
+	h.say("https://www.instagram.com/p/X3/ pronto")
+	if msg := h.lastClient(); msg != msgIGHold || h.pendingJobs(engine.JobInstagramFetch) != 3 {
+		t.Fatalf("link + PRONTO: msg = %q jobs = %d", msg, h.pendingJobs(engine.JobInstagramFetch))
+	}
+}
+
 // I7: PRONTO com post ainda baixando não fecha a etapa; fecha depois que o post chega.
 func TestInstagramDoneWaitsForPendingFetch(t *testing.T) {
 	h, _, _, ig, _ := newIGHarness(t)
