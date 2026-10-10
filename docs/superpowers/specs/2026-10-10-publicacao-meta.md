@@ -88,7 +88,7 @@ type Publisher interface {
 ```
 
 Tudo é criado com `status=PAUSED`. Em falha no meio, o que já foi criado é apagado (melhor esforço)
-para não deixar lixo na conta. Graph API v21.0 (mesma versão que o resto de `internal/meta`).
+para não deixar lixo na conta. Graph API: a mesma `version` de `internal/meta/meta.go` (v23.0).
 
 ### Banco e store (Agente A)
 
