@@ -14,6 +14,7 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/db"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/engine"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/llm"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/signup"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/storage"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp"
@@ -79,6 +80,8 @@ func run(log *slog.Logger) error {
 	}
 	if cfg.SignupEnabled() {
 		eng.SignupBaseURL = cfg.PublicBaseURL + "/c"
+		eng.SignupFlowID = cfg.SignupFlowID
+		eng.TermsVersion = signup.TermsVersion
 	}
 	if cfg.MetaConnectEnabled() {
 		eng.MetaConnectBaseURL = cfg.PublicBaseURL + "/m"
@@ -100,7 +103,7 @@ func run(log *slog.Logger) error {
 	}
 	w := &worker.Worker{Store: st, WA: wa, Parsers: build.Parsers(cfg, wa), Engine: eng, Log: log}
 	log.Info("worker iniciado", "whatsapp", wa.Name(), "atendente", cfg.AttendantModel, "gestor", cfg.ManagerModel,
-		"humano", cfg.Humanize, "voz", eng.Voice != nil, "cadastro", eng.SignupBaseURL != "",
+		"humano", cfg.Humanize, "voz", eng.Voice != nil, "cadastro", eng.SignupBaseURL != "", "formulario_cadastro", eng.SignupFlowID != "",
 		"anuncios", eng.Storage != nil, "relatorio", eng.ReportPhone != "", "conexao_meta", eng.MetaConnectBaseURL != "")
 	return w.Run(ctx)
 }

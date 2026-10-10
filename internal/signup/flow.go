@@ -11,6 +11,9 @@ import (
 // Cadastro pelo formulário do WhatsApp (WhatsApp Flows). O formulário é estático: a resposta chega
 // no webhook com o flow_token, que é o mesmo token do link de cadastro.
 
+// TermsVersion é a versão dos Termos e da Política de Privacidade gravada em cada aceite (página e formulário).
+const TermsVersion = "2026-09-23"
+
 // FlowFirstScreen é a tela que abre primeiro.
 const FlowFirstScreen = "DADOS"
 

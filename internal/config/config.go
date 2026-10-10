@@ -45,6 +45,8 @@ type Config struct {
 	SupabaseURL            string
 	SupabasePublishableKey string
 	BotWhatsAppNumber      string
+	// SignupFlowID: formulário de cadastro do WhatsApp publicado (Cloud API). Vazio = link da página.
+	SignupFlowID string
 
 	// Anúncios no Supabase Storage (só no worker) e relatório diário.
 	SupabaseServiceRoleKey string
@@ -99,6 +101,7 @@ func Load(getenv func(string) string) Config {
 		SupabaseURL:            strings.TrimRight(getenv("SUPABASE_URL"), "/"),
 		SupabasePublishableKey: getenv("SUPABASE_PUBLISHABLE_KEY"),
 		BotWhatsAppNumber:      getenv("BOT_WHATSAPP_NUMBER"),
+		SignupFlowID:           strings.TrimSpace(getenv("SIGNUP_FLOW_ID")),
 		SupabaseServiceRoleKey: getenv("SUPABASE_SERVICE_ROLE_KEY"),
 		ReportPhone:            orDefault(getenv("REPORT_PHONE"), getenv("OPERATOR_PHONE")),
 		MetaAppID:              getenv("META_APP_ID"),

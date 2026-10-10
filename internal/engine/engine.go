@@ -93,6 +93,10 @@ type Engine struct {
 
 	// Cadastro: com URL, quem não concluiu o cadastro recebe o link em vez de falar com a IA.
 	SignupBaseURL string
+	// SignupFlowID: formulário do WhatsApp publicado; com ele (e provedor que manda formulário)
+	// o cadastro é feito sem sair do WhatsApp. TermsVersion é a versão dos termos aceitos ali.
+	SignupFlowID string
+	TermsVersion string
 
 	// Anúncios (imagens e vídeos) pedidos depois da aprovação. Sem Storage, a aprovação encerra a conversa.
 	Storage Storage
@@ -172,6 +176,9 @@ func (e *Engine) HandleInbound(ctx context.Context, in whatsapp.Inbound) error {
 			return e.send(ctx, conv, msgDailyLimit)
 		}
 		return nil
+	}
+	if in.Kind == whatsapp.KindFlow {
+		return e.signupFlowAnswer(ctx, ident, conv, in)
 	}
 	// Portão do cadastro. Em atendimento humano, a pessoa da equipe conduz: nada de link.
 	if e.SignupBaseURL != "" && ident.RegistrationStatus != "complete" && conv.State != store.StateNeedsHuman {
