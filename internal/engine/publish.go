@@ -140,6 +140,19 @@ func (e *Engine) publish(ctx context.Context, j PublishJob) error {
 	if err == nil {
 		var res meta.PublishResult
 		res, err = e.Publisher.Publish(ctx, string(token), in)
+		if err != nil && ctx.Err() == nil && fromInstagramPost(in) && creativeRefused(err) {
+			// A Meta recusou o anúncio feito do post (post sem permissão de anúncio, conta trocada...): a mesma
+			// publicação sobe os arquivos já guardados. Mesmo nome (marca #p<id>): a campanha da tentativa
+			// anterior, se ficou, é apagada antes.
+			e.Log.Warn("a Meta recusou o anúncio feito do post do instagram; subindo os arquivos",
+				"publication_id", pub.ID, "erro", err)
+			if files, ferr := e.draftFiles(ctx, data.DraftID); ferr != nil {
+				e.Log.Error("arquivos do post do instagram indisponíveis para a nova tentativa", "publication_id", pub.ID, "erro", ferr)
+			} else {
+				in.Creatives = files
+				res, err = e.Publisher.Publish(ctx, string(token), in)
+			}
+		}
 		if err == nil {
 			return e.published(ctx, ident, conv, pub, res, in)
 		}
@@ -268,17 +281,41 @@ func (e *Engine) publishInput(ctx context.Context, ident store.Identity, conn st
 		in.Creatives = posts
 		return in, nil
 	}
-	if e.Storage == nil {
-		return meta.PublishInput{}, errors.New("engine: storage dos anúncios desligado")
+	if in.Creatives, err = e.creativeFiles(ctx, list); err != nil {
+		return meta.PublishInput{}, err
 	}
+	return in, nil
+}
+
+// creativeFiles baixa do Storage os arquivos dos anúncios para subir na Meta.
+func (e *Engine) creativeFiles(ctx context.Context, list []store.Creative) ([]meta.PublishCreative, error) {
+	if e.Storage == nil {
+		return nil, errors.New("engine: storage dos anúncios desligado")
+	}
+	out := make([]meta.PublishCreative, 0, len(list))
 	for _, c := range list {
 		raw, err := e.Storage.Download(ctx, CreativesBucket, c.Path)
 		if err != nil {
-			return meta.PublishInput{}, fmt.Errorf("engine: baixar anúncio %d: %w", c.ID, err)
+			return nil, fmt.Errorf("engine: baixar anúncio %d: %w", c.ID, err)
 		}
-		in.Creatives = append(in.Creatives, meta.PublishCreative{Kind: c.Kind, Mime: c.Mime, Data: raw, Placement: c.Placement})
+		out = append(out, meta.PublishCreative{Kind: c.Kind, Mime: c.Mime, Data: raw, Placement: c.Placement})
 	}
-	return in, nil
+	return out, nil
+}
+
+// draftFiles: os arquivos dos anúncios utilizáveis do rascunho (o post da conta também foi guardado no Storage).
+func (e *Engine) draftFiles(ctx context.Context, draftID int64) ([]meta.PublishCreative, error) {
+	all, err := e.Store.ListCreatives(ctx, draftID)
+	if err != nil {
+		return nil, err
+	}
+	return e.creativeFiles(ctx, usableCreatives(all))
+}
+
+// creativeRefused: a Meta recusou a criação do criativo (não upload, conta ou conjunto).
+func creativeRefused(err error) bool {
+	var perr *meta.PublishError
+	return errors.As(err, &perr) && perr.Step == "creative"
 }
 
 // usableCreatives tira os posts públicos sem o É MEU do cliente.

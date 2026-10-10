@@ -12,6 +12,7 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/engine"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/instagram"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/media/mediatest"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/meta"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 )
 
@@ -479,6 +480,47 @@ func TestPublishOwnPostUsesInstagramMedia(t *testing.T) {
 	}
 	if len(pub2.inputs[0].Creatives) != 2 {
 		t.Fatalf("misturado: %d criativos", len(pub2.inputs[0].Creatives))
+	}
+}
+
+// I4: a Meta recusa o criativo feito do post: a mesma publicação sobe os arquivos já guardados e tenta de novo
+// (mesmo nome com a marca #p<id>, sem campanha duplicada).
+func TestPublishOwnPostFallsBackToUpload(t *testing.T) {
+	h, pubs, pub, ig, _ := newIGHarness(t)
+	h.connectMetaIG()
+	ig.own["MEU1"] = instagram.Post{MediaID: "1789", Items: []instagram.Item{igSquare, igVertical}}
+	pub.errs = []error{&meta.PublishError{Step: "creative", Code: 100, Message: "source_instagram_media_id inválido",
+		UserMessage: "A Meta recusou o anúncio."}}
+	h.say("SIM " + h.reachApproval())
+	h.say("https://www.instagram.com/p/MEU1/")
+	h.runKind(engine.JobInstagramFetch)
+	h.say("pronto")
+	h.runKind(engine.JobCreativesPreview)
+	h.runKind(engine.JobMetaPublish)
+	if pub.calls() != 2 {
+		t.Fatalf("Publish = %d", pub.calls())
+	}
+	first, second := pub.inputs[0], pub.inputs[1]
+	if first.Creatives[0].InstagramMediaID != "1789" || first.Name != second.Name || !strings.Contains(second.Name, "#p") {
+		t.Fatalf("1ª = %+v / nomes %q %q", first.Creatives, first.Name, second.Name)
+	}
+	if len(second.Creatives) != 2 {
+		t.Fatalf("2ª tentativa com %d criativos", len(second.Creatives))
+	}
+	for _, c := range second.Creatives {
+		if c.InstagramMediaID != "" || len(c.Data) == 0 {
+			t.Fatalf("2ª tentativa sem os arquivos: %+v", c)
+		}
+	}
+	if len(pubs.pubs) != 1 || pubs.pubs[0].Status != "paused" || pubs.starts != 1 {
+		t.Fatalf("publicações = %+v (starts %d)", pubs.pubs, pubs.starts)
+	}
+	msg := h.lastClient()
+	if !strings.Contains(msg, "Prontinho") || !strings.Contains(msg, "Os textos que vão no ar") || strings.Contains(msg, "legenda, curtidas") {
+		t.Fatalf("mensagem = %q", msg)
+	}
+	if h.pendingJobs(engine.JobMetaPublish) != 0 {
+		t.Fatal("job de publicação ficou para nova tentativa")
 	}
 }
 
