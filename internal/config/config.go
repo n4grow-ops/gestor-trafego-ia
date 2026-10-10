@@ -55,6 +55,28 @@ type Config struct {
 	MetaAppSecret     string
 	MetaLoginConfigID string
 	MetaTokenKey      string // 32 bytes em base64: cifra os tokens dos clientes
+
+	// Painel da equipe (admin).
+	AdminSessionKey string   // assina o cookie de sessão; 32 caracteres ou mais
+	AdminEmails     []string // garantidos como administradores na partida
+	AdminHost       string   // host que responde só o painel (além de /admin em qualquer host)
+	AdminDevLogin   bool     // login só com e-mail, aceito apenas sem SUPABASE_URL (desenvolvimento local)
+	USDBRL          float64  // cotação para o custo de IA no faturamento
+}
+
+// AdminMode diz como o painel faz login: "otp" (código por e-mail no Supabase Auth), "dev"
+// (só e-mail, desenvolvimento local sem Supabase) ou "" (painel desligado).
+func (c Config) AdminMode() string {
+	switch {
+	case c.SupabaseURL != "" && c.SupabasePublishableKey != "":
+		if len(c.AdminSessionKey) >= 32 {
+			return "otp"
+		}
+		return ""
+	case c.SupabaseURL == "" && c.AdminDevLogin:
+		return "dev"
+	}
+	return ""
 }
 
 // SignupEnabled diz se o cadastro está configurado: sem isso, ninguém é barrado pelo portão.
@@ -105,7 +127,24 @@ func Load(getenv func(string) string) Config {
 		MetaAppSecret:          getenv("META_APP_SECRET"),
 		MetaLoginConfigID:      getenv("META_LOGIN_CONFIG_ID"),
 		MetaTokenKey:           getenv("META_TOKEN_KEY"),
+
+		AdminSessionKey: getenv("ADMIN_SESSION_KEY"),
+		AdminEmails:     splitList(getenv("ADMIN_EMAILS")),
+		AdminHost:       strings.ToLower(strings.TrimSpace(orDefault(getenv("ADMIN_HOST"), "admin.meuanuncio.io"))),
+		AdminDevLogin:   getenv("ADMIN_DEV_LOGIN") == "true",
+		USDBRL:          positiveFloat(strings.Replace(getenv("USD_BRL"), ",", ".", 1), 5.5),
 	}
+}
+
+// splitList separa uma lista por vírgulas, sem espaços nem itens vazios.
+func splitList(v string) []string {
+	var out []string
+	for _, s := range strings.Split(v, ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // Require falha listando as variáveis obrigatórias que estão vazias.
