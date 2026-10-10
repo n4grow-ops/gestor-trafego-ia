@@ -15,6 +15,7 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/db"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/engine"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/llm"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/meta"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/mia"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/signup"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/storage"
@@ -91,6 +92,9 @@ func run(log *slog.Logger) error {
 	}
 	if cfg.MetaConnectEnabled() {
 		eng.MetaConnectBaseURL = cfg.PublicBaseURL + "/m"
+		// Testador automático: lê os testadores do app (token APP_ID|SECRET) a cada 5 min.
+		eng.MetaAppID = cfg.MetaAppID
+		eng.AppTesters = meta.New(cfg.MetaAppID, cfg.MetaAppSecret, cfg.MetaLoginConfigID, cfg.PublicBaseURL+"/meta/callback").AppTesters
 	}
 	if cfg.VoiceReplies && cfg.TTSModel != "" {
 		eng.Voice = router // voz só com modelo de TTS configurado
@@ -110,10 +114,14 @@ func run(log *slog.Logger) error {
 	if err := eng.EnsureDailyReport(ctx); err != nil {
 		log.Error("falha ao agendar relatório diário", "erro", err)
 	}
+	if err := eng.EnsureTesterPoll(ctx); err != nil {
+		log.Error("falha ao agendar leitura dos testadores", "erro", err)
+	}
 	w := &worker.Worker{Store: st, WA: wa, Parsers: build.Parsers(cfg, wa), Engine: eng, Log: log}
 	log.Info("worker iniciado", "whatsapp", wa.Name(), "atendente", cfg.AttendantModel, "gestor", cfg.ManagerModel,
 		"humano", cfg.Humanize, "voz", eng.Voice != nil, "cadastro", eng.SignupBaseURL != "", "formulario_cadastro", eng.SignupFlowID != "",
-		"anuncios", eng.Storage != nil, "relatorio", eng.ReportPhone != "", "conexao_meta", eng.MetaConnectBaseURL != "")
+		"anuncios", eng.Storage != nil, "relatorio", eng.ReportPhone != "", "conexao_meta", eng.MetaConnectBaseURL != "",
+		"testador_auto", eng.AppTesters != nil)
 	return w.Run(ctx)
 }
 
