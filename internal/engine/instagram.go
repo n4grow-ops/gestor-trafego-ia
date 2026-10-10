@@ -73,9 +73,14 @@ func (e *Engine) fetchInstagram(ctx context.Context, j InstagramJob) error {
 	if !ok {
 		return nil
 	}
-	conv, ident, d, ok, err := e.instagramTarget(ctx, j)
-	if err != nil || !ok {
+	conv, ident, d, target, err := e.instagramTarget(ctx, j)
+	switch {
+	case err != nil:
 		return err
+	case target == targetClosed:
+		return e.notifyInstagram(ctx, conv, msgInstagramLate)
+	case target != targetOpen:
+		return nil
 	}
 	n, err := e.Store.CountCreatives(ctx, d.ID)
 	if err != nil {
@@ -104,8 +109,12 @@ func (e *Engine) fetchInstagram(ctx context.Context, j InstagramJob) error {
 		e.audit(wctx, ident.OrgID, "system", "instagram_fetch_failed", map[string]any{"draft_id": d.ID, "error": err.Error()})
 		return e.notifyInstagram(wctx, conv, msgInstagramFailed)
 	}
-	if f.gone {
-		return nil // a conversa seguiu (PRONTO, atendimento humano): o post é descartado
+	switch {
+	case f.closed:
+		// a etapa fechou enquanto baixava: o post não entra na campanha e o cliente fica sabendo
+		return e.notifyInstagram(wctx, conv, msgInstagramLate)
+	case f.gone:
+		return nil // atendimento humano ou conversa sem o rascunho: o post é descartado em silêncio
 	}
 	e.audit(wctx, ident.OrgID, member(ident), "instagram_post_saved", map[string]any{"draft_id": d.ID, "origin": origin,
 		"saved": f.saved, "total": post.Total, "ig_media_id": post.MediaID})
@@ -172,7 +181,8 @@ type igFetch struct {
 	saved, skipped     int // skipped: itens que uma tentativa anterior já guardou
 	warnings, rejected []string
 	failed             bool
-	gone               bool  // a conversa não espera mais os anúncios deste rascunho
+	closed             bool  // a etapa dos anúncios deste rascunho fechou no meio
+	gone               bool  // atendimento humano, cliente bloqueado ou rascunho sumiu
 	fatal              error // banco fora
 }
 
@@ -199,7 +209,25 @@ func (f *igFetch) already(p instagram.Post, pos int) bool {
 func (f *igFetch) sourceURL(p instagram.Post) string { return firstText(p.Permalink, f.link.URL) }
 
 // stopped: a busca não deve tentar outra origem (já guardou algo, a conversa seguiu ou o banco caiu).
-func (f *igFetch) stopped() bool { return f.saved > 0 || f.skipped > 0 || f.gone || f.fatal != nil }
+func (f *igFetch) stopped() bool {
+	return f.saved > 0 || f.skipped > 0 || f.closed || f.gone || f.fatal != nil
+}
+
+// target anota a conversa que não espera mais o post. stop=true: a busca para.
+func (f *igFetch) target(t igTarget, err error) (stop bool, _ error) {
+	switch {
+	case err != nil:
+		f.fatal = err
+		return true, err
+	case t == targetClosed:
+		f.closed = true
+		return true, instagram.ErrStop
+	case t != targetOpen:
+		f.gone = true
+		return true, instagram.ErrStop
+	}
+	return false, nil
+}
 
 // save guarda um item: trava a conversa só durante a gravação e confere de novo se ela ainda espera os
 // anúncios do mesmo rascunho.
@@ -207,14 +235,9 @@ func (f *igFetch) save(origin string, p instagram.Post, pos int, it instagram.It
 	e := f.e
 	ctx, cancel := writeCtx(f.ctx, igUploadTimeout+igWriteTimeout)
 	defer cancel()
-	conv, ident, d, ok, err := e.instagramTarget(ctx, f.job)
-	if err != nil {
-		f.fatal = err
+	conv, _, _, t, err := e.instagramTarget(ctx, f.job)
+	if stop, err := f.target(t, err); stop {
 		return err
-	}
-	if !ok {
-		f.gone = true
-		return instagram.ErrStop
 	}
 	unlock, err := e.Store.LockConversation(ctx, conv.ID)
 	if err != nil {
@@ -222,12 +245,9 @@ func (f *igFetch) save(origin string, p instagram.Post, pos int, it instagram.It
 		return err
 	}
 	defer unlock()
-	if conv, ident, d, ok, err = e.instagramTarget(ctx, f.job); err != nil {
-		f.fatal = err
+	conv, ident, d, t, err := e.instagramTarget(ctx, f.job)
+	if stop, err := f.target(t, err); stop {
 		return err
-	} else if !ok {
-		f.gone = true
-		return instagram.ErrStop
 	}
 	n, err := e.Store.CountCreatives(ctx, d.ID)
 	if err != nil {
@@ -261,24 +281,41 @@ func (f *igFetch) save(origin string, p instagram.Post, pos int, it instagram.It
 	return nil
 }
 
+// igTarget diz se a conversa ainda espera o post.
+type igTarget int
+
+const (
+	targetOpen   igTarget = iota // espera os anúncios do mesmo rascunho
+	targetClosed                 // a etapa fechou (ou outro rascunho foi aprovado): o cliente é avisado
+	targetGone                   // atendimento humano, cliente bloqueado ou sem rascunho: sem aviso
+)
+
 // instagramTarget confere se a conversa ainda espera os anúncios do mesmo rascunho.
-func (e *Engine) instagramTarget(ctx context.Context, j InstagramJob) (store.Conversation, store.Identity, store.ApprovedDraft, bool, error) {
+func (e *Engine) instagramTarget(ctx context.Context, j InstagramJob) (store.Conversation, store.Identity, store.ApprovedDraft, igTarget, error) {
 	conv, err := e.Store.GetConversation(ctx, j.ConversationID)
 	if err != nil {
-		return conv, store.Identity{}, store.ApprovedDraft{}, false, err
-	}
-	if conv.State != store.StateAwaitingCreatives {
-		return conv, store.Identity{}, store.ApprovedDraft{}, false, nil
+		return conv, store.Identity{}, store.ApprovedDraft{}, targetGone, err
 	}
 	ident, err := e.Store.GetIdentity(ctx, conv.IdentityID)
-	if err != nil || ident.Status == "blocked" {
-		return conv, ident, store.ApprovedDraft{}, false, err
+	if err != nil {
+		return conv, ident, store.ApprovedDraft{}, targetGone, err
+	}
+	if ident.Status == "blocked" || conv.State == store.StateNeedsHuman {
+		return conv, ident, store.ApprovedDraft{}, targetGone, nil
+	}
+	if conv.State != store.StateAwaitingCreatives {
+		return conv, ident, store.ApprovedDraft{}, targetClosed, nil
 	}
 	d, err := e.Store.LatestApprovedDraft(ctx, conv.ID)
-	if errors.Is(err, store.ErrNotFound) || (err == nil && d.ID != j.DraftID) {
-		return conv, ident, d, false, nil
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return conv, ident, d, targetGone, nil
+	case err != nil:
+		return conv, ident, d, targetGone, err
+	case d.ID != j.DraftID:
+		return conv, ident, d, targetClosed, nil
 	}
-	return conv, ident, d, err == nil, err
+	return conv, ident, d, targetOpen, nil
 }
 
 // downloadInstagram tenta a conta conectada (Graph API) e, se o post não é dela ou falta permissão,

@@ -314,17 +314,72 @@ func TestInstagramLinkIgnoredOutsideCreatives(t *testing.T) {
 	}
 }
 
-func TestInstagramStaleJobDoesNothing(t *testing.T) {
+const (
+	msgIGHold = "Só um instante, ainda tô baixando o post que você mandou 🔎"
+	msgIGLate = "O post chegou depois que fechamos os anúncios, então não entrou nessa campanha."
+)
+
+// I7: PRONTO com post ainda baixando não fecha a etapa; fecha depois que o post chega.
+func TestInstagramDoneWaitsForPendingFetch(t *testing.T) {
+	h, _, _, ig, _ := newIGHarness(t)
+	h.connectMetaIG()
+	ig.own["MEU1"] = instagram.Post{MediaID: "1789", Items: []instagram.Item{igVertical}}
+	h.say("SIM " + h.reachApproval())
+	h.sendFile(square)
+	h.say("https://www.instagram.com/p/MEU1/")
+	h.say("pronto")
+	if msg := h.lastClient(); msg != msgIGHold || h.conv().State != store.StateAwaitingCreatives {
+		t.Fatalf("PRONTO com post baixando: estado = %s msg = %q", h.conv().State, msg)
+	}
+	h.runKind(engine.JobInstagramFetch)
+	if h.creatives() != 2 {
+		t.Fatalf("criativos = %d", h.creatives())
+	}
+	h.say("pronto")
+	if h.conv().State != store.StateIdle {
+		t.Fatalf("depois do post: estado = %s msg = %q", h.conv().State, h.lastClient())
+	}
+}
+
+// I7: a etapa fechou antes do post chegar (ou no meio do download): o cliente fica sabendo.
+func TestInstagramLatePostTellsClient(t *testing.T) {
 	h, _, _, ig, _ := newIGHarness(t)
 	ig.pub["X1"] = instagram.Post{Items: []instagram.Item{igSquare}}
 	h.say("SIM " + h.reachApproval())
 	h.sendFile(square)
 	h.say("https://www.instagram.com/p/X1/")
-	h.say("pronto")
-	h.say("pronto") // fecha a etapa antes do job
+	_, err := h.pool.Exec(ctx, `UPDATE conversations SET state = $1`, store.StateIdle) // fechou antes do job
+	h.must(err)
 	h.runKind(engine.JobInstagramFetch)
-	if h.creatives() != 1 || ig.pubCalls != 0 {
-		t.Fatalf("job obsoleto mexeu: criativos = %d chamadas = %d", h.creatives(), ig.pubCalls)
+	if h.creatives() != 1 || ig.pubCalls != 0 || h.lastClient() != msgIGLate {
+		t.Fatalf("antes do job: criativos = %d chamadas = %d msg = %q", h.creatives(), ig.pubCalls, h.lastClient())
+	}
+
+	// fechou enquanto baixava
+	h2, _, _, ig2, _ := newIGHarness(t)
+	ig2.pub["X1"] = instagram.Post{Items: []instagram.Item{igSquare}}
+	h2.say("SIM " + h2.reachApproval())
+	h2.say("https://www.instagram.com/p/X1/")
+	ig2.before = func() {
+		_, err := h2.pool.Exec(ctx, `UPDATE conversations SET state = $1`, store.StateIdle)
+		h2.must(err)
+	}
+	h2.runKind(engine.JobInstagramFetch)
+	if h2.creatives() != 0 || h2.lastClient() != msgIGLate {
+		t.Fatalf("durante o download: criativos = %d msg = %q", h2.creatives(), h2.lastClient())
+	}
+
+	// atendimento humano: a equipe conduz, sem aviso automático
+	h3, _, _, ig3, _ := newIGHarness(t)
+	ig3.pub["X1"] = instagram.Post{Items: []instagram.Item{igSquare}}
+	h3.say("SIM " + h3.reachApproval())
+	h3.say("https://www.instagram.com/p/X1/")
+	before := h3.lastClient()
+	_, err = h3.pool.Exec(ctx, `UPDATE conversations SET state = $1`, store.StateNeedsHuman)
+	h3.must(err)
+	h3.runKind(engine.JobInstagramFetch)
+	if h3.creatives() != 0 || h3.lastClient() != before {
+		t.Fatalf("humano: criativos = %d msg = %q", h3.creatives(), h3.lastClient())
 	}
 }
 

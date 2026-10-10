@@ -67,6 +67,8 @@ const (
 	msgInstagramFailed         = "Não consegui baixar esse post (pode ser privado) 😕 Me manda a foto ou o vídeo direto aqui?"
 	msgInstagramFull           = "Você já tem 5 anúncios, o máximo. Pra usar esse post, apaga um antes (ex.: \"apaga a 1\") e me manda o link de novo."
 	msgInstagramPartial        = "O post tem %d mídias; guardei %d porque o limite é de %d anúncios."
+	msgInstagramHold           = "Só um instante, ainda tô baixando o post que você mandou 🔎"
+	msgInstagramLate           = "O post chegou depois que fechamos os anúncios, então não entrou nessa campanha."
 
 	msgPublished               = "Prontinho! Criei a campanha na sua conta de anúncios, *pausada* ⏸️\n\nDá uma olhada no Gerenciador de Anúncios e, se estiver tudo certo, me responde *ATIVAR* pra colocar no ar."
 	msgPublishedCopies         = "Os textos que vão no ar:\n\n%s"

@@ -192,6 +192,16 @@ func (e *Engine) creativesTurn(ctx context.Context, conv store.Conversation, msg
 		}
 	}
 	n := len(list)
+	if done {
+		// post do Instagram ainda baixando: o PRONTO espera, senão o post chega com a etapa fechada
+		busy, err := e.Store.HasPendingJob(ctx, JobInstagramFetch, "draft_id", d.ID)
+		if err != nil {
+			return err
+		}
+		if busy {
+			return e.send(ctx, conv, join(append(parts, msgInstagramHold)...))
+		}
+	}
 	if (n >= maxCreatives || done) && hasPendingRights(list) {
 		// post público sem resposta: não fecha a etapa nem vai para a Meta antes do É MEU ou SÓ REFERÊNCIA
 		return e.send(ctx, conv, join(append(parts, msgInstagramRightsReminder)...))
