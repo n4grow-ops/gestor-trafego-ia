@@ -101,8 +101,9 @@ func TestPublishInstagramPostAsAd(t *testing.T) {
 	if cta["type"] != "WHATSAPP_MESSAGE" {
 		t.Fatalf("botão = %v", cta)
 	}
-	if !strings.Contains(strings.Join(res.Warnings, " "), "post do Instagram") {
-		t.Fatalf("avisos = %v", res.Warnings)
+	// o aviso de que o anúncio leva a legenda do post é do engine (msgPublishedFromPost): aqui repetiria
+	if strings.Contains(strings.Join(res.Warnings, " "), "post do Instagram") {
+		t.Fatalf("aviso repetido: %v", res.Warnings)
 	}
 
 	// sem a conta do Instagram na conexão não dá para usar o post

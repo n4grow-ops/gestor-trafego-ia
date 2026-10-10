@@ -524,6 +524,39 @@ func TestPublishOwnPostFallsBackToUpload(t *testing.T) {
 	}
 }
 
+// Arquivo grande demais na conta do cliente: o da página pública é o mesmo, não baixa de novo.
+func TestInstagramOwnTooLargeSkipsPublic(t *testing.T) {
+	h, _, _, ig, _ := newIGHarness(t)
+	h.connectMetaIG()
+	ig.ownErr = instagram.ErrTooLarge
+	ig.pub["MEU1"] = instagram.Post{Items: []instagram.Item{igVertical}}
+	h.say("SIM " + h.reachApproval())
+	h.say("https://www.instagram.com/p/MEU1/")
+	h.runKind(engine.JobInstagramFetch)
+	if ig.ownCalls != 1 || ig.pubCalls != 0 || h.creatives() != 0 || !strings.Contains(h.lastClient(), "Não consegui baixar") {
+		t.Fatalf("conta = %d público = %d criativos = %d msg = %q", ig.ownCalls, ig.pubCalls, h.creatives(), h.lastClient())
+	}
+}
+
+// "meu" solto e "pode usar" não confirmam o direito de uso (respostas ambíguas).
+func TestInstagramRightsNeedsClearAnswer(t *testing.T) {
+	h, _, _, ig, _ := newIGHarness(t)
+	ig.pub["OUTRO1"] = instagram.Post{Items: []instagram.Item{igSquare}}
+	h.say("SIM " + h.reachApproval())
+	h.say("https://www.instagram.com/p/OUTRO1/")
+	h.runKind(engine.JobInstagramFetch)
+	for _, s := range []string{"meu", "pode usar"} {
+		h.say(s)
+		if list := h.creativeRows(); len(list) != 1 || !list[0].RightsPending {
+			t.Fatalf("%q confirmou o direito de uso", s)
+		}
+	}
+	h.say("é meu")
+	if list := h.creativeRows(); list[0].RightsPending {
+		t.Fatal("É MEU não confirmou")
+	}
+}
+
 // runKindCtx roda os jobs do tipo com o contexto dado (o do worker: prazo ou desligamento).
 func (h *harness) runKindCtx(jctx context.Context, kind string) {
 	h.t.Helper()

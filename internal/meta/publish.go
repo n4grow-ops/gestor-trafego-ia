@@ -200,12 +200,6 @@ func (c *Client) Publish(ctx context.Context, token string, in PublishInput) (Pu
 	if err != nil {
 		return res, err
 	}
-	for _, m := range media {
-		if m.igMediaID != "" {
-			res.Warnings = append(res.Warnings, "anúncio criado a partir do post do Instagram: vai com a legenda, as curtidas e os comentários do post")
-			break
-		}
-	}
 
 	// Tentativa anterior desta publicação que deixou campanha na conta: apaga antes de criar outra.
 	if err := c.removeLeftover(ctx, token, act, in.Name); err != nil {

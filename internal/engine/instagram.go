@@ -390,8 +390,8 @@ const (
 
 var (
 	rightsMineWords = map[string]bool{"e meu": true, "e minha": true, "eh meu": true, "e nosso": true, "e nossa": true,
-		"meu": true, "sim e meu": true, "e meu sim": true, "sim e nosso": true, "e meu mesmo": true,
-		"tenho autorizacao": true, "eu tenho autorizacao": true, "tenho permissao": true, "pode usar": true}
+		"sim e meu": true, "e meu sim": true, "sim e nosso": true, "e meu mesmo": true,
+		"tenho autorizacao": true, "eu tenho autorizacao": true, "tenho permissao": true}
 	rightsRefWords = map[string]bool{"so referencia": true, "referencia": true, "so como referencia": true,
 		"apenas referencia": true, "so pra referencia": true, "so para referencia": true, "so inspiracao": true,
 		"so como inspiracao": true, "nao e meu": true, "nao e meu so referencia": true}
