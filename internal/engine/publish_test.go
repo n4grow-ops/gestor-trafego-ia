@@ -808,3 +808,36 @@ func TestCampaignFromPreviousConnection(t *testing.T) {
 		t.Fatalf("resposta = %q", msg)
 	}
 }
+
+// I1: prazo do job estourando logo depois da campanha criada não impede gravar e avisar o cliente.
+func TestPublishRecordsEvenIfDeadlinePassesAfterCreate(t *testing.T) {
+	h, pubs, pub := newPublishHarness(t, "owner")
+	h.connectMeta()
+	h.readyProject()
+	h.runKind(engine.JobCreativesPreview)
+	_, err := h.pool.Exec(ctx, `UPDATE outbox_jobs SET run_after = now() + interval '1 hour' WHERE status = 'pending' AND kind <> $1`, engine.JobMetaPublish)
+	h.must(err)
+	_, err = h.pool.Exec(ctx, `UPDATE outbox_jobs SET run_after = now() WHERE status = 'pending' AND kind = $1`, engine.JobMetaPublish)
+	h.must(err)
+	job, ok, err := h.st.ClaimJob(ctx)
+	h.must(err)
+	if !ok || job.Kind != engine.JobMetaPublish {
+		t.Fatalf("job = %+v", job)
+	}
+	cctx, cancel := context.WithCancel(ctx)
+	pub.before = cancel // a Meta respondeu, mas o prazo do worker acabou junto
+	if err := h.eng.HandleJob(cctx, job); err != nil {
+		t.Fatalf("campanha criada não pode voltar erro (o outbox criaria outra): %v", err)
+	}
+	if p := pubs.latest(); p.Status != "paused" || p.CampaignID != "C1" {
+		t.Fatalf("publicação = %+v", p)
+	}
+	_, err = h.st.FinishJob(ctx, job.ID, nil)
+	h.must(err)
+	_, err = h.pool.Exec(ctx, `UPDATE outbox_jobs SET run_after = now() WHERE status = 'pending'`)
+	h.must(err)
+	h.drain()
+	if !strings.Contains(h.sentText(), "*pausada*") {
+		t.Fatalf("cliente não soube da campanha: %q", h.sentText())
+	}
+}

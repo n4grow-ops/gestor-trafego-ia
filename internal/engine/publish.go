@@ -25,6 +25,8 @@ const JobMetaPublish = "meta.publish"
 
 const (
 	publishAttempts = 3
+	// PublishTimeout é o prazo do job de publicação no worker: upload e processamento de vídeo levam minutos.
+	PublishTimeout = 15 * time.Minute
 	// afterMetaConnected: depois da confirmação da conexão, publica o projeto que estava pronto.
 	afterMetaConnected = "meta.connected"
 )
@@ -150,6 +152,8 @@ func (e *Engine) publish(ctx context.Context, j PublishJob) error {
 }
 
 func (e *Engine) published(ctx context.Context, ident store.Identity, conv store.Conversation, pub store.Publication, res meta.PublishResult) error {
+	// A campanha já existe na Meta: prazo do job ou worker parando não podem impedir gravar e avisar.
+	ctx = context.WithoutCancel(ctx)
 	if err := e.pubs().FinishPublication(ctx, pub.ID, store.PublicationResult{CampaignID: res.CampaignID, AdSetID: res.AdSetID,
 		AdIDs: res.AdIDs, Warnings: res.Warnings}); err != nil {
 		// A campanha já existe na Meta: tentar de novo criaria outra. A equipe grava os IDs à mão.
