@@ -13,6 +13,9 @@ import (
 // ErrNotHuman: a conversa não está em atendimento humano (a IA está respondendo).
 var ErrNotHuman = errors.New("store: conversa não está em atendimento humano")
 
+// ErrNotYours: a conversa está em atendimento humano, mas quem assumiu foi outra pessoa (ou ninguém).
+var ErrNotYours = errors.New("store: conversa assumida por outra pessoa")
+
 // KindStaff marca a mensagem escrita por alguém da equipe pelo painel.
 const KindStaff = "staff"
 
@@ -243,19 +246,22 @@ func (s *Store) ReleaseConversation(ctx context.Context, convID int64) (string, 
 }
 
 // EnqueueStaffMessage enfileira o envio de uma mensagem da equipe. Só com a conversa em atendimento
-// humano: com a IA respondendo, as duas falariam ao mesmo tempo.
-func (s *Store) EnqueueStaffMessage(ctx context.Context, convID int64, job func(chatID string) JobSpec) error {
+// humano (com a IA respondendo, as duas falariam ao mesmo tempo) e só por quem a assumiu (email).
+func (s *Store) EnqueueStaffMessage(ctx context.Context, convID int64, email string, job func(chatID string) JobSpec) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
-	var state, chatID string
-	if err := tx.QueryRow(ctx, `SELECT state, chat_id FROM conversations WHERE id = $1 FOR UPDATE`, convID).Scan(&state, &chatID); err != nil {
+	var state, chatID, humanBy string
+	if err := tx.QueryRow(ctx, `SELECT state, chat_id, coalesce(human_by, '') FROM conversations WHERE id = $1 FOR UPDATE`, convID).Scan(&state, &chatID, &humanBy); err != nil {
 		return notFound(err)
 	}
 	if state != StateNeedsHuman {
 		return ErrNotHuman
+	}
+	if humanBy == "" || humanBy != email {
+		return ErrNotYours
 	}
 	if chatID == "" {
 		return fmt.Errorf("%w: conversa sem destino no WhatsApp", ErrInvalidInput)

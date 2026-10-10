@@ -207,6 +207,8 @@ func (a *Admin) storeError(w http.ResponseWriter, err error) bool {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "dados_invalidos", "detail": strings.TrimPrefix(err.Error(), store.ErrInvalidInput.Error()+": ")})
 	case errors.Is(err, store.ErrNotHuman):
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "ia_atendendo"})
+	case errors.Is(err, store.ErrNotYours):
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "outra_pessoa"})
 	case errors.Is(err, store.ErrLastAdmin):
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "ultimo_admin"})
 	case errors.Is(err, store.ErrNoSubscription):

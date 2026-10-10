@@ -75,6 +75,7 @@ function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTi
 class ApiError extends Error { constructor(status, data) { super((data && data.error) || 'erro_' + status); this.status = status; this.data = data || {}; } }
 const ERRORS = {
   ia_atendendo: 'A IA está atendendo. Assuma a conversa antes de escrever.',
+  outra_pessoa: 'Outra pessoa assumiu esta conversa. Assuma você antes de escrever.',
   somente_admin: 'Só administradores podem fazer isso.', csrf: 'Sessão desatualizada. Recarregue a página.',
   sessao_invalida: 'Sua sessão expirou. Entre de novo.', nao_encontrado: 'Não encontrado (pode ter sido apagado).',
   cadastro_concluido: 'Esse cliente já concluiu o cadastro.', cadastro_desligado: 'O cadastro pela página está desligado.',

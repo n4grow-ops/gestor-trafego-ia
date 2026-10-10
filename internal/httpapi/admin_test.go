@@ -420,6 +420,10 @@ func TestAdminConversationFlow(t *testing.T) {
 	if r := e.do("POST", base+"/takeover", s, nil); r.code != 200 {
 		t.Fatalf("assumir = %d %s", r.code, r.raw)
 	}
+	// Só quem assumiu escreve: outra pessoa (mesmo admin) precisa assumir antes.
+	if r := e.do("POST", base+"/send", e.login("dono@meuanuncio.io"), map[string]string{"text": "oi"}); r.code != http.StatusConflict || r.body["error"] != "outra_pessoa" {
+		t.Fatalf("enviar sem ter assumido = %d %s", r.code, r.raw)
+	}
 	if r := e.do("POST", base+"/send", s, map[string]string{"text": "  "}); r.code != http.StatusUnprocessableEntity {
 		t.Fatalf("texto vazio = %d", r.code)
 	}

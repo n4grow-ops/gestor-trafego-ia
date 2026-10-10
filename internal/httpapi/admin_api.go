@@ -270,7 +270,7 @@ func (a *Admin) send(w http.ResponseWriter, r *http.Request, m store.TeamMember,
 		return
 	}
 	author := displayName(m)
-	err := a.Store.EnqueueStaffMessage(r.Context(), id, func(chatID string) store.JobSpec {
+	err := a.Store.EnqueueStaffMessage(r.Context(), id, m.Email, func(chatID string) store.JobSpec {
 		return engine.StaffSendJob(id, chatID, text, author)
 	})
 	if a.storeError(w, err) {

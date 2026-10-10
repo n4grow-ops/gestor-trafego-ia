@@ -22,7 +22,7 @@ func TestStaffMessageIsSentAndRecordedAsStaff(t *testing.T) {
 	if _, err := h.st.TakeOverConversation(ctx, conv.ID, "marina@meuanuncio.io"); err != nil {
 		t.Fatal(err)
 	}
-	err := h.st.EnqueueStaffMessage(ctx, conv.ID, func(chat string) store.JobSpec {
+	err := h.st.EnqueueStaffMessage(ctx, conv.ID, "marina@meuanuncio.io", func(chat string) store.JobSpec {
 		return engine.StaffSendJob(conv.ID, chat, "Oi Ana, aqui é a Marina da equipe!", "Marina")
 	})
 	h.must(err)

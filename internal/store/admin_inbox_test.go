@@ -25,7 +25,7 @@ func TestTakeOverSendAndRelease(t *testing.T) {
 	must(t, err)
 
 	// Com a IA atendendo, ninguém da equipe escreve.
-	if err := st.EnqueueStaffMessage(ctx, conv.ID, func(chatID string) store.JobSpec {
+	if err := st.EnqueueStaffMessage(ctx, conv.ID, "marina@meuanuncio.io", func(chatID string) store.JobSpec {
 		return staffJob(conv.ID, chatID, "oi", "Marina")
 	}); !errors.Is(err, store.ErrNotHuman) {
 		t.Fatalf("enviar sem assumir: %v", err)
@@ -49,7 +49,13 @@ func TestTakeOverSendAndRelease(t *testing.T) {
 		t.Fatalf("reassumir: %q %v", prev, err)
 	}
 
-	must(t, st.EnqueueStaffMessage(ctx, conv.ID, func(chatID string) store.JobSpec {
+	// Só quem assumiu por último escreve.
+	if err := st.EnqueueStaffMessage(ctx, conv.ID, "marina@meuanuncio.io", func(chatID string) store.JobSpec {
+		return staffJob(conv.ID, chatID, "oi", "Marina")
+	}); !errors.Is(err, store.ErrNotYours) {
+		t.Fatalf("enviar com a conversa de outra pessoa: %v", err)
+	}
+	must(t, st.EnqueueStaffMessage(ctx, conv.ID, "dono@meuanuncio.io", func(chatID string) store.JobSpec {
 		return staffJob(conv.ID, chatID, "Oi, aqui é a Marina!", "Marina")
 	}))
 	var payload []byte
