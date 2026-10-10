@@ -81,6 +81,12 @@ func (e *Engine) HandleJob(ctx context.Context, job store.Job) error {
 			return fmt.Errorf("engine: payload de publicação inválido: %w", err)
 		}
 		return e.publish(ctx, p)
+	case JobInstagramFetch:
+		var j InstagramJob
+		if err := json.Unmarshal(job.Payload, &j); err != nil {
+			return fmt.Errorf("engine: payload do post do instagram inválido: %w", err)
+		}
+		return e.fetchInstagram(ctx, j)
 	default:
 		return fmt.Errorf("engine: job desconhecido %q", job.Kind)
 	}
@@ -125,6 +131,12 @@ func (e *Engine) OnJobFailed(ctx context.Context, job store.Job) error {
 			return fmt.Errorf("engine: %w", err)
 		}
 		return e.publishGaveUp(ctx, p)
+	case JobInstagramFetch:
+		var j InstagramJob
+		if err := json.Unmarshal(job.Payload, &j); err != nil {
+			return fmt.Errorf("engine: %w", err)
+		}
+		return e.instagramGaveUp(ctx, j)
 	case JobReply:
 		// Resposta esgotou as tentativas: o cliente não fica sem retorno.
 		var r ReplyJob

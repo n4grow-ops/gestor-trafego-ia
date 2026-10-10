@@ -1,0 +1,356 @@
+package engine_test
+
+import (
+	"context"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/engine"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/instagram"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/media/mediatest"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
+)
+
+// fakeIG faz o papel do instagram.Fetcher: posts por shortcode na conta do cliente e na página pública.
+type fakeIG struct {
+	mu       sync.Mutex
+	own      map[string]instagram.Post
+	ownErr   error
+	pub      map[string]instagram.Post
+	pubErr   error
+	ownCalls int
+	pubCalls int
+	tokens   []string
+}
+
+func (f *fakeIG) Own(_ context.Context, token, igUserID string, l instagram.Link, max int) (instagram.Post, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ownCalls++
+	f.tokens = append(f.tokens, token+"|"+igUserID)
+	if f.ownErr != nil {
+		return instagram.Post{}, f.ownErr
+	}
+	p, ok := f.own[l.Shortcode]
+	if !ok {
+		return instagram.Post{}, instagram.ErrNotOwn
+	}
+	return limitItems(p, max), nil
+}
+
+func (f *fakeIG) Public(_ context.Context, l instagram.Link, max int) (instagram.Post, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.pubCalls++
+	if f.pubErr != nil {
+		return instagram.Post{}, f.pubErr
+	}
+	p, ok := f.pub[l.Shortcode]
+	if !ok {
+		return instagram.Post{}, instagram.ErrUnavailable
+	}
+	return limitItems(p, max), nil
+}
+
+func limitItems(p instagram.Post, max int) instagram.Post {
+	p.Total = len(p.Items)
+	if max > 0 && len(p.Items) > max {
+		p.Items = p.Items[:max]
+	}
+	return p
+}
+
+var (
+	igSquare   = instagram.Item{Kind: "image", Mime: "image/jpeg", Data: mediatest.JPEG(1080, 1080)}
+	igVertical = instagram.Item{Kind: "video", Mime: "video/mp4", Data: mediatest.MP4(12, 1080, 1920, false)}
+	igTiny     = instagram.Item{Kind: "image", Mime: "image/png", Data: mediatest.PNG(300, 300)}
+)
+
+func newIGHarness(t *testing.T) (*harness, *fakePubs, *fakePublisher, *fakeIG, *fakeStorage) {
+	h, pubs, pub := newPublishHarness(t, "owner")
+	fs := h.eng.Storage.(*fakeStorage)
+	ig := &fakeIG{own: map[string]instagram.Post{}, pub: map[string]instagram.Post{}}
+	h.eng.Instagram = ig
+	return h, pubs, pub, ig, fs
+}
+
+// connectMetaIG conecta a conta Meta com o Instagram IG1 vinculado à Página.
+func (h *harness) connectMetaIG() {
+	h.t.Helper()
+	h.connectMeta()
+	_, err := h.pool.Exec(ctx, `UPDATE meta_connections SET instagram_id = 'IG1', instagram_username = 'pizzariaboa'`)
+	h.must(err)
+}
+
+func (h *harness) creativeRows() []store.Creative {
+	h.t.Helper()
+	d, err := h.st.LatestApprovedDraft(ctx, h.conv().ID)
+	h.must(err)
+	list, err := h.st.ListCreatives(ctx, d.ID)
+	h.must(err)
+	return list
+}
+
+func TestInstagramOwnPostBecomesCreatives(t *testing.T) {
+	h, _, _, ig, fs := newIGHarness(t)
+	h.connectMetaIG()
+	ig.own["MEU1"] = instagram.Post{MediaID: "1789", Permalink: "https://www.instagram.com/p/MEU1/", Caption: "Promo",
+		Items: []instagram.Item{igSquare, igVertical}}
+	h.say("SIM " + h.reachApproval())
+	h.say("usa esse meu post https://www.instagram.com/p/MEU1/?igsh=abc")
+	if msg := h.lastClient(); msg != "Deixa comigo, vou buscar esse post 🔎" {
+		t.Fatalf("resposta imediata = %q", msg)
+	}
+	if h.pendingJobs(engine.JobInstagramFetch) != 1 || h.creatives() != 0 {
+		t.Fatalf("job = %d criativos = %d", h.pendingJobs(engine.JobInstagramFetch), h.creatives())
+	}
+	h.runKind(engine.JobInstagramFetch)
+	list := h.creativeRows()
+	if len(list) != 2 || fs.count() != 2 {
+		t.Fatalf("criativos = %d arquivos = %d", len(list), fs.count())
+	}
+	for _, c := range list {
+		if c.Origin != store.OriginInstagramOwn || c.IGMediaID != "1789" || c.RightsPending || c.SourceURL != "https://www.instagram.com/p/MEU1/" {
+			t.Fatalf("criativo = %+v", c)
+		}
+	}
+	if list[1].Kind != "video" || list[1].Placement != "stories" {
+		t.Fatalf("vídeo = %+v", list[1])
+	}
+	msg := h.lastClient()
+	if !strings.Contains(msg, "Peguei seu post ✅") || !strings.Contains(msg, "2 de 5") || !strings.Contains(msg, "Stories e Reels: ✅") {
+		t.Fatalf("resposta do job = %q", msg)
+	}
+	if ig.pubCalls != 0 || len(ig.tokens) != 1 || ig.tokens[0] != "token-do-cliente|IG1" {
+		t.Fatalf("público = %d tokens = %v", ig.pubCalls, ig.tokens)
+	}
+	if h.conv().State != store.StateAwaitingCreatives {
+		t.Fatalf("estado = %s", h.conv().State)
+	}
+}
+
+func TestInstagramPublicPostAsksRightsThenMine(t *testing.T) {
+	h, _, _, ig, _ := newIGHarness(t)
+	ig.pub["OUTRO1"] = instagram.Post{Permalink: "https://www.instagram.com/p/OUTRO1/", Caption: "Legenda boa", Items: []instagram.Item{igSquare}}
+	h.say("SIM " + h.reachApproval())
+	h.say("https://instagram.com/p/OUTRO1")
+	h.runKind(engine.JobInstagramFetch)
+	list := h.creativeRows()
+	if len(list) != 1 || list[0].Origin != store.OriginInstagramPublic || !list[0].RightsPending || list[0].SourceCaption != "Legenda boa" {
+		t.Fatalf("criativos = %+v", list)
+	}
+	want := "Baixei o post ✅ Só confirma uma coisa: esse conteúdo é seu ou você tem autorização pra usar no anúncio? Responde *É MEU* pra usar como anúncio, ou *SÓ REFERÊNCIA* pra eu usar só como inspiração."
+	if msg := h.lastClient(); !strings.Contains(msg, want) {
+		t.Fatalf("pergunta do direito de uso = %q", msg)
+	}
+	if ig.ownCalls != 0 {
+		t.Fatal("sem conexão não procura na conta")
+	}
+	// PRONTO sem responder: não fecha a etapa
+	h.say("pronto")
+	if h.conv().State != store.StateAwaitingCreatives || !strings.Contains(h.lastClient(), "É MEU") {
+		t.Fatalf("fechou sem confirmar: estado = %s msg = %q", h.conv().State, h.lastClient())
+	}
+	h.say("É meu!")
+	if list := h.creativeRows(); list[0].RightsPending {
+		t.Fatal("não confirmou")
+	}
+	if msg := h.lastClient(); !strings.Contains(msg, "1 de 5") {
+		t.Fatalf("resposta do É MEU = %q", msg)
+	}
+	h.say("pronto")
+	h.say("pronto")
+	if h.conv().State != store.StateIdle {
+		t.Fatalf("estado = %s msg = %q", h.conv().State, h.lastClient())
+	}
+}
+
+func TestInstagramPublicPostReferenceOnly(t *testing.T) {
+	h, pubs, _, ig, fs := newIGHarness(t)
+	ig.pub["OUTRO1"] = instagram.Post{Permalink: "https://www.instagram.com/p/OUTRO1/", Caption: "Pizza que derrete",
+		Items: []instagram.Item{igSquare, igVertical}}
+	h.say("SIM " + h.reachApproval())
+	h.sendFile(square)
+	h.say("https://www.instagram.com/reel/OUTRO1/")
+	h.runKind(engine.JobInstagramFetch)
+	if h.creatives() != 3 || fs.count() != 3 {
+		t.Fatalf("criativos = %d", h.creatives())
+	}
+	h.say("só referência")
+	list := h.creativeRows()
+	if len(list) != 1 || list[0].Origin != store.OriginUpload || fs.count() != 1 {
+		t.Fatalf("restaram %+v (arquivos %d)", list, fs.count())
+	}
+	refs := strings.Join(mapValues(pubs.copies), "\n")
+	if !strings.Contains(refs, "https://www.instagram.com/p/OUTRO1/") || !strings.Contains(refs, "Pizza que derrete") || strings.Count(refs, "OUTRO1") != 1 {
+		t.Fatalf("referências = %q", refs)
+	}
+	if msg := h.lastClient(); !strings.Contains(msg, "só como referência") || !strings.Contains(msg, "1 de 5") {
+		t.Fatalf("resposta = %q", msg)
+	}
+	// sem post pendente, "é meu" não é comando (não quebra nada)
+	h.say("é meu")
+	if h.creatives() != 1 {
+		t.Fatal("mexeu nos anúncios")
+	}
+}
+
+func TestInstagramPermissionErrorFallsBackToPublic(t *testing.T) {
+	h, _, _, ig, _ := newIGHarness(t)
+	h.connectMetaIG()
+	ig.ownErr = instagram.ErrPermission
+	ig.pub["MEU1"] = instagram.Post{Items: []instagram.Item{igSquare}, Permalink: "https://www.instagram.com/p/MEU1/"}
+	h.say("SIM " + h.reachApproval())
+	h.say("https://www.instagram.com/p/MEU1/")
+	h.runKind(engine.JobInstagramFetch)
+	if ig.ownCalls != 1 || ig.pubCalls != 1 {
+		t.Fatalf("conta = %d público = %d", ig.ownCalls, ig.pubCalls)
+	}
+	if list := h.creativeRows(); len(list) != 1 || list[0].Origin != store.OriginInstagramPublic || !list[0].RightsPending {
+		t.Fatalf("criativos = %+v", list)
+	}
+	// post de outra conta também cai no público
+	ig.ownErr = nil
+	ig.pub["OUTRO2"] = instagram.Post{Items: []instagram.Item{igVertical}}
+	h.say("SÓ REFERÊNCIA")
+	h.say("https://www.instagram.com/p/OUTRO2/")
+	h.runKind(engine.JobInstagramFetch)
+	if ig.ownCalls != 2 || ig.pubCalls != 2 || h.creatives() != 1 {
+		t.Fatalf("conta = %d público = %d criativos = %d", ig.ownCalls, ig.pubCalls, h.creatives())
+	}
+}
+
+func TestInstagramFetchFailureAsksForFile(t *testing.T) {
+	h, _, _, ig, _ := newIGHarness(t)
+	ig.pubErr = instagram.ErrUnavailable
+	h.say("SIM " + h.reachApproval())
+	h.say("https://www.instagram.com/p/PRIVADO/")
+	h.runKind(engine.JobInstagramFetch)
+	if msg := h.lastClient(); msg != "Não consegui baixar esse post (pode ser privado) 😕 Me manda a foto ou o vídeo direto aqui?" {
+		t.Fatalf("resposta = %q", msg)
+	}
+	if h.creatives() != 0 || h.conv().State != store.StateAwaitingCreatives {
+		t.Fatalf("criativos = %d estado = %s", h.creatives(), h.conv().State)
+	}
+}
+
+func TestInstagramRejectedMediaAndLimit(t *testing.T) {
+	h, _, _, ig, _ := newIGHarness(t)
+	h.connectMetaIG()
+	ig.own["MEU1"] = instagram.Post{MediaID: "1", Items: []instagram.Item{igTiny}}
+	ig.own["MEU2"] = instagram.Post{MediaID: "2", Items: []instagram.Item{igSquare, igSquare, igSquare, igSquare, igSquare, igSquare}}
+	h.say("SIM " + h.reachApproval())
+	h.say("https://www.instagram.com/p/MEU1/")
+	h.runKind(engine.JobInstagramFetch)
+	if msg := h.lastClient(); h.creatives() != 0 || !strings.Contains(msg, "pequena demais") || strings.Contains(msg, "Peguei") {
+		t.Fatalf("imagem pequena: criativos = %d msg = %q", h.creatives(), msg)
+	}
+	h.sendFile(vertical)
+	h.say("https://www.instagram.com/p/MEU2/")
+	h.runKind(engine.JobInstagramFetch)
+	if h.creatives() != 5 {
+		t.Fatalf("criativos = %d (limite 5)", h.creatives())
+	}
+	if msg := h.lastClient(); !strings.Contains(msg, "6 mídias") || !strings.Contains(msg, "5 de 5") {
+		t.Fatalf("resposta = %q", msg)
+	}
+}
+
+func TestInstagramLinkIgnoredOutsideCreatives(t *testing.T) {
+	h, _, _, _, _ := newIGHarness(t)
+	h.att.Responses = append(h.att.Responses, `{"intent":"question","reply":"Que post legal!"}`)
+	h.say("https://www.instagram.com/p/MEU1/")
+	if h.pendingJobs(engine.JobInstagramFetch) != 0 || h.att.Calls() != 1 {
+		t.Fatal("link fora da etapa dos anúncios segue para a Atendente")
+	}
+}
+
+func TestInstagramStaleJobDoesNothing(t *testing.T) {
+	h, _, _, ig, _ := newIGHarness(t)
+	ig.pub["X1"] = instagram.Post{Items: []instagram.Item{igSquare}}
+	h.say("SIM " + h.reachApproval())
+	h.sendFile(square)
+	h.say("https://www.instagram.com/p/X1/")
+	h.say("pronto")
+	h.say("pronto") // fecha a etapa antes do job
+	h.runKind(engine.JobInstagramFetch)
+	if h.creatives() != 1 || ig.pubCalls != 0 {
+		t.Fatalf("job obsoleto mexeu: criativos = %d chamadas = %d", h.creatives(), ig.pubCalls)
+	}
+}
+
+func TestPublishSkipsUnconfirmedCreatives(t *testing.T) {
+	h, _, pub, _, _ := newIGHarness(t)
+	h.connectMeta()
+	h.readyProject()
+	d, err := h.st.LatestApprovedDraft(ctx, h.conv().ID)
+	h.must(err)
+	ident := h.ident()
+	_, err = h.st.AddCreative(ctx, store.Creative{OrgID: ident.OrgID, DraftID: d.ID, Kind: "image", Mime: "image/jpeg", Path: "p.jpg",
+		Origin: store.OriginInstagramPublic, RightsPending: true})
+	h.must(err)
+	h.runKind(engine.JobCreativesPreview)
+	h.runKind(engine.JobMetaPublish)
+	if pub.calls() != 1 || len(pub.inputs[0].Creatives) != 1 {
+		t.Fatalf("publicou %d criativos", len(pub.inputs[0].Creatives))
+	}
+}
+
+func TestPublishWithOnlyUnconfirmedAsksForMedia(t *testing.T) {
+	h, _, pub, _, _ := newIGHarness(t)
+	h.connectMeta()
+	h.readyProject()
+	_, err := h.pool.Exec(ctx, `UPDATE creatives SET origin = 'instagram_public', rights_confirmed = false`)
+	h.must(err)
+	h.runKind(engine.JobCreativesPreview)
+	h.runKind(engine.JobMetaPublish)
+	if pub.calls() != 0 {
+		t.Fatal("publicou post sem confirmação")
+	}
+	if h.conv().State != store.StateAwaitingCreatives || !strings.Contains(h.lastClient(), "foto ou vídeo") {
+		t.Fatalf("estado = %s msg = %q", h.conv().State, h.lastClient())
+	}
+}
+
+func TestPublishOwnPostUsesInstagramMedia(t *testing.T) {
+	h, _, pub, ig, _ := newIGHarness(t)
+	h.connectMetaIG()
+	ig.own["MEU1"] = instagram.Post{MediaID: "1789", Items: []instagram.Item{igSquare, igVertical}}
+	h.say("SIM " + h.reachApproval())
+	h.say("https://www.instagram.com/p/MEU1/")
+	h.runKind(engine.JobInstagramFetch)
+	h.say("pronto")
+	h.runKind(engine.JobCreativesPreview)
+	h.runKind(engine.JobMetaPublish)
+	if pub.calls() != 1 {
+		t.Fatalf("Publish = %d", pub.calls())
+	}
+	in := pub.inputs[0]
+	if len(in.Creatives) != 1 || in.Creatives[0].InstagramMediaID != "1789" || in.InstagramActorID != "IG1" || len(in.Creatives[0].Data) != 0 {
+		t.Fatalf("criativos = %+v", in.Creatives)
+	}
+	if strings.Contains(h.lastClient(), "Os textos que vão no ar") || !strings.Contains(h.lastClient(), "post do Instagram") {
+		t.Fatalf("mensagem = %q", h.lastClient())
+	}
+
+	// misturado com upload: sobe os arquivos normalmente
+	h2, _, pub2, ig2, _ := newIGHarness(t)
+	h2.connectMetaIG()
+	ig2.own["MEU1"] = instagram.Post{MediaID: "1789", Items: []instagram.Item{igVertical}}
+	h2.say("SIM " + h2.reachApproval())
+	h2.sendFile(square)
+	h2.say("https://www.instagram.com/p/MEU1/")
+	h2.runKind(engine.JobInstagramFetch)
+	h2.say("pronto")
+	h2.runKind(engine.JobCreativesPreview)
+	h2.runKind(engine.JobMetaPublish)
+	for _, c := range pub2.inputs[0].Creatives {
+		if c.InstagramMediaID != "" || len(c.Data) == 0 {
+			t.Fatalf("misturado: %+v", c)
+		}
+	}
+	if len(pub2.inputs[0].Creatives) != 2 {
+		t.Fatalf("misturado: %d criativos", len(pub2.inputs[0].Creatives))
+	}
+}

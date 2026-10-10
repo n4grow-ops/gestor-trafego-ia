@@ -55,15 +55,35 @@ func (e *Engine) saveCreative(ctx context.Context, ident store.Identity, conv st
 	if in.Kind == whatsapp.KindVideo || strings.HasPrefix(mime, "video/") {
 		kind = "video"
 	}
+	return e.keepCreative(ctx, ident, conv.ID, d, creativeFile{data: data, mime: mime, kind: kind, name: in.ExternalID})
+}
+
+// creativeFile é o arquivo a guardar como anúncio, com a origem (vazia = upload pelo WhatsApp).
+type creativeFile struct {
+	data          []byte
+	mime, kind    string
+	name          string // parte do nome do arquivo no Storage
+	origin        string
+	igMediaID     string
+	rightsPending bool
+	sourceURL     string
+	caption       string
+}
+
+// keepCreative confere a qualidade, sobe no Storage e registra. Devolve o marcador do resultado
+// (creativeSaved, creativeWarned..., creativeRejected... ou creativeFailed).
+func (e *Engine) keepCreative(ctx context.Context, ident store.Identity, convID int64, d store.ApprovedDraft, f creativeFile) string {
+	mime, kind, data := f.mime, f.kind, f.data
 	c := store.Creative{OrgID: ident.OrgID, DraftID: d.ID, ProjectID: d.ProjectID, Kind: kind, Mime: mime,
-		Size: int64(len(data)), Format: string(media.Other), Placement: string(media.Feed)}
+		Size: int64(len(data)), Format: string(media.Other), Placement: string(media.Feed),
+		Origin: f.origin, IGMediaID: f.igMediaID, RightsPending: f.rightsPending, SourceURL: f.sourceURL, SourceCaption: f.caption}
 	warning := ""
 	if mime == "" {
 		mime = kind + "/*"
 	}
 	if info, err := media.Inspect(mime, data); err != nil {
 		// arquivo que não sei ler (ex.: formato raro) segue: a Meta confere de novo no envio
-		e.Log.Warn("criativo sem leitura de formato", "conversation_id", conv.ID, "mime", mime, "erro", err)
+		e.Log.Warn("criativo sem leitura de formato", "conversation_id", convID, "mime", mime, "erro", err)
 	} else {
 		v := media.Check(info)
 		if !v.OK {
@@ -71,24 +91,24 @@ func (e *Engine) saveCreative(ctx context.Context, ident store.Identity, conv st
 			return creativeRejected + v.Reason + "]"
 		}
 		warning = v.Warning
-		f := info.Format()
+		fm := info.Format()
 		c.Width, c.Height, c.DurationMS = info.Width, info.Height, int(info.Duration/time.Millisecond)
-		c.Format, c.Placement = string(f), string(f.Placement())
+		c.Format, c.Placement = string(fm), string(fm.Placement())
 	}
-	c.Path = fmt.Sprintf("org/%d/draft/%d/%d-%s.%s", ident.OrgID, d.ID, e.now().UnixNano(), safeName(in.ExternalID), extension(mime, kind))
+	c.Path = fmt.Sprintf("org/%d/draft/%d/%d-%s.%s", ident.OrgID, d.ID, e.now().UnixNano(), safeName(f.name), extension(mime, kind))
 	contentType := c.Mime
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
 	if err := e.Storage.Upload(ctx, CreativesBucket, c.Path, contentType, data); err != nil {
-		e.Log.Error("falha ao guardar criativo", "conversation_id", conv.ID, "erro", err)
+		e.Log.Error("falha ao guardar criativo", "conversation_id", convID, "erro", err)
 		return creativeFailed
 	}
 	if _, err := e.Store.AddCreative(ctx, c); err != nil {
-		e.Log.Error("falha ao registrar criativo", "conversation_id", conv.ID, "erro", err)
+		e.Log.Error("falha ao registrar criativo", "conversation_id", convID, "erro", err)
 		return creativeFailed
 	}
-	e.audit(ctx, ident.OrgID, member(ident), "creative_received", map[string]any{"draft_id": d.ID, "kind": kind, "format": c.Format})
+	e.audit(ctx, ident.OrgID, member(ident), "creative_received", map[string]any{"draft_id": d.ID, "kind": kind, "format": c.Format, "origin": c.Origin})
 	if warning != "" {
 		return creativeWarned + warning + "]"
 	}
@@ -110,8 +130,27 @@ func (e *Engine) creativesTurn(ctx context.Context, conv store.Conversation, msg
 		return err
 	}
 	var parts, warnings, rejected []string
-	var received, failed, done, changed, noted bool
+	var received, failed, done, changed, noted, fetching bool
 	for _, m := range msgs {
+		if a := parseRights(m); a != rightsNone && hasPendingRights(list) {
+			// resposta à pergunta do direito de uso do post público
+			reply, err := e.applyRights(ctx, list[0].OrgID, d.ID, a)
+			if err != nil {
+				return err
+			}
+			parts = append(parts, reply)
+			changed = true
+			if list, err = e.Store.ListCreatives(ctx, d.ID); err != nil {
+				return err
+			}
+			continue
+		}
+		if ok, err := e.enqueueInstagram(ctx, conv, d.ID, m); err != nil {
+			return err
+		} else if ok {
+			fetching = true
+			continue
+		}
 		switch {
 		case strings.HasPrefix(m, creativeSaved):
 			received = true
@@ -151,6 +190,10 @@ func (e *Engine) creativesTurn(ctx context.Context, conv store.Conversation, msg
 		}
 	}
 	n := len(list)
+	if (n >= maxCreatives || done) && hasPendingRights(list) {
+		// post público sem resposta: não fecha a etapa nem vai para a Meta antes do É MEU ou SÓ REFERÊNCIA
+		return e.send(ctx, conv, join(append(parts, msgInstagramRightsReminder)...))
+	}
 	if n >= maxCreatives || (done && n > 0) {
 		if miss := missingPlacement(list); done && n < maxCreatives && miss != "" && !d.Nudged {
 			if err := e.Store.MarkCreativesNudged(ctx, d.ID); err != nil {
@@ -169,6 +212,9 @@ func (e *Engine) creativesTurn(ctx context.Context, conv store.Conversation, msg
 	if noted {
 		parts = append(parts, msgCopyNoted)
 	}
+	if fetching {
+		parts = append(parts, msgInstagramFetching)
+	}
 	if received {
 		ack := "Recebi! ✅"
 		for _, w := range warnings {
@@ -181,6 +227,7 @@ func (e *Engine) creativesTurn(ctx context.Context, conv store.Conversation, msg
 		parts = append(parts, msgCreativesNeedOne)
 	case received || changed || len(rejected) > 0:
 		parts = append(parts, creativesStatus(list))
+	case fetching: // o job responde quando o post chegar
 	case noted && n == 0:
 		parts = append(parts, msgCopyNotedNeedMedia)
 	case noted:
