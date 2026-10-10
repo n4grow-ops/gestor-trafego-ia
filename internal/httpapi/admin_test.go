@@ -492,24 +492,53 @@ func TestAdminClientActions(t *testing.T) {
 	if r := e.do("POST", "/api/payments", admin, map[string]any{"org_id": e.orgID, "amount_cents": 9700, "method": "pix", "status": "paid", "date": "2026-10-05"}); r.code != http.StatusCreated {
 		t.Fatalf("pagamento = %d %s", r.code, r.raw)
 	}
-	if r := e.do("GET", "/api/clients/"+org+"/reset", admin, nil); r.code != 200 || r.body["applied"] != false {
+	// Cliente com pagamento é cliente real: não dá para zerar (nem a prévia).
+	if r := e.do("GET", "/api/clients/"+org+"/reset", admin, nil); r.code != http.StatusConflict || r.body["error"] != "cliente_real" {
+		t.Fatalf("prévia de zerar cliente real = %d %s", r.code, r.raw)
+	}
+	if r := e.do("POST", "/api/clients/"+org+"/reset", admin, map[string]string{"confirm": "ZERAR"}); r.code != http.StatusConflict || r.body["error"] != "cliente_real" {
+		t.Fatalf("zerar cliente real = %d %s", r.code, r.raw)
+	}
+	if r := e.do("GET", "/api/clients/"+org, admin, nil); r.code != 200 {
+		t.Fatalf("cliente real depois de recusar = %d", r.code)
+	}
+
+	// Conta de teste (sem pagamento): zera, e o registro vai junto.
+	testOrg, err := e.st.CreateOrganization(ctx, "Contato teste", "", 50, []string{"OUTCOME_ENGAGEMENT"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mem, err := e.st.CreateMember(ctx, testOrg, "Teste", "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.LinkPhone(ctx, "waha", "5511977776666", mem); err != nil {
+		t.Fatal(err)
+	}
+	tOrg := strconv.FormatInt(testOrg, 10)
+	if r := e.do("GET", "/api/clients/"+tOrg+"/reset", admin, nil); r.code != 200 || r.body["applied"] != false {
 		t.Fatalf("prévia de zerar = %d %s", r.code, r.raw)
 	}
-	if r := e.do("POST", "/api/clients/"+org+"/reset", admin, map[string]string{"confirm": "sim"}); r.code != http.StatusUnprocessableEntity {
+	if r := e.do("POST", "/api/clients/"+tOrg+"/reset", admin, map[string]string{"confirm": "sim"}); r.code != http.StatusUnprocessableEntity {
 		t.Fatalf("zerar sem confirmação = %d", r.code)
 	}
-	if r := e.do("POST", "/api/clients/"+org+"/reset", admin, map[string]string{"confirm": "ZERAR"}); r.code != 200 || r.body["applied"] != true {
+	if r := e.do("POST", "/api/clients/"+tOrg+"/reset", admin, map[string]string{"confirm": "ZERAR"}); r.code != 200 || r.body["applied"] != true {
 		t.Fatalf("zerar = %d %s", r.code, r.raw)
 	}
-	if r := e.do("GET", "/api/clients/"+org, admin, nil); r.code != http.StatusNotFound {
+	if r := e.do("GET", "/api/clients/"+tOrg, admin, nil); r.code != http.StatusNotFound {
 		t.Fatalf("cliente depois de zerar = %d", r.code)
+	}
+	tlog, _ := e.st.AdminLog(ctx, store.AdminLogFilter{TargetType: "organization", TargetID: tOrg})
+	if len(tlog) != 1 || tlog[0].Action != "client_reset" || tlog[0].ActorEmail != "dono@meuanuncio.io" || tlog[0].TargetLabel != "Contato teste" ||
+		!strings.Contains(string(tlog[0].Data), "5511977776666") {
+		t.Fatalf("registro do zerar = %+v", tlog)
 	}
 	log, _ := e.st.AdminLog(ctx, store.AdminLogFilter{TargetType: "organization", TargetID: org})
 	var actions []string
 	for _, l := range log {
 		actions = append(actions, l.Action)
 	}
-	if strings.Join(actions, ",") != "client_reset,payment_record,client_signup_link" {
+	if strings.Join(actions, ",") != "payment_record,client_signup_link" {
 		t.Fatalf("ações registradas = %v", actions)
 	}
 }

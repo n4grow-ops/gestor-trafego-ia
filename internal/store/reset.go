@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 
@@ -32,10 +33,27 @@ func (r ResetReport) Rows(table string) int64 {
 	return 0
 }
 
-// ResetOrganization apaga o cliente inteiro (organização, telefones, conversa, projetos, assinatura,
-// conexão Meta, uso de IA e eventos) para o número voltar como contato novo. Sem apply, só simula.
-// O registro de ações do painel fica. Arquivos de anúncios no Storage não são apagados.
-func (s *Store) ResetOrganization(ctx context.Context, orgID int64, apply bool) (ResetReport, error) {
+// ErrRealClient: a organização tem pagamento registrado ou cadastro completo com plano pago. Zerar é
+// só para conta de teste.
+var ErrRealClient = errors.New("store: cliente real (pagamento ou plano pago) não pode ser zerado")
+
+// realClient diz se alguma das organizações é cliente de verdade: qualquer pagamento registrado, ou
+// cadastro completo com assinatura de plano pago.
+func realClient(ctx context.Context, tx pgx.Tx, orgIDs []int64) (bool, error) {
+	var real bool
+	err := tx.QueryRow(ctx, `SELECT
+		EXISTS (SELECT 1 FROM payments p JOIN subscriptions s ON s.id = p.subscription_id WHERE s.organization_id = ANY($1))
+		OR EXISTS (SELECT 1 FROM organizations o JOIN subscriptions s ON s.organization_id = o.id JOIN plans pl ON pl.code = s.plan_code
+			WHERE o.id = ANY($1) AND o.registration_status = 'complete' AND pl.price_cents > 0)`, orgIDs).Scan(&real)
+	return real, err
+}
+
+// ResetOrganization apaga o cliente de teste inteiro (organização, telefones, conversa, projetos,
+// assinatura, conexão Meta, uso de IA e eventos) para o número voltar como contato novo. Sem apply,
+// só simula. Recusa cliente real (ErrRealClient). Ao aplicar, grava audit (com os telefones e as
+// linhas apagadas) no registro do painel na mesma transação: sem registro, nada é apagado.
+// Arquivos de anúncios no Storage não são apagados.
+func (s *Store) ResetOrganization(ctx context.Context, orgID int64, apply bool, audit AdminAction) (ResetReport, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return ResetReport{}, err
@@ -47,6 +65,11 @@ func (s *Store) ResetOrganization(ctx context.Context, orgID int64, apply bool) 
 	}
 	if !exists {
 		return ResetReport{}, ErrNotFound
+	}
+	if real, err := realClient(ctx, tx, []int64{orgID}); err != nil {
+		return ResetReport{}, err
+	} else if real {
+		return ResetReport{}, ErrRealClient
 	}
 	rows, err := tx.Query(ctx, `SELECT w.phone_e164 FROM whatsapp_identities w JOIN members m ON m.id = w.member_id
 		WHERE m.organization_id = $1 ORDER BY w.id`, orgID)
@@ -64,6 +87,10 @@ func (s *Store) ResetOrganization(ctx context.Context, orgID int64, apply bool) 
 	if !apply {
 		return rep, nil
 	}
+	audit.Data = map[string]any{"phones": rep.Phones, "steps": rep.Steps}
+	if err := logAdminAction(ctx, tx, audit); err != nil {
+		return rep, fmt.Errorf("store: zerar sem registro: %w", err)
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return rep, err
 	}
@@ -72,7 +99,8 @@ func (s *Store) ResetOrganization(ctx context.Context, orgID int64, apply bool) 
 }
 
 // ResetContacts é o mesmo para scripts/resetcontato: acha as organizações pelos telefones.
-// others > 0 quando essas organizações têm outros telefones (não apaga nada).
+// others > 0 quando essas organizações têm outros telefones (não apaga nada). Também recusa
+// cliente real (ErrRealClient).
 func (s *Store) ResetContacts(ctx context.Context, phones []string, apply bool) (rep ResetReport, others int, err error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -95,6 +123,11 @@ func (s *Store) ResetContacts(ctx context.Context, phones []string, apply bool) 
 	if others > 0 {
 		return ResetReport{OrgIDs: orgIDs, Phones: phones}, others, nil
 	}
+	if real, err := realClient(ctx, tx, orgIDs); err != nil {
+		return rep, 0, err
+	} else if real {
+		return ResetReport{OrgIDs: orgIDs, Phones: phones}, 0, ErrRealClient
+	}
 	rep, err = resetOrganizations(ctx, tx, orgIDs, phones)
 	if err != nil || !apply {
 		return rep, 0, err
@@ -111,7 +144,6 @@ func resetOrganizations(ctx context.Context, tx pgx.Tx, orgIDs []int64, phones [
 	idents := `SELECT w.id FROM whatsapp_identities w JOIN members m ON m.id = w.member_id WHERE m.organization_id = ANY($1)`
 	conv := `SELECT c.id FROM conversations c WHERE c.identity_id IN (` + idents + `)`
 	steps := []struct{ table, sql string }{
-		{"payments", `DELETE FROM payments WHERE subscription_id IN (SELECT id FROM subscriptions WHERE organization_id = ANY($1))`},
 		{"subscriptions", `DELETE FROM subscriptions WHERE organization_id = ANY($1)`},
 		{"consents", `DELETE FROM consents WHERE member_id IN (SELECT id FROM members WHERE organization_id = ANY($1))`},
 		{"creatives", `DELETE FROM creatives WHERE organization_id = ANY($1)`},

@@ -211,6 +211,8 @@ func (a *Admin) storeError(w http.ResponseWriter, err error) bool {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "ultimo_admin"})
 	case errors.Is(err, store.ErrNoSubscription):
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "sem_assinatura"})
+	case errors.Is(err, store.ErrRealClient):
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "cliente_real"})
 	case errors.Is(err, store.ErrAlreadyRegistered):
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "cadastro_concluido"})
 	default:

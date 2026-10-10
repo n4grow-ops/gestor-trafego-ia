@@ -154,7 +154,7 @@ func (a *Admin) resetPreview(w http.ResponseWriter, r *http.Request, m store.Tea
 	if !ok {
 		return
 	}
-	rep, err := a.Store.ResetOrganization(r.Context(), id, false)
+	rep, err := a.Store.ResetOrganization(r.Context(), id, false, store.AdminAction{})
 	if a.storeError(w, err) {
 		return
 	}
@@ -180,11 +180,12 @@ func (a *Admin) reset(w http.ResponseWriter, r *http.Request, m store.TeamMember
 	if a.storeError(w, err) {
 		return
 	}
-	rep, err := a.Store.ResetOrganization(r.Context(), id, true)
+	// O registro é gravado na mesma transação: se não gravar, não zera.
+	rep, err := a.Store.ResetOrganization(r.Context(), id, true, store.AdminAction{ActorID: m.ID, ActorEmail: m.Email,
+		Action: "client_reset", TargetType: "organization", TargetID: orgTarget(id), TargetLabel: row.Name, IP: clientIP(r)})
 	if a.storeError(w, err) {
 		return
 	}
-	a.log(r, m, "client_reset", "organization", orgTarget(id), row.Name, map[string]any{"phones": rep.Phones, "steps": rep.Steps})
 	writeJSON(w, http.StatusOK, rep)
 }
 

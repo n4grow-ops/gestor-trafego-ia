@@ -193,6 +193,11 @@ type AdminLogFilter struct {
 }
 
 func (s *Store) LogAdminAction(ctx context.Context, a AdminAction) error {
+	return logAdminAction(ctx, s.pool, a)
+}
+
+// logAdminAction grava no registro do painel pelo pool ou dentro de uma transação.
+func logAdminAction(ctx context.Context, q querier, a AdminAction) error {
 	if a.ActorEmail == "" || a.Action == "" {
 		return fmt.Errorf("%w: ação sem autor", ErrInvalidInput)
 	}
@@ -208,7 +213,7 @@ func (s *Store) LogAdminAction(ctx context.Context, a AdminAction) error {
 	if a.ActorID > 0 {
 		actor = &a.ActorID
 	}
-	_, err = s.pool.Exec(ctx, `INSERT INTO admin_audit_log (actor_id, actor_email, action, target_type, target_id, target_label, data, ip)
+	_, err = q.Exec(ctx, `INSERT INTO admin_audit_log (actor_id, actor_email, action, target_type, target_id, target_label, data, ip)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, nullif($8, ''))`,
 		actor, a.ActorEmail, a.Action, a.TargetType, a.TargetID, truncateRunes(a.TargetLabel, 120), string(raw), a.IP)
 	return err

@@ -79,7 +79,8 @@ const ERRORS = {
   sessao_invalida: 'Sua sessão expirou. Entre de novo.', nao_encontrado: 'Não encontrado (pode ter sido apagado).',
   cadastro_concluido: 'Esse cliente já concluiu o cadastro.', cadastro_desligado: 'O cadastro pela página está desligado.',
   sem_assinatura: 'Esse cliente não tem assinatura para receber pagamento.', ultimo_admin: 'A equipe precisa de ao menos um administrador.',
-  voce_mesmo: 'Você não pode tirar a si mesmo da equipe.', muitas_tentativas: 'Muitas tentativas. Espere um minuto.',
+  cliente_real: 'Cliente real (com pagamento ou plano pago) não pode ser zerado. Só contas de teste.',
+  voce_mesmo: 'Você não pode tirar a si mesmo da equipe.', muitas_tentativas: 'Muitas tentativas. Espere alguns minutos e peça um código novo.',
   texto_invalido: 'Escreva uma mensagem (até 4.000 caracteres).', dados_invalidos: 'Confira os dados do formulário.',
   sem_telefone: 'Esse cliente não tem telefone cadastrado.', erro_interno: 'Erro no servidor. Tente de novo.',
 };

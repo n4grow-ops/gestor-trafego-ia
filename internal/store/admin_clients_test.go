@@ -3,6 +3,7 @@ package store_test
 import (
 	"errors"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -202,9 +203,35 @@ func TestWorkerHealth(t *testing.T) {
 	}
 }
 
+func resetAudit(email string) store.AdminAction {
+	return store.AdminAction{ActorEmail: email, Action: "client_reset", TargetType: "organization", TargetID: "x", IP: "1.2.3.4"}
+}
+
 func TestResetOrganization(t *testing.T) {
 	st, f := seedClients(t)
-	_, err := st.RecordManualPayment(ctx, store.ManualPayment{OrgID: f.ready.OrgID, AmountCents: 9700, Method: "pix", Status: "paid", Date: time.Now()})
+	audit := resetAudit("dono@meuanuncio.io")
+
+	// Cliente real (cadastro completo com assinatura paga): não zera, nem na simulação.
+	if _, err := st.ResetOrganization(ctx, f.ready.OrgID, false, audit); !errors.Is(err, store.ErrRealClient) {
+		t.Fatalf("simular cliente real: %v", err)
+	}
+	if _, err := st.ResetOrganization(ctx, f.ready.OrgID, true, audit); !errors.Is(err, store.ErrRealClient) {
+		t.Fatalf("zerar cliente real: %v", err)
+	}
+	// Qualquer pagamento registrado também recusa (o pagamento nunca é apagado).
+	_, err := f.pool.Exec(ctx, `INSERT INTO subscriptions (organization_id, plan_code, status) VALUES ($1, 'free', 'active')`, f.stuck.OrgID)
+	must(t, err)
+	_, err = st.RecordManualPayment(ctx, store.ManualPayment{OrgID: f.stuck.OrgID, AmountCents: 100, Method: "pix", Status: "pending", Date: time.Now()})
+	must(t, err)
+	if _, err := st.ResetOrganization(ctx, f.stuck.OrgID, true, audit); !errors.Is(err, store.ErrRealClient) {
+		t.Fatalf("zerar com pagamento: %v", err)
+	}
+	if _, err := st.ClientDetail(ctx, f.ready.OrgID); err != nil {
+		t.Fatalf("cliente real apagado: %v", err)
+	}
+
+	// Conta de teste (plano grátis, sem pagamento): zera.
+	_, err = f.pool.Exec(ctx, `UPDATE subscriptions SET plan_code = 'free' WHERE organization_id = $1`, f.ready.OrgID)
 	must(t, err)
 	_, err = f.pool.Exec(ctx, `INSERT INTO creatives (organization_id, draft_id, kind, storage_path, mime, size_bytes)
 		SELECT organization_id, id, 'image', 'x.jpg', 'image/jpeg', 10 FROM campaign_drafts WHERE organization_id = $1`, f.ready.OrgID)
@@ -212,8 +239,8 @@ func TestResetOrganization(t *testing.T) {
 	_, err = f.pool.Exec(ctx, `INSERT INTO inbox_events (provider, external_id, payload) VALUES ('waha', 'e1', '{"from":"5511900000002@c.us"}')`)
 	must(t, err)
 
-	// Simulação não apaga nada.
-	rep, err := st.ResetOrganization(ctx, f.ready.OrgID, false)
+	// Simulação não apaga nada nem grava registro.
+	rep, err := st.ResetOrganization(ctx, f.ready.OrgID, false, audit)
 	must(t, err)
 	if rep.Applied || rep.Rows("organizations") != 1 || rep.Rows("creatives") != 1 || rep.Rows("inbox_events") != 1 {
 		t.Fatalf("simulação = %+v", rep)
@@ -221,10 +248,27 @@ func TestResetOrganization(t *testing.T) {
 	if _, err := st.ClientDetail(ctx, f.ready.OrgID); err != nil {
 		t.Fatalf("simulação apagou: %v", err)
 	}
-	rep, err = st.ResetOrganization(ctx, f.ready.OrgID, true)
+	// Sem registro no admin_audit_log, não zera.
+	if _, err := st.ResetOrganization(ctx, f.ready.OrgID, true, resetAudit("")); err == nil {
+		t.Fatal("zerou sem registro")
+	}
+	if _, err := st.ClientDetail(ctx, f.ready.OrgID); err != nil {
+		t.Fatalf("zerou sem registro: %v", err)
+	}
+	rep, err = st.ResetOrganization(ctx, f.ready.OrgID, true, audit)
 	must(t, err)
-	if !rep.Applied || rep.Rows("meta_connections") != 1 || rep.Rows("payments") != 1 {
+	if !rep.Applied || rep.Rows("meta_connections") != 1 || rep.Rows("subscriptions") != 1 {
 		t.Fatalf("zerar = %+v", rep)
+	}
+	for _, s := range rep.Steps {
+		if s.Table == "payments" {
+			t.Fatalf("zerar mexeu em pagamentos: %+v", rep)
+		}
+	}
+	log, err := st.AdminLog(ctx, store.AdminLogFilter{ActorEmail: "dono@meuanuncio.io"})
+	must(t, err)
+	if len(log) == 0 || log[0].Action != "client_reset" || !strings.Contains(string(log[0].Data), "5511900000002") {
+		t.Fatalf("registro do zerar = %+v", log)
 	}
 	if _, err := st.ClientDetail(ctx, f.ready.OrgID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("cliente continua: %v", err)
@@ -236,7 +280,23 @@ func TestResetOrganization(t *testing.T) {
 	if res, _ := st.Clients(ctx, store.ClientFilter{Stage: -1}); len(res.Clients) != 3 {
 		t.Fatalf("sobraram %d", len(res.Clients))
 	}
-	if _, err := st.ResetOrganization(ctx, f.ready.OrgID, true); !errors.Is(err, store.ErrNotFound) {
+	if _, err := st.ResetOrganization(ctx, f.ready.OrgID, true, audit); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("de novo: %v", err)
+	}
+}
+
+func TestResetContactsRefusesRealClient(t *testing.T) {
+	st, f := seedClients(t)
+	rep, _, err := st.ResetContacts(ctx, []string{"5511900000002"}, true)
+	if !errors.Is(err, store.ErrRealClient) || rep.Applied {
+		t.Fatalf("script com cliente real: %+v %v", rep, err)
+	}
+	if _, err := st.ClientDetail(ctx, f.ready.OrgID); err != nil {
+		t.Fatalf("cliente real apagado: %v", err)
+	}
+	// O número de teste (sem pagamento, sem plano pago) continua zerando.
+	rep, others, err := st.ResetContacts(ctx, []string{"5511900000001"}, true)
+	if err != nil || others != 0 || !rep.Applied {
+		t.Fatalf("número de teste: %+v %d %v", rep, others, err)
 	}
 }

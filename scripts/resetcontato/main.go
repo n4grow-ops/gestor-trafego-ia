@@ -1,6 +1,7 @@
 // Comando resetcontato: apaga todos os registros de um telefone de teste para ele voltar como
-// contato novo (cadastro do zero). Só apaga se a organização não tiver outros telefones.
-// A mesma lógica atende o botão "Zerar contato" do painel (store.ResetOrganization).
+// contato novo (cadastro do zero). Só apaga se a organização não tiver outros telefones e não for
+// cliente real (pagamento registrado ou cadastro completo com plano pago); pagamentos nunca são
+// apagados. A mesma regra atende o botão "Zerar contato" do painel (store.ResetOrganization).
 //
 //	DATABASE_URL=... go run ./scripts/resetcontato 5511999998888          (simulação)
 //	DATABASE_URL=... go run ./scripts/resetcontato 5511999998888 -apply   (apaga)
@@ -8,6 +9,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -39,6 +41,11 @@ func main() {
 	defer pool.Close()
 
 	rep, others, err := store.New(pool).ResetContacts(ctx, phones, apply)
+	if errors.Is(err, store.ErrRealClient) {
+		fmt.Println("telefones:", phones, "organizações:", rep.OrgIDs)
+		fmt.Println("ABORTADO: cliente real (pagamento registrado ou plano pago); só contas de teste são zeradas")
+		return
+	}
 	if err != nil {
 		panic(err)
 	}
