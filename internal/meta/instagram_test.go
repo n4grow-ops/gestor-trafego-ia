@@ -76,3 +76,38 @@ func TestFindInstagramMediaPermissionError(t *testing.T) {
 		t.Fatal("sem conta do Instagram devia falhar")
 	}
 }
+
+func TestPublishInstagramPostAsAd(t *testing.T) {
+	f, c := newFake(t)
+	f.basics()
+	in := baseInput()
+	in.InstagramActorID = "IG1"
+	in.Creatives = []meta.PublishCreative{{Kind: "image", Placement: "feed", InstagramMediaID: "1789"}}
+	in.Copies = append(in.Copies, meta.PublishCopy{Headline: "Outro", Text: "Texto 2", CTA: "WHATSAPP_MESSAGE"})
+	res, err := c.Publish(context.Background(), tok, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// o post já tem legenda: um anúncio por post, sem subir arquivo nem combinar com os textos
+	if len(res.AdIDs) != 1 || len(f.calls("POST /act_9/adimages")) != 0 || len(f.calls("POST /act_9/advideos")) != 0 {
+		t.Fatalf("anúncios = %v uploads = %d", res.AdIDs, len(f.calls("POST /act_9/adimages")))
+	}
+	cr := f.one("POST /act_9/adcreatives").Form
+	if cr.Get("source_instagram_media_id") != "1789" || cr.Get("instagram_user_id") != "IG1" || cr.Get("object_id") != "P1" ||
+		cr.Get("object_story_spec") != "" {
+		t.Fatalf("criativo = %v", cr)
+	}
+	cta := decode(t, cr.Get("call_to_action"))
+	if cta["type"] != "WHATSAPP_MESSAGE" {
+		t.Fatalf("botão = %v", cta)
+	}
+	if !strings.Contains(strings.Join(res.Warnings, " "), "post do Instagram") {
+		t.Fatalf("avisos = %v", res.Warnings)
+	}
+
+	// sem a conta do Instagram na conexão não dá para usar o post
+	in.InstagramActorID = ""
+	if _, err := c.Publish(context.Background(), tok, in); err == nil {
+		t.Fatal("post do Instagram sem instagram_user_id aceito")
+	}
+}
