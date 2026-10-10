@@ -271,9 +271,11 @@ func (e *Engine) pollTesters(ctx context.Context) error {
 }
 
 // remindTester lembra o cliente uma vez e avisa a equipe. Marca antes de enviar: no pior caso o
-// lembrete se perde, mas nunca se repete.
+// lembrete se perde, mas nunca se repete. ErrNotFound = já lembrado (a marca é a trava).
 func (e *Engine) remindTester(ctx context.Context, r store.TesterRequestView) error {
-	if err := e.testers().MarkTesterReminded(ctx, r.ID); err != nil {
+	if err := e.testers().MarkTesterReminded(ctx, r.ID); errors.Is(err, store.ErrNotFound) {
+		return nil
+	} else if err != nil {
 		return err
 	}
 	ident, err := e.Store.GetIdentity(ctx, r.IdentityID)

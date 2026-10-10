@@ -37,6 +37,9 @@ func (f *fakeTesters) UpsertTesterRequest(_ context.Context, r store.TesterReque
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if i := f.open(r.IdentityID); i >= 0 {
+		if f.reqs[i].RefKind != r.RefKind || f.reqs[i].RefValue != r.RefValue {
+			f.reqs[i].Status = store.TesterRequested // perfil novo: a equipe adiciona de novo
+		}
 		f.reqs[i].ProfileURL, f.reqs[i].RefKind, f.reqs[i].RefValue = r.ProfileURL, r.RefKind, r.RefValue
 		return f.reqs[i].TesterRequest, nil
 	}
@@ -85,13 +88,14 @@ func (f *fakeTesters) MarkTesterReminded(_ context.Context, id int64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for i := range f.reqs {
-		if f.reqs[i].ID == id {
+		if f.reqs[i].ID == id && f.reqs[i].RemindedAt == nil {
 			now := time.Now()
 			f.reqs[i].RemindedAt = &now
+			f.reminded = append(f.reminded, id)
+			return nil
 		}
 	}
-	f.reminded = append(f.reminded, id)
-	return nil
+	return store.ErrNotFound // já lembrado: é a trava do store real
 }
 
 func (f *fakeTesters) SyncAppTesters(_ context.Context, ids []string) ([]string, error) {
@@ -193,6 +197,21 @@ func TestProfileLinkOpensTesterRequest(t *testing.T) {
 	}
 	if len(ft.all()) != 1 || !strings.Contains(h.wa.last().Text, "já pedi") {
 		t.Fatalf("repetição: %q", h.wa.last().Text)
+	}
+}
+
+func TestProfileChangedAfterAddedNotifiesTeamAgain(t *testing.T) {
+	h, ft := newTesterHarness(t)
+	id := openRequest(h, ft)
+	ft.markAdded(id, h.now)
+	h.say("na verdade é este: https://www.facebook.com/joao.silva")
+	h.runJobs()
+	ops := h.wa.to(operatorChat)
+	if len(ops) != 2 || !strings.Contains(ops[1], "joao.silva") {
+		t.Fatalf("equipe = %v", ops)
+	}
+	if r := ft.all(); len(r) != 1 || r[0].Status != store.TesterRequested || r[0].RefValue != "joao.silva" {
+		t.Fatalf("pedido = %+v", r)
 	}
 }
 
