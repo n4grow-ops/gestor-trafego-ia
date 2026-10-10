@@ -14,6 +14,7 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/config"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/db"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/engine"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/instagram"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/llm"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/meta"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/mia"
@@ -124,6 +125,15 @@ func run(log *slog.Logger) error {
 			log.Warn("cliente da Meta ainda sem publicação; publicação automática desligada")
 		}
 	}
+	if eng.Storage != nil {
+		// Link de post do Instagram na etapa dos anúncios: da conta conectada pela Graph API (com a
+		// publicação ligada, que abre o token do cliente) ou da página pública do post.
+		var graph instagram.Graph
+		if eng.MetaTokenKey != nil {
+			graph = meta.New(cfg.MetaAppID, cfg.MetaAppSecret, cfg.MetaLoginConfigID, cfg.PublicBaseURL+"/meta/callback")
+		}
+		eng.Instagram = instagram.New(graph)
+	}
 	eng.ReportPhone = whatsapp.Digits(cfg.ReportPhone)
 	// Canal da equipe: privado de cada número e, opcional, o grupo por uma instância Wame não
 	// oficial (QR) — o número oficial não manda para grupo. Ela só envia: não tem webhook aqui.
@@ -152,7 +162,7 @@ func run(log *slog.Logger) error {
 		"anuncios", eng.Storage != nil, "relatorio", eng.ReportPhone != "", "conexao_meta", eng.MetaConnectBaseURL != "",
 		"publicacao_meta", eng.Publisher != nil && eng.MetaTokenKey != nil,
 		"equipe_numeros", len(eng.TeamPhones), "equipe_grupo", eng.TeamGroup != nil,
-		"testador_auto", eng.AppTesters != nil)
+		"testador_auto", eng.AppTesters != nil, "post_instagram", eng.Instagram != nil)
 	return w.Run(ctx)
 }
 

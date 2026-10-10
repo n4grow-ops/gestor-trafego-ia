@@ -190,6 +190,9 @@ func TestPublishJobHasLongerTimeout(t *testing.T) {
 	if got := w.TimeoutFor(engine.JobMetaPublish); got != 15*time.Minute {
 		t.Fatalf("prazo da publicação = %v", got)
 	}
+	if got := w.TimeoutFor(engine.JobInstagramFetch); got != 4*time.Minute {
+		t.Fatalf("prazo do post do instagram = %v", got)
+	}
 	if got := w.TimeoutFor(engine.JobSend); got != 2*time.Minute {
 		t.Fatalf("prazo padrão = %v", got)
 	}

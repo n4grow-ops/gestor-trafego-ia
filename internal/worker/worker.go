@@ -23,10 +23,12 @@ type Worker struct {
 	Timeout time.Duration // prazo de cada evento ou job (padrão 2 min)
 }
 
-// Prazos próprios por tipo de job: a publicação na Meta sobe vídeos e espera a Meta processar (até ~10 min).
+// Prazos próprios por tipo de job: a publicação na Meta sobe vídeos e espera a Meta processar (até ~10 min);
+// o post do Instagram baixa vídeo de até 300 MB.
 // A trava do job no store (ClaimJob) é maior que esses prazos.
 var jobTimeouts = map[string]time.Duration{
-	engine.JobMetaPublish: engine.PublishTimeout,
+	engine.JobMetaPublish:    engine.PublishTimeout,
+	engine.JobInstagramFetch: engine.InstagramTimeout,
 }
 
 // TimeoutFor é o prazo de um job do tipo: o próprio do tipo, senão Timeout (padrão 2 min).
