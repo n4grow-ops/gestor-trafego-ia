@@ -45,6 +45,10 @@ type Admin struct {
 	MiaTest  MiaTester   // nil = "testar a Mia" desligado (sem OPENROUTER_API_KEY/ATTENDANT_MODEL na api)
 	MiaVoice *MiaSpeaker // nil = "ouvir amostra" desligado (sem TTS_MODEL na api)
 
+	// Testadores: fila dos pedidos para entrar como testador do app da Meta.
+	MetaAppID string      // link "Abrir no app da Meta"; vazio = sem link
+	Testers   TesterQueue // nil = Store
+
 	Limiter *Limiter
 	Log     *slog.Logger
 	Now     func() time.Time
@@ -66,6 +70,7 @@ func (a *Admin) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /admin/static/admin.js", a.asset("web/admin/admin.js", "text/javascript; charset=utf-8"))
 	mux.HandleFunc("GET /admin/static/mia.js", a.asset("web/admin/mia.js", "text/javascript; charset=utf-8"))
 	mux.HandleFunc("GET /admin/static/planos.js", a.asset("web/admin/planos.js", "text/javascript; charset=utf-8"))
+	mux.HandleFunc("GET /admin/static/testadores.js", a.asset("web/admin/testadores.js", "text/javascript; charset=utf-8"))
 	mux.HandleFunc("GET /admin/static/marca.png", a.asset("web/admin/marca.png", "image/png"))
 	mux.HandleFunc("GET /admin/static/icone.png", a.asset("web/admin/icone.png", "image/png"))
 	mux.HandleFunc("GET /admin/static/figtree.woff2", a.asset("web/figtree.woff2", "font/woff2"))
@@ -101,6 +106,7 @@ func (a *Admin) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /admin/api/audit", a.only(false, a.audit))
 	a.registerMia(mux)
 	a.registerPlans(mux)
+	a.registerTesters(mux)
 }
 
 // adminCSP: nada de script ou estilo inline, nada de terceiros; a API é a mesma origem.
@@ -254,6 +260,6 @@ func (a *Admin) me(w http.ResponseWriter, r *http.Request, m store.TeamMember, s
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id": m.ID, "email": m.Email, "name": displayName(m), "role": m.Role, "csrf": s.CSRF, "mode": a.Mode,
 		"bot_number": a.BotNumber, "provider": a.Provider, "window_limited": a.WindowLimited,
-		"signup_enabled": a.SignupBaseURL != "",
+		"signup_enabled": a.SignupBaseURL != "", "meta_app_id": a.MetaAppID,
 	})
 }
