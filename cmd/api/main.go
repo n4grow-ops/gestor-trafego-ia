@@ -150,7 +150,7 @@ func newAdmin(ctx context.Context, cfg config.Config, st *store.Store, pool http
 		Store: st, DB: pool, Mode: cfg.AdminMode(), SessionKey: []byte(cfg.AdminSessionKey), Secure: true,
 		ChatIDForPhone: wa.ChatIDForPhone, BotNumber: cfg.BotWhatsAppNumber, Provider: wa.Name(),
 		WindowLimited: cfg.WhatsAppProvider == "wame" && cfg.WameOfficial, USDBRL: cfg.USDBRL,
-		Limiter: httpapi.NewLimiter(), Log: log, Mia: miaCache,
+		Limiter: httpapi.NewLimiter(), Log: log, Mia: miaCache, MetaAppID: cfg.MetaAppID,
 	}
 	// "Testar a Mia" e "ouvir amostra" usam a mesma IA e o mesmo TTS do worker, se a api tiver as chaves.
 	if cfg.OpenRouterAPIKey != "" {

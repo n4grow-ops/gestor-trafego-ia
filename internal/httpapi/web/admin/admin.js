@@ -86,6 +86,8 @@ const ERRORS = {
   sem_telefone: 'Esse cliente não tem telefone cadastrado.', erro_interno: 'Erro no servidor. Tente de novo.',
   codigo_em_uso: 'Já existe um plano com esse código.', plano_com_assinantes: 'Esse plano tem assinatura: não dá para apagar nem trocar o código. Oculte em vez disso.',
   versao_desatualizada: 'Alguém salvou isso enquanto você editava. Feche, abra de novo e refaça a mudança.',
+  pedido_fechado: 'Esse pedido já foi atualizado por outra pessoa. A lista foi recarregada.',
+  ainda_nao_adicionado: 'Aperte “Adicionei” primeiro: o aviso só vai depois que o cliente estiver na Meta.',
 };
 const errMsg = e => ERRORS[e.message] || (e.status ? 'Não deu certo (' + e.status + ').' : 'Sem conexão com o servidor.');
 async function api(method, path, body) {
@@ -124,6 +126,7 @@ const ACTIONS = {
   conversation_send: ['Respondeu pelo painel', 'info', 'send'], payment_record: ['Registrou pagamento', 'ok', 'money'],
   team_add: ['Adicionou à equipe', 'info', 'user-plus'], team_remove: ['Removeu da equipe', 'warn', 'trash'],
   plan_create: ['Criou plano', 'ok', 'tag'], plan_update: ['Editou plano', 'info', 'tag'], plan_delete: ['Apagou plano', 'warn', 'trash'],
+  tester_added: ['Adicionou testador na Meta', 'ok', 'flask'], tester_resend: ['Reenviou aviso de testador', 'info', 'send'],
 };
 const actionOf = a => ACTIONS[a] || [String(a).replace(/_/g, ' '), 'info', 'log'];
 const PROJECT_STAGE = { collecting: 'Coleta', awaiting_proposal: 'Esperando proposta', awaiting_approval: 'Esperando aprovação', approved: 'Aprovada', awaiting_creatives: 'Esperando anúncios', ready: 'Pronta para publicar', archived: 'Arquivado' };
@@ -219,6 +222,7 @@ function setPulse(health, inbox) {
 }
 async function refreshPulse() {
   try { const d = await api('GET', '/overview?days=1'); setPulse(d.health, d.overview.inbox); } catch { /* o próximo ciclo tenta de novo */ }
+  if (typeof refreshTesterBadge === 'function') refreshTesterBadge();
 }
 
 /* ===================== gráficos ===================== */
@@ -898,7 +902,7 @@ syncSide();
 /* ===================== Ctrl+K ===================== */
 const CMDS = [
   ['Visão geral', '#/visao', 'home'], ['Clientes', '#/clientes', 'users'], ['Conversas', '#/conversas', 'chat'],
-  ['Conversas pedindo humano', 'humano', 'hand'], ['Clientes travados', 'travados', 'clock'], ['WhatsApp do bot', '#/whatsapp', 'wa'],
+  ['Conversas pedindo humano', 'humano', 'hand'], ['Testadores da Meta', '#/testadores', 'flask'], ['Clientes travados', 'travados', 'clock'], ['WhatsApp do bot', '#/whatsapp', 'wa'],
   ['Faturamento', '#/faturamento', 'money', true], ['Registrar pagamento', '#/faturamento', 'plus', true], ['Planos', '#/planos', 'tag'], ['Equipe', '#/equipe', 'team', true],
   ['Registro de ações', '#/registro', 'log'], ['Sair do painel', 'sair', 'out'],
 ];
