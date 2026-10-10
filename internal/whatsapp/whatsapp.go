@@ -18,6 +18,8 @@ const (
 	KindImage Kind = "image"
 	KindVideo Kind = "video"
 	KindOther Kind = "other"
+	// KindFlow é a resposta de um formulário do WhatsApp (Flow); Text traz o JSON das respostas.
+	KindFlow Kind = "flow"
 )
 
 type Inbound struct {
@@ -72,6 +74,22 @@ type TemplateSender interface {
 // Splitter é opcional: provedores que juntam várias mensagens num webhook. Cada parte vira um evento.
 type Splitter interface {
 	Split(body []byte) [][]byte
+}
+
+// Flow é o convite para abrir um formulário do WhatsApp (só Cloud API).
+type Flow struct {
+	ID     string // id do formulário publicado
+	Token  string // volta na resposta como flow_token
+	CTA    string // texto do botão
+	Header string
+	Body   string
+	Footer string
+	Screen string // primeira tela
+}
+
+// FlowSender é opcional: provedores que mandam formulário do WhatsApp.
+type FlowSender interface {
+	SendFlow(ctx context.Context, chatID string, f Flow) error
 }
 
 // ConnectionEvent é o aviso do provedor de que o número conectou ou caiu.

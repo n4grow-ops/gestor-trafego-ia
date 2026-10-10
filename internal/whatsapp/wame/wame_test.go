@@ -133,3 +133,16 @@ func TestSplit(t *testing.T) {
 		t.Fatalf("inválido passa intacto para o parse acusar o erro: %d", len(parts))
 	}
 }
+
+func TestParseFlowReply(t *testing.T) {
+	body := msg(`{"from":"5511999998888","id":"F1","type":"interactive","interactive":{"type":"nfm_reply","nfm_reply":{"name":"flow","body":"Sent","response_json":"{\"flow_token\":\"tok\",\"full_name\":\"Ana\"}"}}}`)
+	in, ok, err := c.ParseWebhook(body)
+	if err != nil || !ok || in.Kind != whatsapp.KindFlow || in.Text != `{"flow_token":"tok","full_name":"Ana"}` {
+		t.Fatalf("in=%+v ok=%v err=%v", in, ok, err)
+	}
+	// Outros interativos (botão, lista) seguem como mensagem que o bot não lê.
+	other := msg(`{"from":"5511999998888","id":"B1","type":"interactive","interactive":{"type":"button_reply","button_reply":{"id":"x","title":"Sim"}}}`)
+	if in, ok, _ := c.ParseWebhook(other); !ok || in.Kind != whatsapp.KindOther {
+		t.Fatalf("botão: %+v", in)
+	}
+}

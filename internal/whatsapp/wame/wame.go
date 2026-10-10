@@ -65,7 +65,13 @@ type message struct {
 	Text     struct {
 		Body string `json:"body"`
 	} `json:"text"`
-	Image *media `json:"image"`
+	Image       *media `json:"image"`
+	Interactive *struct {
+		Type     string `json:"type"`
+		NfmReply struct {
+			ResponseJSON string `json:"response_json"`
+		} `json:"nfm_reply"`
+	} `json:"interactive"`
 	Audio *media `json:"audio"`
 	Video *media `json:"video"`
 }
@@ -133,6 +139,11 @@ func toInbound(m message, raw []byte) (whatsapp.Inbound, bool) {
 		in.Kind = whatsapp.KindImage
 		if m.Image != nil {
 			in.Text = m.Image.Caption
+		}
+	case "interactive":
+		in.Kind = whatsapp.KindOther
+		if m.Interactive != nil && m.Interactive.Type == "nfm_reply" {
+			in.Kind, in.Text = whatsapp.KindFlow, m.Interactive.NfmReply.ResponseJSON
 		}
 	case "video":
 		in.Kind = whatsapp.KindVideo

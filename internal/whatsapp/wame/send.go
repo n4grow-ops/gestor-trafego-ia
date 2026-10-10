@@ -107,6 +107,14 @@ func (c *Client) DownloadMedia(ctx context.Context, in whatsapp.Inbound) ([]byte
 
 func (c *Client) ChatIDForPhone(phone string) string { return phone }
 
+// SendFlow manda o botão que abre o formulário publicado (navegação estática, sem endpoint de dados).
+func (c *Client) SendFlow(ctx context.Context, chatID string, f whatsapp.Flow) error {
+	return c.send(ctx, http.MethodPost, "/message/flow", map[string]any{
+		"to": to(chatID), "flowId": f.ID, "flowToken": f.Token, "flowCta": f.CTA, "body": f.Body,
+		"header": f.Header, "footer": f.Footer, "screen": f.Screen, "flowAction": "navigate", "mode": "published",
+	})
+}
+
 // NeedsTemplates: só a instância oficial (Cloud API) tem a janela de 24 h.
 func (c *Client) NeedsTemplates() bool { return c.Official }
 

@@ -18,6 +18,7 @@ var (
 	_ whatsapp.Provider         = (*wame.Client)(nil)
 	_ whatsapp.ConnectionParser = (*wame.Client)(nil)
 	_ whatsapp.TemplateSender   = (*wame.Client)(nil)
+	_ whatsapp.FlowSender       = (*wame.Client)(nil)
 )
 
 type call struct {
@@ -210,5 +211,21 @@ func TestSendTemplateTruncatesLongParams(t *testing.T) {
 	p := (*calls)[0].Body["components"].([]any)[0].(map[string]any)["parameters"].([]any)[0].(map[string]any)["text"].(string)
 	if n := len([]rune(p)); n > 900 || !strings.HasSuffix(p, "…") {
 		t.Fatalf("variável com %d caracteres", n)
+	}
+}
+
+func TestSendFlow(t *testing.T) {
+	c, calls := server(t, 200, `{}`)
+	must(t, c.SendFlow(context.Background(), "5511999998888@c.us", whatsapp.Flow{ID: "FLOW1", Token: "tok", CTA: "Fazer meu cadastro", Body: "corpo", Header: "cab", Footer: "rod", Screen: "DADOS"}))
+	got := (*calls)[0]
+	want := map[string]any{"to": "5511999998888", "flowId": "FLOW1", "flowToken": "tok", "flowCta": "Fazer meu cadastro", "body": "corpo",
+		"header": "cab", "footer": "rod", "screen": "DADOS", "flowAction": "navigate", "mode": "published"}
+	if got.Path != "/KEY/message/flow" {
+		t.Fatalf("path %s", got.Path)
+	}
+	for k, v := range want {
+		if got.Body[k] != v {
+			t.Errorf("%s = %v, want %v", k, got.Body[k], v)
+		}
 	}
 }
