@@ -222,8 +222,8 @@ func (c *Client) Publish(ctx context.Context, token string, in PublishInput) (Pu
 	res.CampaignID = created.ID
 
 	promoted := map[string]any{"page_id": in.PageID}
-	if p.whatsapp && in.WhatsAppNumber != "" {
-		promoted["whatsapp_phone_number"] = strings.TrimPrefix(in.WhatsAppNumber, "+")
+	if num := digits(in.WhatsAppNumber); p.whatsapp && num != "" {
+		promoted["whatsapp_phone_number"] = num
 	}
 	adset := url.Values{
 		"name": {in.Name + " - público"}, "campaign_id": {res.CampaignID}, "status": {"PAUSED"},
@@ -263,6 +263,16 @@ func (c *Client) Publish(ctx context.Context, token string, in PublishInput) (Pu
 		res.AdIDs = append(res.AdIDs, created.ID)
 	}
 	return res, nil
+}
+
+// digits deixa só os dígitos do telefone ("+55 (49) 99999-0000" -> "5549999990000").
+func digits(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return r
+		}
+		return -1
+	}, s)
 }
 
 func validateInput(acct string, in PublishInput) error {

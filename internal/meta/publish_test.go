@@ -156,7 +156,7 @@ func TestPublishWhatsApp(t *testing.T) {
 	}
 	f.on("GET /VID/thumbnails", `{"data":[{"uri":"https://t/1"},{"uri":"https://t/2","is_preferred":true}]}`)
 	in := baseInput()
-	in.WhatsAppNumber, in.InstagramActorID, in.RadiusKM = "5549999990000", "IG1", 10
+	in.WhatsAppNumber, in.InstagramActorID, in.RadiusKM = "+55 (49) 99999-0000", "IG1", 10
 	in.Genders, in.Interests = []string{"female"}, []string{"Pizza", "Inexistente"}
 	in.StartTime, in.EndTime = time.Now().Add(48*time.Hour), time.Now().Add(96*time.Hour)
 	in.Creatives = append(in.Creatives, meta.PublishCreative{Kind: "video", Mime: "video/mp4", Data: []byte("mp4"), Placement: "stories"})
