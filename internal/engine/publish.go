@@ -18,6 +18,7 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/llm"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/meta"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp"
 )
 
 // JobMetaPublish cria a campanha aprovada na conta de anúncios do cliente, pausada.
@@ -234,8 +235,10 @@ func (e *Engine) publishInput(ctx context.Context, ident store.Identity, conn st
 		Interests:        prop.Audience.Interests,
 		Copies:           e.publishCopies(ctx, ident.OrgID, prop, fields.Offer, data.ClientCopy),
 	}
+	// Só o número da própria Página (opcional na Meta). O telefone de quem conversa com a Mia não serve:
+	// a Meta recusa número que não é o vinculado à Página.
 	if conn.PageWhatsApp {
-		in.WhatsAppNumber = strings.TrimPrefix(ident.Phone, "+")
+		in.PageWhatsApp, in.WhatsAppNumber = true, whatsapp.Digits(conn.PageWhatsAppNumber)
 	}
 	list, err := e.Store.ListCreatives(ctx, data.DraftID)
 	if err != nil {

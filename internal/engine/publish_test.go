@@ -348,13 +348,14 @@ func TestPublishAfterPreviewWhenConnected(t *testing.T) {
 func TestPublishSendsWhatsAppNumberAndWarnings(t *testing.T) {
 	h, _, pub := newPublishHarness(t, "owner")
 	h.connectMeta()
-	_, err := h.pool.Exec(ctx, `UPDATE meta_connections SET page_whatsapp = true`)
+	// I3: o número é o do WhatsApp da Página, não o do membro que conversa com a Mia
+	_, err := h.pool.Exec(ctx, `UPDATE meta_connections SET page_whatsapp = true, page_whatsapp_number = '+55 49 3333-4444'`)
 	h.must(err)
 	pub.result = meta.PublishResult{CampaignID: "C9", AdSetID: "S9", Warnings: []string{"o interesse \"pizza\" não foi encontrado"}}
 	h.readyProject()
 	h.runKind(engine.JobCreativesPreview)
 	h.runKind(engine.JobMetaPublish)
-	if pub.inputs[0].WhatsAppNumber != phone {
+	if pub.inputs[0].WhatsAppNumber != "554933334444" {
 		t.Fatalf("número do WhatsApp = %q", pub.inputs[0].WhatsAppNumber)
 	}
 	if msg := h.wa.last().Text; !strings.Contains(msg, "interesse \"pizza\" não foi encontrado") {
@@ -890,4 +891,18 @@ func (h *harness) latestDraftID() int64 {
 	var id int64
 	h.must(h.pool.QueryRow(ctx, `SELECT id FROM campaign_drafts WHERE status = 'approved' ORDER BY id DESC LIMIT 1`).Scan(&id))
 	return id
+}
+
+// I3: Página com WhatsApp mas sem o número conhecido: o número fica de fora (é opcional na Meta).
+func TestPublishOmitsUnknownPageWhatsAppNumber(t *testing.T) {
+	h, _, pub := newPublishHarness(t, "owner")
+	h.connectMeta()
+	_, err := h.pool.Exec(ctx, `UPDATE meta_connections SET page_whatsapp = true`)
+	h.must(err)
+	h.readyProject()
+	h.runKind(engine.JobCreativesPreview)
+	h.runKind(engine.JobMetaPublish)
+	if pub.inputs[0].WhatsAppNumber != "" {
+		t.Fatalf("número do WhatsApp = %q", pub.inputs[0].WhatsAppNumber)
+	}
 }

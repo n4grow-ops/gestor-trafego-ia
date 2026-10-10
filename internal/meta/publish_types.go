@@ -26,7 +26,8 @@ type PublishInput struct {
 	AdAccountID      string // com ou sem "act_"
 	PageID           string
 	InstagramActorID string // opcional
-	WhatsAppNumber   string // E.164 sem +, opcional
+	WhatsAppNumber   string // número do WhatsApp da Página, só dígitos; opcional (vazio = fica de fora)
+	PageWhatsApp     bool   // a Página tem WhatsApp vinculado (mesmo sem o número conhecido)
 	LinkURL          string // opcional; vazio = página do Facebook
 	Name             string // terminando em "#p<id>", a campanha de tentativa anterior é procurada e apagada antes
 	Objective        string // OUTCOME_ENGAGEMENT | OUTCOME_LEADS | OUTCOME_TRAFFIC

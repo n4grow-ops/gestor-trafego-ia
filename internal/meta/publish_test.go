@@ -623,3 +623,20 @@ func TestPublishRollbackFailureIsReported(t *testing.T) {
 		t.Fatalf("erro = %+v", err)
 	}
 }
+
+// I3: Página com WhatsApp sem o número conhecido: leads vão para conversa no WhatsApp, sem número no promoted_object.
+func TestPublishLeadsWithPageWhatsAppWithoutNumber(t *testing.T) {
+	f, c := newFake(t)
+	f.basics()
+	in := baseInput()
+	in.Objective, in.PageWhatsApp = "OUTCOME_LEADS", true
+	in.Copies[0].CTA = "CONTACT_US"
+	if _, err := c.Publish(context.Background(), tok, in); err != nil {
+		t.Fatal(err)
+	}
+	set := f.one("POST /act_9/adsets").Form
+	po := decode(t, set.Get("promoted_object"))
+	if set.Get("destination_type") != "WHATSAPP" || po["whatsapp_phone_number"] != nil || po["page_id"] != "P1" {
+		t.Fatalf("conjunto = %v", set)
+	}
+}

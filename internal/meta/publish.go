@@ -145,7 +145,7 @@ type plan struct {
 
 func planFor(in PublishInput) (plan, []string, error) {
 	var warnings []string
-	wantsWhatsApp := in.WhatsAppNumber != ""
+	wantsWhatsApp := in.WhatsAppNumber != "" || in.PageWhatsApp
 	for _, cp := range in.Copies {
 		if cp.CTA == "WHATSAPP_MESSAGE" {
 			wantsWhatsApp = true
