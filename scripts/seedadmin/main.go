@@ -256,7 +256,7 @@ func (s *seeder) client(i int, c client) {
 	s.exec(`INSERT INTO audit_events (organization_id, actor, action, data, created_at) VALUES ($1, 'manager', 'proposal_created', $2, $3)`,
 		org, fmt.Sprintf(`{"draft_id":%d}`, draft), s.ago(c.idleHours+3))
 	if draftStatus == "approved" {
-		s.exec(`INSERT INTO audit_events (organization_id, actor, action, data, created_at) VALUES ($1, $2, 'draft_approved', $3, $4)`,
+		s.exec(`INSERT INTO audit_events (organization_id, actor, action, data, created_at) VALUES ($1, $2, 'approval_granted', $3, $4)`,
 			org, fmt.Sprintf("member:%d", mem), fmt.Sprintf(`{"draft_id":%d}`, draft), approvedAt)
 		for k := 0; k < 1+i%3; k++ {
 			s.exec(`INSERT INTO creatives (organization_id, draft_id, project_id, kind, storage_path, mime, size_bytes, width, height, format, placement, created_at)

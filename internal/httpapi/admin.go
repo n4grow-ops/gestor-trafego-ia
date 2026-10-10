@@ -58,7 +58,7 @@ func (a *Admin) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /admin/{$}", a.page)
 	mux.HandleFunc("GET /admin/static/admin.css", a.asset("web/admin/admin.css", "text/css; charset=utf-8"))
 	mux.HandleFunc("GET /admin/static/admin.js", a.asset("web/admin/admin.js", "text/javascript; charset=utf-8"))
-	mux.HandleFunc("GET /admin/static/marca.svg", a.asset("web/admin/marca.svg", "image/svg+xml"))
+	mux.HandleFunc("GET /admin/static/marca.png", a.asset("web/admin/marca.png", "image/png"))
 	mux.HandleFunc("GET /admin/static/icone.png", a.asset("web/admin/icone.png", "image/png"))
 	mux.HandleFunc("GET /admin/static/figtree.woff2", a.asset("web/figtree.woff2", "font/woff2"))
 
