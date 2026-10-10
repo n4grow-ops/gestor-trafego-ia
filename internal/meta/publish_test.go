@@ -117,8 +117,11 @@ func (f *fakeGraph) basics() {
 		q := r.Form
 		switch {
 		case q.Get("type") == "adgeolocation" && q.Get("location_types") == `["city"]` && q.Get("q") == "Chapecó":
-			return 200, `{"data":[{"key":"X9","name":"Chapecó","type":"city","country_code":"BR","region":"Paraná"},
-				{"key":"C1","name":"Chapecó","type":"city","country_code":"BR","region":"Santa Catarina"}]}`
+			return 200, `{"data":[{"key":"X9","name":"Chapecó","type":"city","country_code":"BR","region":"Paraná","region_id":448},
+				{"key":"C1","name":"Chapecó","type":"city","country_code":"BR","region":"Santa Catarina","region_id":449}]}`
+		case q.Get("type") == "adgeolocation" && q.Get("location_types") == `["city"]` && q.Get("q") == "Campinas":
+			// formato real da Meta: o estado homônimo da capital vem com " (state)"
+			return 200, `{"data":[{"key":"CPS","name":"Campinas","type":"city","country_code":"BR","region":"São Paulo (state)","region_id":460}]}`
 		case q.Get("type") == "adgeolocation" && q.Get("location_types") == `["region"]` && q.Get("q") == "Santa Catarina":
 			return 200, `{"data":[{"key":"R42","name":"Santa Catarina","type":"region","country_code":"BR"}]}`
 		case q.Get("type") == "adgeolocation":
@@ -305,10 +308,13 @@ func TestPublishObjectiveMapping(t *testing.T) {
 
 func TestPublishLocationFallbacks(t *testing.T) {
 	cases := []struct{ query, want, warn string }{
-		{"Lugar Nenhum, SC", `"regions":[{"key":"R42"}]`, "virou o estado Santa Catarina"},
+		{"SC", `"regions":[{"key":"R42"}]`, ""},
+		{"Santa Catarina", `"regions":[{"key":"R42"}]`, ""},
 		{"Chapecó", `"cities":[{"key":"X9"}]`, ""},
+		{"Campinas, SP", `"cities":[{"key":"CPS"}]`, ""},
+		{"Campinas - são paulo", `"cities":[{"key":"CPS"}]`, ""},
 		{"", `"countries":["BR"]`, "Brasil inteiro"},
-		{"Atlântida", `"countries":["BR"]`, "não encontrado"},
+		{"Brasil", `"countries":["BR"]`, ""},
 	}
 	for _, tc := range cases {
 		f, c := newFake(t)
@@ -484,5 +490,24 @@ func TestSetStatus(t *testing.T) {
 	}
 	if err := c3.SetStatus(context.Background(), tok, "CAMP", "DELETED"); !errors.As(err, &pe) {
 		t.Fatalf("status inválido: %v", err)
+	}
+}
+
+// C3: cidade pedida que não aparece na Meta não vira o estado nem o Brasil inteiro em silêncio.
+func TestPublishUnknownCityAsksClient(t *testing.T) {
+	for _, q := range []string{"Lugar Nenhum, SC", "Atlântida", "Campinas, RS"} {
+		f, c := newFake(t)
+		f.basics()
+		in := baseInput()
+		in.LocationQuery = q
+		_, err := c.Publish(context.Background(), tok, in)
+		var pe *meta.PublishError
+		if !errors.As(err, &pe) || pe.Step != "targeting" || !strings.Contains(pe.UserMessage, "Não achei a cidade") ||
+			!strings.Contains(pe.UserMessage, "Chapecó, SC") {
+			t.Errorf("%q: erro = %+v", q, err)
+		}
+		if len(f.calls("POST /act_9/campaigns")) != 0 || len(f.calls("POST /act_9/adimages")) != 0 {
+			t.Errorf("%q: criou coisas na conta com local errado", q)
+		}
 	}
 }

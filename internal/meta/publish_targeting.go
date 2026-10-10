@@ -26,19 +26,45 @@ type geoResult struct {
 	Region      string `json:"region"`
 }
 
+var placeAccents = strings.NewReplacer(
+	"á", "a", "à", "a", "â", "a", "ã", "a", "ä", "a",
+	"é", "e", "ê", "e", "è", "e", "ë", "e",
+	"í", "i", "î", "i", "ì", "i", "ï", "i",
+	"ó", "o", "ô", "o", "õ", "o", "ò", "o", "ö", "o",
+	"ú", "u", "û", "u", "ù", "u", "ü", "u", "ç", "c",
+)
+
+// normPlace compara nomes de lugar: sem acento, sem caixa e sem o " (state)" que a Meta põe no estado
+// homônimo da capital ("São Paulo (state)", "Rio de Janeiro (state)").
+func normPlace(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = strings.TrimSpace(strings.TrimSuffix(s, "(state)"))
+	s = strings.TrimSpace(strings.TrimSuffix(s, "(estado)"))
+	return strings.Join(strings.Fields(placeAccents.Replace(s)), " ")
+}
+
+// stateName devolve o nome do estado pela sigla ou pelo nome (com ou sem acento).
+func stateName(s string) (string, bool) {
+	if name, ok := ufNames[strings.ToUpper(strings.TrimSpace(s))]; ok {
+		return name, true
+	}
+	n := normPlace(s)
+	for _, name := range ufNames {
+		if normPlace(name) == n {
+			return name, true
+		}
+	}
+	return "", false
+}
+
 // splitPlace separa "Chapecó, SC" (ou "Chapecó - SC", "Chapecó/SC") em cidade e estado.
 func splitPlace(q string) (place, state string) {
 	q = strings.TrimSpace(q)
 	for _, sep := range []string{",", " - ", "/"} {
 		if i := strings.LastIndex(q, sep); i > 0 {
 			place, state = strings.TrimSpace(q[:i]), strings.TrimSpace(q[i+len(sep):])
-			if name, ok := ufNames[strings.ToUpper(state)]; ok {
+			if name, ok := stateName(state); ok {
 				return place, name
-			}
-			for _, name := range ufNames {
-				if strings.EqualFold(name, state) {
-					return place, name
-				}
 			}
 			return place, "" // depois do separador não é estado ("Chapecó, Brasil")
 		}
@@ -48,6 +74,18 @@ func splitPlace(q string) (place, state string) {
 	}
 	return q, ""
 }
+
+// wholeCountry: o cliente pediu o Brasil todo.
+func wholeCountry(q string) bool {
+	switch normPlace(q) {
+	case "brasil", "brazil", "br", "todo o brasil", "brasil todo", "brasil inteiro", "o brasil inteiro", "nacional", "todo brasil":
+		return true
+	}
+	return false
+}
+
+// cityNotFound pede ao cliente a cidade com o estado; nada é criado na conta.
+const cityNotFound = "Não achei a cidade \"%s\" na Meta pra mirar os anúncios. Me manda a cidade e o estado (ex.: Chapecó, SC) que eu publico na sequência."
 
 func (c *Client) searchGeo(ctx context.Context, token, q, kind string) ([]geoResult, error) {
 	var r struct {
@@ -64,31 +102,27 @@ func (c *Client) searchGeo(ctx context.Context, token, q, kind string) ([]geoRes
 	return out, err
 }
 
-// geo resolve o texto do local: cidade (com raio), senão estado, senão Brasil inteiro.
+// geo resolve o texto do local: cidade (com raio) ou estado. Vazio ou "Brasil" = país inteiro.
+// Cidade pedida que a Meta não acha não vira estado nem país: volta erro pedindo a cidade ao cliente.
 func (c *Client) geo(ctx context.Context, token, query string, radiusKM int) (map[string]any, []string, error) {
-	var warnings []string
 	brasil := map[string]any{"countries": []string{"BR"}}
 	if strings.TrimSpace(query) == "" {
 		return brasil, []string{"sem local definido: anúncio para o Brasil inteiro"}, nil
 	}
-	place, state := splitPlace(query)
-	// Erro de busca não derruba a publicação: cai para um local mais amplo com aviso.
-	soft := func(err error) error {
-		if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return err
-		}
-		warnings = append(warnings, "busca de local falhou: "+err.Error())
-		return nil
+	if wholeCountry(query) {
+		return brasil, nil, nil
 	}
+	place, state := splitPlace(query)
 	if place != "" {
 		cities, err := c.searchGeo(ctx, token, place, "city")
-		if err := soft(err); err != nil {
-			return nil, nil, err
+		if err != nil {
+			return nil, nil, err // busca fora: o outbox tenta de novo, sem publicar com local errado
 		}
 		for _, g := range cities {
-			if state != "" && !strings.EqualFold(g.Region, state) {
+			if state != "" && normPlace(g.Region) != normPlace(state) {
 				continue
 			}
+			var warnings []string
 			city := map[string]any{"key": g.Key}
 			if radiusKM > 0 {
 				r := min(max(radiusKM, minCityRadiusKM), maxCityRadiusKM)
@@ -99,21 +133,24 @@ func (c *Client) geo(ctx context.Context, token, query string, radiusKM int) (ma
 			}
 			return map[string]any{"cities": []any{city}}, warnings, nil
 		}
+		name, isState := stateName(place)
+		if state != "" || !isState {
+			return nil, nil, &PublishError{Step: "targeting", Message: fmt.Sprintf("cidade %q não encontrada na Meta", query),
+				UserMessage: fmt.Sprintf(cityNotFound, place)}
+		}
+		state = name // só o nome de um estado ("Santa Catarina")
 	}
-	regionQ := state
-	if regionQ == "" {
-		regionQ = place
-	}
-	regions, err := c.searchGeo(ctx, token, regionQ, "region")
-	if err := soft(err); err != nil {
+	regions, err := c.searchGeo(ctx, token, state, "region")
+	if err != nil {
 		return nil, nil, err
 	}
-	if len(regions) > 0 {
-		warnings = append(warnings, fmt.Sprintf("local aproximado: %q virou o estado %s", query, regions[0].Name))
-		return map[string]any{"regions": []any{map[string]any{"key": regions[0].Key}}}, warnings, nil
+	for _, g := range regions {
+		if normPlace(g.Name) == normPlace(state) {
+			return map[string]any{"regions": []any{map[string]any{"key": g.Key}}}, nil, nil
+		}
 	}
-	warnings = append(warnings, fmt.Sprintf("local %q não encontrado: anúncio para o Brasil inteiro", query))
-	return brasil, warnings, nil
+	return nil, nil, &PublishError{Step: "targeting", Message: fmt.Sprintf("estado %q não encontrado na Meta", state),
+		UserMessage: fmt.Sprintf(cityNotFound, query)}
 }
 
 // targeting monta o público: local, idade, gênero e interesses. O Advantage+ de público fica desligado
