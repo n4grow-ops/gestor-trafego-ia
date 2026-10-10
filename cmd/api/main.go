@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/secretbox"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/signup"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp/build"
 )
 
@@ -84,10 +86,21 @@ func run(log *slog.Logger) error {
 		}
 		routes = append(routes, mc.Register)
 	}
-	log.Info("api configurada", "cadastro", cfg.SignupEnabled(), "conexao_meta", cfg.MetaConnectEnabled())
+	adminMode := cfg.AdminMode()
+	if adminMode != "" {
+		admin, err := newAdmin(ctx, cfg, st, pool, wa, log)
+		if err != nil {
+			return err
+		}
+		routes = append(routes, admin.Register)
+	} else {
+		log.Warn("painel desligado: falta ADMIN_SESSION_KEY (32+ caracteres) com SUPABASE_URL e SUPABASE_PUBLISHABLE_KEY")
+	}
+	log.Info("api configurada", "cadastro", cfg.SignupEnabled(), "conexao_meta", cfg.MetaConnectEnabled(),
+		"painel", adminMode, "painel_host", cfg.AdminHost)
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.NewMux(pool, webhook, routes...),
+		Handler:           httpapi.WithAdminHost(cfg.AdminHost, httpapi.NewMux(pool, webhook, routes...)),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -108,4 +121,33 @@ func run(log *slog.Logger) error {
 	shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return srv.Shutdown(shutdown)
+}
+
+// newAdmin monta o painel da equipe e garante os administradores de ADMIN_EMAILS.
+func newAdmin(ctx context.Context, cfg config.Config, st *store.Store, pool httpapi.Pinger, wa whatsapp.Provider, log *slog.Logger) (*httpapi.Admin, error) {
+	if err := st.EnsureAdmins(ctx, cfg.AdminEmails); err != nil {
+		return nil, err
+	}
+	a := &httpapi.Admin{
+		Store: st, DB: pool, Mode: cfg.AdminMode(), SessionKey: []byte(cfg.AdminSessionKey), Secure: true,
+		ChatIDForPhone: wa.ChatIDForPhone, BotNumber: cfg.BotWhatsAppNumber, Provider: wa.Name(),
+		WindowLimited: cfg.WhatsAppProvider == "wame" && cfg.WameOfficial, USDBRL: cfg.USDBRL,
+		Limiter: httpapi.NewLimiter(), Log: log,
+	}
+	if cfg.PublicBaseURL != "" {
+		a.SignupBaseURL = cfg.PublicBaseURL + "/c"
+	}
+	switch a.Mode {
+	case "otp":
+		a.Auth = signup.NewSupabaseAuth(cfg.SupabaseURL, cfg.SupabasePublishableKey)
+	case "dev":
+		// Só sem Supabase (config.AdminMode garante): http local, sem Secure, chave nova a cada partida se faltar.
+		log.Warn("painel em MODO DE DESENVOLVIMENTO: login só com e-mail; nunca use em produção")
+		a.Secure = false
+		if len(a.SessionKey) < 32 {
+			a.SessionKey = make([]byte, 32)
+			rand.Read(a.SessionKey)
+		}
+	}
+	return a, nil
 }
