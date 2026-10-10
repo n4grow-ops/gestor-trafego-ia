@@ -183,7 +183,6 @@ func adminHost(getenv func(string) string) string {
 	return h
 }
 
-// splitList separa uma lista por vírgulas, sem espaços nem itens vazios.
 // TeamGroupEnabled: grupo da equipe ligado (JID e key da instância não oficial; o token é opcional).
 func (c Config) TeamGroupEnabled() bool { return c.TeamGroupJID != "" && c.TeamGroupWameKey != "" }
 
@@ -212,6 +211,7 @@ func groupJID(v string) string {
 	return v
 }
 
+// splitList separa uma lista por vírgulas, sem espaços nem itens vazios.
 func splitList(v string) []string {
 	var out []string
 	for _, s := range strings.Split(v, ",") {

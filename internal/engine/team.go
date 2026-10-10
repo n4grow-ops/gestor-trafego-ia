@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -119,6 +120,9 @@ func (e *Engine) teamJobs(ctx context.Context, n TeamNotice) []store.JobSpec {
 	if e.teamGroupOn() {
 		jobs = append(jobs, store.JobSpec{Kind: JobTeamGroup, Payload: TeamGroupJob{Text: text}, MaxAttempts: sendAttempts})
 	}
+	if len(jobs) == 0 {
+		e.Log.Warn("aviso à equipe sem destino: nenhum número da equipe nem grupo configurado", "tipo", n.Kind)
+	}
 	return jobs
 }
 
@@ -157,10 +161,31 @@ func (e *Engine) humanNotice(ident store.Identity, clientText string) TeamNotice
 	return TeamNotice{Kind: TeamHuman, Ident: ident, Reason: motive, Text: text}
 }
 
-// clientMotive limpa a fala do cliente para o aviso: uma linha só, sem tokens de link nem
+// motiveURL acha link na fala do cliente: com esquema, com www. ou domínio seguido de caminho.
+var motiveURL = regexp.MustCompile(`(?i)(?:https?://|www\.)\S+|\b(?:[a-z0-9-]+\.)+[a-z]{2,}/\S*`)
+
+// maskLinks troca cada link só pelo host ("[link facebook.com]"): caminho e query podem ter token.
+func maskLinks(text string) string {
+	return motiveURL.ReplaceAllStringFunc(text, func(u string) string {
+		h := u
+		if i := strings.Index(h, "://"); i >= 0 {
+			h = h[i+3:]
+		}
+		if i := strings.IndexAny(h, "/?#@"); i >= 0 {
+			h = h[:i]
+		}
+		h = strings.TrimPrefix(strings.ToLower(strings.Trim(h, ".,;:!?)]}>'\"»")), "www.")
+		if h == "" {
+			return "[link]"
+		}
+		return "[link " + h + "]"
+	})
+}
+
+// clientMotive limpa a fala do cliente para o aviso: uma linha só, links reduzidos ao host, sem
 // segredos, cortada em maxMotive runas.
 func clientMotive(text string) string {
-	s := strings.Join(strings.Fields(store.RedactSecrets(redactLinks(text))), " ")
+	s := strings.Join(strings.Fields(store.RedactSecrets(maskLinks(text))), " ")
 	if s == "" {
 		return "(sem texto)"
 	}
