@@ -163,3 +163,22 @@ func TestTickUsesParserOfEventProvider(t *testing.T) {
 		t.Fatalf("resposta deve sair pelo provedor ativo: %v", wa.sent)
 	}
 }
+
+// A resposta do formulário de cadastro (CPF, e-mail) não fica guardada depois de processada.
+func TestTickRedactsFlowAnswers(t *testing.T) {
+	wa := &fakeWA{parse: func([]byte) (whatsapp.Inbound, bool, error) {
+		return whatsapp.Inbound{ExternalID: "f1", ChatID: "5511911112222@c.us", Phone: "5511911112222", Kind: whatsapp.KindFlow, Text: `{"flow_token":"x"}`}, true, nil
+	}}
+	w, st, pool := setup(t, wa)
+	st.InsertInbox(ctx, "openwa", "f1", []byte(`{"cpf":"529.982.247-25"}`))
+	if _, err := w.Tick(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var payload string
+	if err := pool.QueryRow(ctx, `SELECT payload::text FROM inbox_events`).Scan(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload != `{"redacted": true}` {
+		t.Fatalf("payload = %s", payload)
+	}
+}

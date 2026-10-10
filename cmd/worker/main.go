@@ -99,6 +99,9 @@ func run(log *slog.Logger) error {
 		}
 	}
 	eng.ReportPhone = whatsapp.Digits(cfg.ReportPhone)
+	if err := eng.EnsureCleanup(ctx); err != nil {
+		log.Error("falha ao agendar limpeza diária", "erro", err)
+	}
 	if err := eng.EnsureDailyReport(ctx); err != nil {
 		log.Error("falha ao agendar relatório diário", "erro", err)
 	}

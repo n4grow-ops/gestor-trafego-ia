@@ -44,6 +44,8 @@ func (e *Engine) HandleJob(ctx context.Context, job store.Job) error {
 		return e.reply(ctx, r)
 	case JobDailyReport:
 		return e.dailyReport(ctx)
+	case JobCleanup:
+		return e.cleanup(ctx)
 	case JobSignupRemind:
 		var r RemindJob
 		if err := json.Unmarshal(job.Payload, &r); err != nil {

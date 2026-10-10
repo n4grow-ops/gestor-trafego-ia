@@ -63,6 +63,7 @@ func (w *Worker) inbox(ctx context.Context) (bool, error) {
 	if err != nil || !ok {
 		return false, err
 	}
+	var kind whatsapp.Kind
 	procErr := w.safely(ctx, func(ctx context.Context) error {
 		parser := w.WA
 		if p, ok := w.Parsers[ev.Provider]; ok && p != nil {
@@ -72,12 +73,20 @@ func (w *Worker) inbox(ctx context.Context) (bool, error) {
 		if err != nil || !keep {
 			return err
 		}
+		kind = in.Kind
 		return w.Engine.HandleInbound(ctx, in)
 	})
 	if procErr != nil {
 		w.Log.Error("evento falhou", "inbox_id", ev.ID, "tentativa", ev.Attempts, "erro", procErr)
 	}
-	return true, w.Store.FinishInbox(ctx, ev.ID, procErr)
+	if err := w.Store.FinishInbox(ctx, ev.ID, procErr); err != nil {
+		return true, err
+	}
+	// Resposta do formulário de cadastro traz CPF e e-mail: já está no cadastro, não fica no evento.
+	if procErr == nil && kind == whatsapp.KindFlow {
+		return true, w.Store.RedactInbox(ctx, ev.ID)
+	}
+	return true, nil
 }
 
 func (w *Worker) job(ctx context.Context) (bool, error) {
