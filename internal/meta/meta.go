@@ -29,6 +29,8 @@ type Client struct {
 	GraphURL                                string
 	DialogURL                               string
 	HTTP                                    *http.Client
+	// Sleep espera entre as consultas do processamento de vídeo; nil = espera real (testes trocam).
+	Sleep func(ctx context.Context, d time.Duration) error
 }
 
 func New(appID, appSecret, configID, redirectURI string) *Client {
