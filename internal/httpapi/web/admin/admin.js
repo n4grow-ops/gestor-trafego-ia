@@ -133,7 +133,7 @@ const TABLES = { payments: 'pagamentos', subscriptions: 'assinatura', consents: 
 const METHOD = { pix: 'Pix', boleto: 'Boleto', card: 'Cartão' };
 
 /* ===================== login ===================== */
-function showLogin(msg = '') {
+function showLogin(msg = '', isErr = true) {
   clearTimers();
   state.me = null;
   document.body.classList.remove('booting', 'is-admin');
@@ -146,7 +146,7 @@ function showLogin(msg = '') {
   $('#btn-email').textContent = dev ? 'Entrar' : 'Enviar código';
   $('#form-email').hidden = off;
   $('#form-code').hidden = true;
-  setLoginMsg(msg, !!msg);
+  setLoginMsg(msg, isErr && !!msg);
   setTimeout(() => $('#login-email').focus(), 50);
 }
 function setLoginMsg(t, err = false) { const m = $('#login-msg'); m.textContent = t; m.classList.toggle('err', err); }
@@ -192,7 +192,7 @@ function enterApp() {
   refreshPulse();
   if (!state.pulseTimer) state.pulseTimer = setInterval(() => { if (state.me && !document.hidden) refreshPulse(); }, 30000);
 }
-$('#logout').addEventListener('click', async () => { try { await api('POST', '/logout'); } catch { /* sai mesmo assim */ } showLogin('Você saiu do painel.'); });
+$('#logout').addEventListener('click', async () => { try { await api('POST', '/logout'); } catch { /* sai mesmo assim */ } showLogin('Você saiu do painel.', false); });
 
 /* ===================== status do topo ===================== */
 function setPulse(health, inbox) {
@@ -571,8 +571,8 @@ function renderThread(d) {
         ${human ? `${t.human_by && !mine ? `<button class="btn sm" type="button" data-takeover>${icon('hand')}Assumir eu</button>` : ''}${!t.human_by ? `<button class="btn sm primary" type="button" data-takeover>${icon('hand')}Assumir conversa</button>` : ''}<button class="btn sm" type="button" data-release>${icon('bot')}Devolver à IA</button>` : `<button class="btn sm primary" type="button" data-takeover>${icon('hand')}Assumir conversa</button>`}</div></div>
     ${banner}${windowBanner}
     <div class="msgs" id="msgs">${msgsHTML(t.messages) || '<div class="c-empty"><p class="faint">Sem mensagens ainda.</p></div>'}<div id="pending">${pendingBubbles(t.pending)}</div></div>
-    <form class="composer" id="composer">${human && t.human_by ? `<textarea class="field" id="composer-text" rows="1" maxlength="4000" placeholder="Responder como ${esc(state.me.name)}…" title="Enter envia; Shift+Enter quebra a linha" aria-label="Mensagem para o cliente"></textarea><button class="btn primary" type="submit" id="send">${icon('send')}Enviar</button>`
-      : `<p class="note">${human ? 'Assuma a conversa para escrever.' : 'A IA está respondendo. Assuma a conversa para escrever.'}</p>`}</form>`;
+    <form class="composer" id="composer">${mine ? `<textarea class="field" id="composer-text" rows="1" maxlength="4000" placeholder="Responder como ${esc(state.me.name)}…" title="Enter envia; Shift+Enter quebra a linha" aria-label="Mensagem para o cliente"></textarea><button class="btn primary" type="submit" id="send">${icon('send')}Enviar</button>`
+      : `<p class="note">${human && t.human_by ? esc(t.human_by.split('@')[0]) + ' está atendendo. Toque em “Assumir eu” para escrever.' : human ? 'Assuma a conversa para escrever.' : 'A IA está respondendo. Assuma a conversa para escrever.'}</p>`}</form>`;
   $('#c-side').innerHTML = `<h3>Cliente</h3><dl class="kv one"><dt class="faint small">Negócio</dt><dd>${esc(t.org_name)}</dd><dt class="faint small">Contato</dt><dd>${esc(t.client_name)}<br><span class="num">${esc(phone(t.phone))}</span></dd><dt class="faint small">Estado</dt><dd>${esc(CONV_STATE[t.state] || t.state)}${t.blocked ? ' <span class="chip err">bloqueado</span>' : ''}</dd></dl>
     <h3>Projeto ativo</h3><p class="small">${t.project_name ? esc(t.project_name) + '<br><span class="muted">' + esc(PROJECT_STAGE[t.project_stage] || t.project_stage) + '</span>' : '<span class="muted">nenhum</span>'}</p>
     <h3>Atendimento</h3><p class="small muted">${t.human_by ? 'Com ' + esc(t.human_by) + (t.human_since ? ' desde ' + esc(dt(t.human_since)) : '') : human ? 'Esperando alguém da equipe' : 'IA respondendo'}</p>

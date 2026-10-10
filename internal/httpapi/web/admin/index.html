@@ -11,6 +11,7 @@
 <link rel="preload" href="static/figtree.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="static/admin.css">
 <script src="static/admin.js" defer></script>
+<script src="static/mia.js" defer></script>
 </head>
 <body class="booting">
 <svg class="sprite" aria-hidden="true" focusable="false">
@@ -46,6 +47,10 @@
     <symbol id="i-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12M6 11l6 6 6-6M4 20h16"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 13h12l1-13M9 7V4h6v3"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 15 6-6 6 6"/></symbol>
+    <symbol id="i-down-c" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l12-7.5z"/></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></symbol>
     <symbol id="i-mail" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></symbol>
   </defs>
 </svg>
@@ -86,6 +91,7 @@
       <a href="#/clientes" data-route="clientes"><svg class="ico"><use href="#i-users"/></svg><span>Clientes</span><span class="count num" id="nav-clients" hidden></span></a>
       <a href="#/conversas" data-route="conversas"><svg class="ico"><use href="#i-chat"/></svg><span>Conversas</span><span class="count hot num" id="nav-human" hidden></span></a>
       <a href="#/faturamento" data-route="faturamento" data-admin><svg class="ico"><use href="#i-money"/></svg><span>Faturamento</span></a>
+      <a href="#/mia" data-route="mia" data-admin><svg class="ico"><use href="#i-bot"/></svg><span>Mia</span></a>
       <div class="nav-group">Operação</div>
       <a href="#/whatsapp" data-route="whatsapp"><svg class="ico"><use href="#i-wa"/></svg><span>WhatsApp</span></a>
       <a href="#/equipe" data-route="equipe" data-admin><svg class="ico"><use href="#i-team"/></svg><span>Equipe</span></a>
