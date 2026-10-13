@@ -20,6 +20,7 @@ const jobTesterAdded = "tester.added"
 type TesterQueue interface {
 	ListTesterRequests(ctx context.Context, status string) ([]store.TesterRequestView, error)
 	MarkTesterAdded(ctx context.Context, id int64, by string) (store.TesterRequestView, error)
+	MarkTesterAddedForConversation(ctx context.Context, convID int64, by string) (store.TesterRequestView, error)
 	TesterRequestByID(ctx context.Context, id int64) (store.TesterRequestView, error)
 	Enqueue(ctx context.Context, j store.JobSpec) error
 }
@@ -36,6 +37,7 @@ func (a *Admin) registerTesters(mux *http.ServeMux) {
 	mux.HandleFunc("GET /admin/api/testers", a.only(false, a.testerList))
 	mux.HandleFunc("POST /admin/api/testers/{id}/added", a.only(false, a.testerAdded))
 	mux.HandleFunc("POST /admin/api/testers/{id}/resend", a.only(false, a.testerResend))
+	mux.HandleFunc("POST /admin/api/conversations/{id}/tester-added", a.only(false, a.conversationTesterAdded))
 }
 
 // testerJSON é a linha da fila como o painel lê.
@@ -59,6 +61,9 @@ type testerJSON struct {
 // profileURL devolve o link do perfil: o que o cliente mandou, ou montado do ID/usuário.
 // Só https do Facebook vira link no painel (o cliente pode ter mandado qualquer coisa).
 func profileURL(v store.TesterRequestView) string {
+	if v.ProfileURL == store.TesterFromPanel {
+		return "" // marcado pelo botão da conversa: não há link de perfil
+	}
 	if u, err := url.Parse(v.ProfileURL); err == nil && u.Scheme == "https" && u.User == nil && facebookHost(u.Hostname()) {
 		return u.String()
 	}
@@ -153,6 +158,32 @@ func (a *Admin) testerAdded(w http.ResponseWriter, r *http.Request, m store.Team
 		notice = "falhou"
 	}
 	a.log(r, m, "tester_added", "tester_request", orgTarget(id), testerLabel(v), map[string]any{"org_id": v.OrgID, "notice": notice})
+	writeJSON(w, http.StatusOK, map[string]any{"tester": toTesterJSON(v), "notice": notice})
+}
+
+// conversationTesterAdded é o botão "Testador adicionado" da conversa: o cliente já está como testador na
+// Meta (com ou sem pedido pelo WhatsApp). Marca o pedido como adicionado e põe na fila o aviso com o link
+// de conexão. Clique repetido no mesmo pedido só passa depois de 2 min.
+func (a *Admin) conversationTesterAdded(w http.ResponseWriter, r *http.Request, m store.TeamMember, _ adminSession) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	v, err := a.testers().MarkTesterAddedForConversation(r.Context(), id, m.Email)
+	if a.storeError(w, err) {
+		return
+	}
+	if !a.testerResends.allow(v.ID, a.now()) {
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "aguarde", "detail": "um aviso a cada 2 minutos"})
+		return
+	}
+	notice := "na_fila"
+	if err := a.enqueueTesterNotice(r.Context(), v.ID); err != nil {
+		a.testerResends.forget(v.ID)
+		a.Log.Error("painel: aviso de testador não entrou na fila", "pedido", v.ID, "erro", err)
+		notice = "falhou"
+	}
+	a.log(r, m, "tester_added", "tester_request", orgTarget(v.ID), testerLabel(v), map[string]any{"org_id": v.OrgID, "conversation_id": id, "notice": notice})
 	writeJSON(w, http.StatusOK, map[string]any{"tester": toTesterJSON(v), "notice": notice})
 }
 

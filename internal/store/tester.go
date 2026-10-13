@@ -163,6 +163,33 @@ func (s *Store) MarkTesterAdded(ctx context.Context, id int64, by string) (Teste
 		SELECT `+testerViewCols+` FROM t`+testerViewFrom, id, by))
 }
 
+// TesterFromPanel marca o pedido criado pelo botão "Testador adicionado" da conversa: o cliente não
+// mandou link de perfil, a equipe já tinha incluído ele na Meta.
+const TesterFromPanel = "painel"
+
+// MarkTesterAddedForConversation é o botão "Testador adicionado" da conversa. Pedido aberto do cliente
+// (requested) passa para added; já added fica como está; sem pedido, cria um já adicionado.
+// ErrNotFound se a conversa não existir.
+func (s *Store) MarkTesterAddedForConversation(ctx context.Context, convID int64, by string) (TesterRequestView, error) {
+	return scanTesterView(s.pool.QueryRow(ctx, `WITH c AS (
+			SELECT c.id AS conv, wi.id AS ident, m.organization_id AS org
+			FROM conversations c JOIN whatsapp_identities wi ON wi.id = c.identity_id
+			JOIN members m ON m.id = wi.member_id WHERE c.id = $1
+		), up AS (
+			UPDATE tester_requests t SET status = 'added', added_at = coalesce(t.added_at, now()),
+				added_by = coalesce(t.added_by, nullif($2, '')), conversation_id = c.conv
+			FROM c WHERE t.identity_id = c.ident AND t.status IN ('requested', 'added')
+			RETURNING t.*
+		), ins AS (
+			INSERT INTO tester_requests (organization_id, identity_id, conversation_id, profile_url, ref_kind, ref_value,
+				status, added_at, added_by)
+			SELECT org, ident, conv, $3, 'username', $3, 'added', now(), nullif($2, '') FROM c
+			WHERE NOT EXISTS (SELECT 1 FROM up)
+			RETURNING *
+		), t AS (SELECT * FROM up UNION ALL SELECT * FROM ins)
+		SELECT `+testerViewCols+` FROM t`+testerViewFrom, convID, by, TesterFromPanel))
+}
+
 // MarkTesterAcceptedByIdentity fecha como accepted o pedido aberto da identidade (sem pedido: nada).
 func (s *Store) MarkTesterAcceptedByIdentity(ctx context.Context, identityID int64) error {
 	_, err := s.pool.Exec(ctx, `UPDATE tester_requests SET status = 'accepted', accepted_at = now()

@@ -28,7 +28,8 @@ function testerTimes(t) {
 function testerRow(t) {
   const [label, cls] = TESTER_STATUS[t.status] || [t.status, ''];
   const who = t.member_name || t.org_name || 'Cliente';
-  const ref = t.ref_value || '—', refKind = t.ref_kind === 'username' ? 'Usuário' : 'ID';
+  const panel = t.ref_value === 'painel' && !t.profile_url;
+  const ref = panel ? 'marcado na conversa' : t.ref_value || '—', refKind = panel ? 'Origem' : t.ref_kind === 'username' ? 'Usuário' : 'ID';
   const actions = t.status === 'requested'
     ? `<button class="btn sm primary" type="button" data-tester-added="${t.id}">${icon('check')}Adicionei</button>`
     : t.status === 'added' ? `<button class="btn sm" type="button" data-tester-resend="${t.id}">${icon('send')}Reenviar aviso</button>` : '';
@@ -38,7 +39,7 @@ function testerRow(t) {
       <small>${esc([t.org_name !== who ? t.org_name : '', phone(t.phone)].filter(Boolean).join(' · '))}</small></span></div>
     <div class="t-ref"><span class="faint small">${refKind}</span>
       <span class="t-ref-v"><code class="num" title="${esc(ref)}">${esc(ref)}</code>
-        ${t.ref_value ? `<button class="icon-btn t-copy" type="button" data-copy="${esc(t.ref_value)}" aria-label="Copiar ${refKind === 'ID' ? 'ID' : 'usuário'}" title="Copiar">${icon('copy')}</button>` : ''}</span>
+        ${t.ref_value && !panel ? `<button class="icon-btn t-copy" type="button" data-copy="${esc(t.ref_value)}" aria-label="Copiar ${refKind === 'ID' ? 'ID' : 'usuário'}" title="Copiar">${icon('copy')}</button>` : ''}</span>
       ${t.profile_url ? `<a class="t-link small" href="${esc(t.profile_url)}" target="_blank" rel="noopener noreferrer">${icon('ext')}Ver perfil</a>` : ''}</div>
     <div class="t-state"><span class="chip ${cls}">${esc(label)}</span>${testerTimes(t)}</div>
     <div class="t-act">${actions}</div>
@@ -64,7 +65,7 @@ views.testadores = async view => {
     <div class="alert note">${icon('alert', 'ico')}<p>Enquanto o app da Meta está em desenvolvimento, só testador conecta a conta. Adicione o ID ou usuário em <b>Funções do app › Testadores</b> e aperte <b>Adicionei</b>: a Mia avisa o cliente para aceitar o convite e conectar.</p></div>
     <div class="toolbar"><div class="seg" role="group" aria-label="Filtro">${filters.map(([k, l, n]) => `<button type="button" data-tester-filter="${k}" aria-pressed="${TESTERS.filter === k}">${l}${n != null ? `<span class="n">${num(n)}</span>` : ''}</button>`).join('')}</div></div>
     <div class="list t-list" role="list">
-      <div class="t-head" aria-hidden="true"><span>Cliente</span><span>ID ou usuário no Facebook</span><span>Situação</span><span></span></div>
+      <div class="tq-head" aria-hidden="true"><span>Cliente</span><span>ID ou usuário no Facebook</span><span>Situação</span><span></span></div>
       ${d.testers.map(testerRow).join('') || `<div class="empty"><b>${empty[0]}</b>${empty[1]}</div>`}
     </div></div>`;
 };

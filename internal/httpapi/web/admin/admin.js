@@ -74,6 +74,7 @@ function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTi
 /* ===================== API ===================== */
 class ApiError extends Error { constructor(status, data) { super((data && data.error) || 'erro_' + status); this.status = status; this.data = data || {}; } }
 const ERRORS = {
+  aguarde: 'O aviso saiu há pouco. Espere 2 minutos para mandar de novo.',
   ia_atendendo: 'A IA está atendendo. Assuma a conversa antes de escrever.',
   outra_pessoa: 'Outra pessoa assumiu esta conversa. Assuma você antes de escrever.',
   somente_admin: 'Só administradores podem fazer isso.', csrf: 'Sessão desatualizada. Recarregue a página.',
@@ -580,7 +581,7 @@ function renderThread(d) {
   $('#thread').innerHTML = `
     <div class="t-head"><button class="icon-btn" type="button" data-back-chats aria-label="Voltar para a lista">${icon('back')}</button><span class="mini-av ${human ? 'hot' : ''}">${esc(initials(t.client_name || t.org_name))}</span>
       <div><b>${esc(t.org_name)}</b><small>${esc(t.client_name)} · ${esc(phone(t.phone))} · ${esc(CONV_STATE[t.state] || t.state)}</small></div>
-      <div class="actions"><button class="btn sm" type="button" data-open-client="${t.org_id}">Ficha</button>
+      <div class="actions"><button class="btn sm" type="button" data-open-client="${t.org_id}">Ficha</button><button class="btn sm" type="button" data-conv-tester title="Já incluí este cliente como testador no app da Meta: a IA manda o link de conexão">${icon('flask')}Testador adicionado</button>
         ${human ? `${t.human_by && !mine ? `<button class="btn sm" type="button" data-takeover>${icon('hand')}Assumir eu</button>` : ''}${!t.human_by ? `<button class="btn sm primary" type="button" data-takeover>${icon('hand')}Assumir conversa</button>` : ''}<button class="btn sm" type="button" data-release>${icon('bot')}Devolver à IA</button>` : `<button class="btn sm primary" type="button" data-takeover>${icon('hand')}Assumir conversa</button>`}</div></div>
     ${banner}${windowBanner}
     <div class="msgs" id="msgs">${msgsHTML(t.messages) || '<div class="c-empty"><p class="faint">Sem mensagens ainda.</p></div>'}<div id="pending">${pendingBubbles(t.pending)}</div></div>
@@ -863,6 +864,12 @@ document.addEventListener('click', async e => {
     const id = state.conv.sel;
     const ok = await act(t, () => api('POST', '/conversations/' + id + '/takeover'));
     if (ok) { toast('Você assumiu a conversa. A IA está pausada para este cliente.', 'warn', 'hand'); await openThread(id, true); loadInbox(); }
+    return;
+  }
+  if (ds.convTester !== undefined) {
+    const id = state.conv.sel;
+    const r = await act(t, () => api('POST', '/conversations/' + id + '/tester-added'));
+    if (r) toast(r.notice === 'falhou' ? 'Marcado como testador, mas o aviso não saiu. Tente de novo em 2 min.' : 'Testador marcado. A IA manda o link de conexão ao cliente.', r.notice === 'falhou' ? 'warn' : 'ok', 'flask');
     return;
   }
   if (ds.release !== undefined) {

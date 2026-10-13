@@ -223,3 +223,41 @@ func TestResetRemovesTesterRequests(t *testing.T) {
 		t.Fatalf("pedido continua: %v", err)
 	}
 }
+
+// Botão "Testador adicionado" da conversa: sem pedido aberto cria um já adicionado; com pedido
+// requested passa para added; com added fica como está (só reavisa).
+func TestMarkTesterAddedForConversation(t *testing.T) {
+	st, _ := newStore(t)
+	id := seedIdentity(t, st, "owner", "5511911110009")
+	conv, err := st.GetOrCreateConversation(ctx, id.ID, "5511911110009@c.us")
+	must(t, err)
+
+	v, err := st.MarkTesterAddedForConversation(ctx, conv.ID, "ana@x.com")
+	must(t, err)
+	if v.ID == 0 || v.Status != store.TesterAdded || v.AddedAt == nil || v.AddedBy != "ana@x.com" ||
+		v.ConversationID != conv.ID || v.OrgID != id.OrgID || v.ProfileURL != store.TesterFromPanel || v.Phone != "5511911110009" {
+		t.Fatalf("criado = %+v", v)
+	}
+	again, err := st.MarkTesterAddedForConversation(ctx, conv.ID, "bia@x.com")
+	must(t, err)
+	if again.ID != v.ID || again.Status != store.TesterAdded || again.AddedBy != "ana@x.com" {
+		t.Fatalf("segundo clique = %+v", again)
+	}
+
+	// Pedido do cliente aberto (requested): o botão fecha ele como adicionado, sem criar outro.
+	id2 := seedIdentity(t, st, "owner", "5511911110010")
+	conv2, err := st.GetOrCreateConversation(ctx, id2.ID, "5511911110010@c.us")
+	must(t, err)
+	r, err := st.UpsertTesterRequest(ctx, store.TesterRequest{IdentityID: id2.ID, ConversationID: conv2.ID,
+		ProfileURL: "https://www.facebook.com/jv", RefKind: "username", RefValue: "jv"})
+	must(t, err)
+	v2, err := st.MarkTesterAddedForConversation(ctx, conv2.ID, "ana@x.com")
+	must(t, err)
+	if v2.ID != r.ID || v2.Status != store.TesterAdded || v2.RefValue != "jv" {
+		t.Fatalf("pedido aberto = %+v", v2)
+	}
+
+	if _, err := st.MarkTesterAddedForConversation(ctx, 999999, "ana@x.com"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("conversa inexistente: %v", err)
+	}
+}

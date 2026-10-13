@@ -61,6 +61,19 @@ func (f *fakeTesters) MarkTesterAdded(_ context.Context, id int64, by string) (s
 	return store.TesterRequestView{}, store.ErrNotFound
 }
 
+func (f *fakeTesters) MarkTesterAddedForConversation(_ context.Context, convID int64, by string) (store.TesterRequestView, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if convID == 404 {
+		return store.TesterRequestView{}, store.ErrNotFound
+	}
+	now := time.Now()
+	v := store.TesterRequestView{TesterRequest: store.TesterRequest{ID: 100 + convID, ConversationID: convID, ProfileURL: store.TesterFromPanel,
+		RefKind: "username", RefValue: store.TesterFromPanel, Status: store.TesterAdded, AddedAt: &now, AddedBy: by}, MemberName: "Ana", OrgName: "Pizzaria Boa"}
+	f.reqs = append(f.reqs, v)
+	return v, nil
+}
+
 func (f *fakeTesters) Enqueue(_ context.Context, j store.JobSpec) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -260,5 +273,29 @@ func TestTesterResendRateLimitAndLookup(t *testing.T) {
 	}
 	if ids := f.jobIDs(t); len(ids) != 3 || ids[2] != 4 {
 		t.Fatalf("jobs = %v", ids)
+	}
+}
+
+// Botão "Testador adicionado" na conversa: marca, avisa o cliente com o link e não aceita clique repetido.
+func TestConversationTesterAdded(t *testing.T) {
+	e, f := newTesterEnv(t)
+	staff := e.login("marina@meuanuncio.io")
+
+	r := e.do("POST", "/api/conversations/7/tester-added", staff, nil)
+	if r.code != 200 || r.body["notice"] != "na_fila" {
+		t.Fatalf("botão = %d %s", r.code, r.raw)
+	}
+	tv := r.body["tester"].(map[string]any)
+	if tv["status"] != "added" || tv["added_by"] != "marina@meuanuncio.io" || tv["profile_url"] != "" {
+		t.Fatalf("pedido = %v", tv)
+	}
+	if ids := f.jobIDs(t); len(ids) != 1 || ids[0] != 107 {
+		t.Fatalf("avisos = %v", ids)
+	}
+	if again := e.do("POST", "/api/conversations/7/tester-added", staff, nil); again.code != http.StatusTooManyRequests {
+		t.Fatalf("clique repetido = %d %s", again.code, again.raw)
+	}
+	if nf := e.do("POST", "/api/conversations/404/tester-added", staff, nil); nf.code != http.StatusNotFound {
+		t.Fatalf("conversa inexistente = %d %s", nf.code, nf.raw)
 	}
 }

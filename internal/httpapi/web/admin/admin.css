@@ -396,7 +396,7 @@ textarea.field { resize: vertical; min-height: 5rem; line-height: 1.45; }
 .t-head > div { min-width: 0; }
 .t-head b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .t-head small { color: var(--muted); font-size: 0.75rem; }
-.t-head .actions { margin-left: auto; }
+.t-head .actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: flex-end; }
 .banner { display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 1rem; font-size: 0.8125rem; font-weight: 600; animation: page-in var(--t) var(--ease-out) both; }
 .banner.human { background: var(--cyan-soft); color: var(--cyan); }
 .banner.asked { background: var(--warn-soft); color: var(--warn); }
@@ -700,8 +700,8 @@ textarea.field { resize: vertical; min-height: 5rem; line-height: 1.45; }
 }
 
 /* testadores */
-.t-head, .t-row { display: grid; grid-template-columns: minmax(13rem, 1.3fr) minmax(12rem, 1.2fr) minmax(13rem, 1.2fr) 9.5rem; gap: 1rem; align-items: center; padding: 0 1rem; }
-.t-head { font-size: 0.75rem; color: var(--faint); font-weight: 600; min-height: 2.5rem; border-bottom: 1px solid var(--line-soft); background: var(--side); }
+.tq-head, .t-row { display: grid; grid-template-columns: minmax(13rem, 1.3fr) minmax(12rem, 1.2fr) minmax(13rem, 1.2fr) 9.5rem; gap: 1rem; align-items: center; padding: 0 1rem; }
+.tq-head { font-size: 0.75rem; color: var(--faint); font-weight: 600; min-height: 2.5rem; border-bottom: 1px solid var(--line-soft); background: var(--side); }
 .t-row { padding-top: 0.85rem; padding-bottom: 0.85rem; border-bottom: 1px solid var(--line-soft); align-items: start; animation: page-in var(--t-slow) var(--ease-out) both; }
 .t-row:last-child { border-bottom: 0; }
 .t-row.requested { box-shadow: inset 3px 0 0 var(--warn); }
@@ -722,7 +722,7 @@ textarea.field { resize: vertical; min-height: 5rem; line-height: 1.45; }
 .t-times .ico-sm { width: 0.8125rem; height: 0.8125rem; color: var(--faint); }
 .t-act { display: flex; justify-content: flex-end; }
 @media (max-width: 1100px) {
-  .t-head { display: none; }
+  .tq-head { display: none; }
   .t-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); row-gap: 0.75rem; padding: 0.9rem 1rem; }
   .t-act { justify-content: flex-start; align-items: flex-end; }
 }
