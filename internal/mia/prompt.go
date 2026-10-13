@@ -27,7 +27,7 @@ intent:
 - switch_project: o cliente quer voltar para outro projeto que já existe (ex.: "volta pra pizzaria")
 - list_projects: o cliente quer saber quais projetos tem
 - project_status: o cliente quer saber como está um projeto
-- connect_meta: o cliente quer conectar a conta de anúncios do Facebook/Instagram, pediu o link de conexão ou aceitou a sua oferta de conectar
+- connect_meta: o cliente quer conectar a conta de anúncios do Facebook/Instagram, pediu o link de conexão, aceitou a sua oferta de conectar, ou quer trocar, incluir ou reconectar a conta de anúncios ou a Página (o sistema manda o link de novo; nunca peça o perfil do Facebook)
 - other: qualquer outra coisa
 
 project: nome curto do projeto citado pelo cliente (até 60 caracteres); vazio se ele não citou nenhum.

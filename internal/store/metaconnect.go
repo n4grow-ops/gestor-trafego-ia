@@ -31,6 +31,15 @@ func (s *Store) MetaLinkSentWithin(ctx context.Context, identityID int64, within
 	return ok, err
 }
 
+// MetaLinkOpenWithin diz se a identidade tem link de conexão ainda não usado criado dentro do intervalo.
+// Link já usado (conexão feita) não segura um novo: o cliente pode querer trocar a conta logo depois.
+func (s *Store) MetaLinkOpenWithin(ctx context.Context, identityID int64, within time.Duration) (bool, error) {
+	var ok bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM meta_connect_links
+		WHERE identity_id = $1 AND used_at IS NULL AND created_at > now() - $2 * interval '1 millisecond')`, identityID, within.Milliseconds()).Scan(&ok)
+	return ok, err
+}
+
 type MetaLink struct {
 	ID         int64
 	IdentityID int64

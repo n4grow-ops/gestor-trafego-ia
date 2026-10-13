@@ -19,6 +19,9 @@ const (
 // metaConnectAsk reconhece o pedido direto de conexão, sem gastar IA.
 var metaConnectAsk = regexp.MustCompile(`(?i)\bconectar\s+(a\s+)?(meta|facebook|face|conta\s+de\s+an[uú]ncios?)\b`)
 
+// metaSwitchAsk reconhece o pedido de trocar, incluir ou reconectar a conta de anúncios.
+var metaSwitchAsk = regexp.MustCompile(`(?i)\b((trocar|troca|mudar|muda|alterar|adicionar|adiciona|incluir|inclui|liberar|usar|colocar|conectar)\s+((a|de|outra|mais|uma|nova|minha)\s+)*contas?\s+de\s+an[uú]ncios?|reconectar(\s+(a\s+)?(meta|facebook|face|conta))?)\b`)
+
 // isMetaConnectCommand diz se a mensagem é o pedido direto de conexão: frase curta e fora das etapas
 // que tratam a mensagem de outro jeito (aprovação, anúncios, proposta, atendimento humano).
 func isMetaConnectCommand(state, text string) bool {
@@ -27,7 +30,8 @@ func isMetaConnectCommand(state, text string) bool {
 	default:
 		return false
 	}
-	return len(strings.Fields(text)) <= 6 && metaConnectAsk.MatchString(text)
+	n := len(strings.Fields(text))
+	return (n <= 6 && metaConnectAsk.MatchString(text)) || (n <= 9 && metaSwitchAsk.MatchString(text))
 }
 
 // sendMetaLink manda o link de conexão da conta de anúncios; lead é a resposta da IA que vem antes (pode ser vazia).
@@ -35,18 +39,28 @@ func (e *Engine) sendMetaLink(ctx context.Context, ident store.Identity, conv st
 	if ident.Role != "owner" {
 		return e.send(ctx, conv, join(lead, msgMetaOwnerOnly))
 	}
-	recent, err := e.Store.MetaLinkSentWithin(ctx, ident.ID, metaLinkResend)
+	recent, err := e.Store.MetaLinkOpenWithin(ctx, ident.ID, metaLinkResend)
 	if err != nil {
 		return err
 	}
 	if recent {
 		return e.send(ctx, conv, join(lead, msgMetaLinkRecent))
 	}
+	// Já conectado: é troca ou inclusão de conta. O cliente já é testador, então nada de pedir o perfil;
+	// o login novo gera outro token e substitui a conexão atual quando ele escolher.
+	_, connected, err := e.Store.ActiveMeta(ctx, ident.OrgID)
+	if err != nil {
+		return err
+	}
+	msg := msgMetaLink
+	if connected {
+		msg = msgMetaRelink
+	}
 	link, err := e.newMetaLink(ctx, ident)
 	if err != nil {
 		return err
 	}
-	return e.send(ctx, conv, join(lead, fmt.Sprintf(msgMetaLink, link)))
+	return e.send(ctx, conv, join(lead, fmt.Sprintf(msg, link)))
 }
 
 // newMetaLink cria um link de conexão da conta Meta para a identidade (vale 24 h).
