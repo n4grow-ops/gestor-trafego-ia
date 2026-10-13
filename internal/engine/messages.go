@@ -30,6 +30,8 @@ const (
 	msgNoProjects             = "Você ainda não tem projetos. É só me contar o que quer anunciar."
 
 	msgMetaLink             = "Pra eu publicar seus anúncios, conecta sua conta de anúncios do Facebook/Instagram por aqui:\n\n%s\n\nVocê entra com o seu Facebook e escolhe a conta e a Página. Leva 1 minuto e o link vale por 24 horas.\n\nSe aparecer que o app está indisponível, me manda o link do seu perfil do Facebook que eu peço pra te liberar."
+	msgStillMissing         = "Pra eu pedir a proposta ao especialista, ainda preciso saber: %s. Me conta?"
+	msgWhatToAdvertise      = "Me conta o que você quer anunciar agora que eu já monto tudo pra você 🙂"
 	msgMetaLinkRecent       = "Te mandei o link de conexão há pouco, é só abrir ele 🙂 Se não achar, me pede de novo daqui a uns minutos."
 	msgMetaOwnerOnly        = "Quem conecta a conta de anúncios é o responsável pela conta aqui no meuanuncio. Pede pra ele me mandar \"conectar meta\" 🙂"
 	msgMetaConnected        = "Conectado ✅\n\nConta de anúncios: %s (%s)\nPágina: %s\nInstagram: %s"

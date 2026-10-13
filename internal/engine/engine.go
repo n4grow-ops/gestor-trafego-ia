@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -387,15 +388,18 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 		}
 	}
 	if conv.State == store.StateOnboarding {
-		if !cfg.ProfileComplete(ident.Profile) {
-			return e.speak(ctx, ident, conv, turn.Reply)
+		// Quem já pede anúncio sai do onboarding mesmo com a ficha incompleta: se a IA deixou de gravar um
+		// item, o cliente não pode ficar preso numa conversa que nunca chega na campanha.
+		wantsCampaign := turn.Intent == contract.IntentCreateCampaign || turn.Intent == contract.IntentNewProject || turn.Fields.HasData()
+		if !cfg.ProfileComplete(ident.Profile) && !wantsCampaign {
+			return e.speakNoPromise(ctx, ident, conv, turn.Reply, current, cfg)
 		}
 		conv.State = store.StateIdle
 		if err := e.Store.UpdateConversation(ctx, conv.ID, conv.State, conv.Fields); err != nil {
 			return err
 		}
-		if turn.Intent != contract.IntentCreateCampaign && turn.Intent != contract.IntentNewProject && !turn.Fields.HasData() {
-			return e.speak(ctx, ident, conv, turn.Reply)
+		if !wantsCampaign {
+			return e.speakNoPromise(ctx, ident, conv, turn.Reply, current, cfg)
 		}
 	}
 
@@ -464,7 +468,7 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 		return e.requestProposal(ctx, ident, conv, merged, text, turn.Reply, false)
 	}
 	if !campaignTalk && conv.State != store.StateCollecting {
-		return e.speak(ctx, ident, conv, turn.Reply)
+		return e.speakNoPromise(ctx, ident, conv, turn.Reply, merged, cfg)
 	}
 	if len(cfg.CampaignMissing(merged)) == 0 {
 		return e.requestProposal(ctx, ident, conv, merged, "", turn.Reply, false)
@@ -472,7 +476,24 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 	if err := e.Store.UpdateConversation(ctx, conv.ID, store.StateCollecting, merged); err != nil {
 		return err
 	}
-	return e.speak(ctx, ident, conv, turn.Reply)
+	return e.speakNoPromise(ctx, ident, conv, turn.Reply, merged, cfg)
+}
+
+// promiseRe acha a resposta da IA que anuncia a proposta ("o especialista vai montar", "chega em instantes").
+var promiseRe = regexp.MustCompile(`(?i)especialista\s+(vai|já|ja|está|esta)|proposta.{0,80}(instantes|a caminho|já já|ja ja|chega)|(instantes|a caminho).{0,80}proposta`)
+
+// speakNoPromise fala a resposta da IA, menos quando ela promete a proposta sem o sistema ter pedido: o
+// cliente ficaria esperando algo que nunca chega. Aí a resposta vira a pergunta do que falta.
+func (e *Engine) speakNoPromise(ctx context.Context, ident store.Identity, conv store.Conversation, reply string, f contract.Fields, cfg mia.Config) error {
+	if promiseRe.MatchString(reply) {
+		if m := missingText(cfg, f); m != "" {
+			reply = fmt.Sprintf(msgStillMissing, m)
+		} else {
+			reply = msgWhatToAdvertise
+		}
+		e.Log.Warn("resposta prometia proposta sem pedido; trocada", "conversation_id", conv.ID)
+	}
+	return e.speak(ctx, ident, conv, reply)
 }
 
 // requestProposal pede a proposta ao Gestor; fixed indica que reply é mensagem fixa (nunca vira voz).

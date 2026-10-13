@@ -53,7 +53,7 @@ func missingText(cfg mia.Config, f contract.Fields) string {
 
 // profileDefaults transforma a memória do negócio em campos iniciais de campanha.
 func profileDefaults(p contract.Profile) contract.Fields {
-	return contract.Fields{Location: p.City, Audience: p.Audience}
+	return contract.Fields{Offer: p.Offer, Location: p.City, Audience: p.Audience}
 }
 
 // withDefaults completa os campos com a memória do negócio, sem sobrescrever o que já existe.
