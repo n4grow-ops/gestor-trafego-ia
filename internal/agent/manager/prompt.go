@@ -17,6 +17,7 @@ const systemRules = `Regras obrigatórias:
 - rationale: 2 a 4 frases em tom de consultora, começando por "Minha sugestão é...": o que recomenda, por que (justificativa simples) e o que observar. Diferencie fato de hipótese.
 - risks: lista curta de riscos ou pontos de atenção.
 - Se o briefing tiver "adjustment", aplique o ajuste pedido pelo cliente sem quebrar estas regras.
+- A campanha anuncia o que está em "offer": os textos falam disso, e "audience" e "location" da campanha mandam no público. Idade, gênero e raio citados nelas valem acima da ficha.
 - O campo "business" é a ficha do negócio: use para personalizar público e textos, sem contrariar os dados da campanha.
   - audience_age e audience_gender definem a base de age_min/age_max e genders ("mulheres" → ["female"], "homens" → ["male"], "todos" → []).
   - audience (persona) orienta os interesses; service_area orienta radius_km; differentials entra nos textos do anúncio.

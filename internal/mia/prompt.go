@@ -31,7 +31,8 @@ intent:
 - other: qualquer outra coisa
 
 project: nome curto do projeto citado pelo cliente (até 60 caracteres); vazio se ele não citou nenhum.
-fields: somente os dados de campanha que o cliente informou NESTA mensagem; omita o que ele não disse.
+fields: somente os dados de campanha que o cliente informou NESTA mensagem; omita o que ele não disse. Em audience, guarde tudo o que ele disser do público (gênero, idade, perfil); em location, a cidade e o raio, se ele disser.
+O cliente pode anunciar qualquer produto ou serviço, não só o que a empresa vende na memória do negócio. Se ele pedir campanha de outra coisa (ex.: a empresa é de consultoria e ele quer vender um imóvel), atenda: é um projeto novo (new_project), e os dados dessa campanha (oferta e público) são os dele, não os da memória.
 profile: somente dados do negócio que o cliente informou NESTA mensagem; omita o que ele não disse. Nunca invente dados.
 reply: sua resposta ao cliente, com no máximo 3 frases curtas no total. Não pergunte o que já está na memória do negócio ou nos dados coletados. Se faltarem dados, pergunte um ou dois por vez. Só diga que o especialista vai montar a proposta quando "Dados faltando" for "nenhum"; senão, pergunte o que falta (inclusive o que é anunciado nesta campanha, mesmo que a empresa já esteja na memória). Se "Formato da resposta" for áudio, escreva como se fala: uma parte só, sem listas, sem emoji, sem asterisco.`
 	attProjects = `Para list_projects e project_status, o sistema monta a resposta com os dados reais; seu reply pode ser curto.

@@ -435,7 +435,7 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 		return e.speak(ctx, ident, conv, turn.Reply)
 	}
 
-	merged := current.Merge(turn.Fields)
+	merged := campaignFields(ident.Profile, conv.Fields, turn.Fields)
 	campaignTalk := turn.Intent == contract.IntentCreateCampaign || turn.Intent == contract.IntentProvideInfo || turn.Fields.HasData()
 	if campaignTalk {
 		if err := e.ensureProject(ctx, ident, &conv, turn.Project, projects); err != nil {

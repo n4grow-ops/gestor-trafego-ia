@@ -221,10 +221,15 @@ func (e *Engine) propose(ctx context.Context, p ProposeJob) error {
 		return e.escalate(ctx, ident, conv, err.Error(), msgProposalFailed)
 	}
 	b.Adjustment = p.Adjustment
-	b.Business = ident.Profile
+	b.Business = campaignBusiness(ident.Profile, b.Offer)
 
 	cfg := e.miaConfig(ctx)
-	prop, usage, err := e.Manager.ProposeWith(ctx, b, cfg.ManagerContext(cfg.SegmentFor(ident.Segment, ident.Niche)))
+	seg := cfg.SegmentFor(ident.Segment, ident.Niche)
+	if !mainOffer(ident.Profile, b.Offer) {
+		// Outro produto: o ramo da empresa não vale para esta campanha (consultoria anunciando imóvel).
+		b.Constraints.Niche, seg = "", nil
+	}
+	prop, usage, err := e.Manager.ProposeWith(ctx, b, cfg.ManagerContext(seg))
 	e.recordUsage(ctx, ident.OrgID, "manager", usage)
 	if errors.Is(err, manager.ErrInvalidProposal) {
 		e.audit(ctx, ident.OrgID, "manager", "proposal_invalid", map[string]any{"conversation_id": conv.ID, "error": err.Error()})

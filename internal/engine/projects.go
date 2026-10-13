@@ -51,14 +51,43 @@ func missingText(cfg mia.Config, f contract.Fields) string {
 	return strings.Join(parts, ", ")
 }
 
-// profileDefaults transforma a memória do negócio em campos iniciais de campanha.
-func profileDefaults(p contract.Profile) contract.Fields {
-	return contract.Fields{Offer: p.Offer, Location: p.City, Audience: p.Audience}
+// withDefaults completa os campos com a memória do negócio, sem sobrescrever o que já existe. O público da
+// ficha só vale para o produto principal: campanha de outro produto (ex.: imóvel numa consultoria) pede o
+// público dela.
+func withDefaults(p contract.Profile, f contract.Fields) contract.Fields {
+	d := contract.Fields{Offer: p.Offer, Location: p.City}
+	if f.Offer == nil || mainOffer(p, *f.Offer) {
+		d.Audience = p.Audience
+	}
+	return d.Merge(f)
 }
 
-// withDefaults completa os campos com a memória do negócio, sem sobrescrever o que já existe.
-func withDefaults(p contract.Profile, f contract.Fields) contract.Fields {
-	return profileDefaults(p).Merge(f)
+// campaignFields junta o que o cliente disse nesta mensagem aos campos da campanha. Se ele trocou para
+// outro produto sem dizer o público, o público herdado da ficha sai.
+func campaignFields(p contract.Profile, base, turn contract.Fields) contract.Fields {
+	if turn.Offer != nil && !mainOffer(p, *turn.Offer) && turn.Audience == nil &&
+		base.Audience != nil && p.Audience != nil && *base.Audience == *p.Audience {
+		base.Audience = nil
+	}
+	return withDefaults(p, base.Merge(turn))
+}
+
+// mainOffer diz se a oferta da campanha é o que a empresa vende (a da ficha). Sem oferta na ficha, vale.
+func mainOffer(p contract.Profile, offer string) bool {
+	if p.Offer == nil || strings.TrimSpace(*p.Offer) == "" || strings.TrimSpace(offer) == "" {
+		return true
+	}
+	a, b := strings.ToLower(strings.TrimSpace(*p.Offer)), strings.ToLower(strings.TrimSpace(offer))
+	return a == b || strings.Contains(a, b) || strings.Contains(b, a)
+}
+
+// campaignBusiness é a ficha que vai ao especialista. Para outro produto, só a identidade da empresa: o
+// público, a idade, os diferenciais e o ticket da ficha são do produto principal.
+func campaignBusiness(p contract.Profile, offer string) contract.Profile {
+	if mainOffer(p, offer) {
+		return p
+	}
+	return contract.Profile{BusinessName: p.BusinessName, City: p.City, SalesChannel: p.SalesChannel}
 }
 
 func (e *Engine) projectNames(ctx context.Context, orgID int64) ([]store.Project, []string, error) {
@@ -135,7 +164,7 @@ func (e *Engine) startProject(ctx context.Context, ident store.Identity, conv st
 	if err != nil {
 		return err
 	}
-	fields := withDefaults(ident.Profile, p.Fields).Merge(turn.Fields)
+	fields := campaignFields(ident.Profile, p.Fields, turn.Fields)
 	if err := e.Store.ActivateProject(ctx, conv.ID, p.ID, store.StateCollecting, fields); err != nil {
 		return err
 	}
@@ -178,7 +207,7 @@ func (e *Engine) switchProject(ctx context.Context, ident store.Identity, conv s
 	if err := e.leaveProject(ctx, ident, conv); err != nil {
 		return err
 	}
-	fields := withDefaults(ident.Profile, target.Fields).Merge(turn.Fields)
+	fields := campaignFields(ident.Profile, target.Fields, turn.Fields)
 	if err := e.Store.ActivateProject(ctx, conv.ID, target.ID, store.StateCollecting, fields); err != nil {
 		return err
 	}
