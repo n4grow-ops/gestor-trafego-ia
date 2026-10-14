@@ -23,7 +23,7 @@ type Publication struct {
 	DraftID      int64
 	ProjectID    *int64
 	ConnectionID int64
-	Status       string // publishing | paused | active | failed
+	Status       string // publishing | paused | active | failed | rejected
 	CampaignID   string
 	AdSetID      string
 	AdIDs        []string
@@ -60,6 +60,7 @@ type PublishData struct {
 	Proposal    json.RawMessage // contract.CampaignProposal
 	Fields      json.RawMessage // contract.Fields (offer, location...)
 	ClientCopy  string
+	FinalCopies json.RawMessage // textos que vão no ar, gravados antes da prévia; nil = ainda não decididos
 }
 
 // Limites dos textos gravados.
@@ -121,7 +122,7 @@ func (s *Store) StartPublication(ctx context.Context, orgID, draftID int64, proj
 		return Publication{}, notFound(err)
 	}
 	stale := p.Status == "publishing" && time.Since(p.UpdatedAt) > stalePublishing
-	if p.Status != "failed" && !stale {
+	if p.Status != "failed" && p.Status != "rejected" && !stale {
 		return p, ErrAlreadyPublished
 	}
 	p, err = scanPublication(tx.QueryRow(ctx, `UPDATE meta_publications SET status = 'publishing', project_id = $2, meta_connection_id = $3,
@@ -242,12 +243,12 @@ func (s *Store) PublishData(ctx context.Context, draftID int64) (PublishData, er
 	var d PublishData
 	var proposal, briefing, projectFields []byte
 	err := s.pool.QueryRow(ctx, `SELECT d.id, d.organization_id, d.project_id, o.name, coalesce(p.name, ''),
-			d.proposal, d.briefing, coalesce(p.fields, '{}'), d.client_copy
+			d.proposal, d.briefing, coalesce(p.fields, '{}'), d.client_copy, d.final_copies
 		FROM campaign_drafts d
 		JOIN organizations o ON o.id = d.organization_id
 		LEFT JOIN projects p ON p.id = d.project_id
 		WHERE d.id = $1 AND d.status = 'approved'`, draftID).
-		Scan(&d.DraftID, &d.OrgID, &d.ProjectID, &d.OrgName, &d.ProjectName, &proposal, &briefing, &projectFields, &d.ClientCopy)
+		Scan(&d.DraftID, &d.OrgID, &d.ProjectID, &d.OrgName, &d.ProjectName, &proposal, &briefing, &projectFields, &d.ClientCopy, &d.FinalCopies)
 	if err != nil {
 		return PublishData{}, notFound(err)
 	}
@@ -271,4 +272,10 @@ func (s *Store) PublishData(ctx context.Context, draftID int64) (PublishData, er
 	d.Proposal = json.RawMessage(proposal)
 	d.Fields = json.RawMessage(fields)
 	return d, nil
+}
+
+// SetFinalCopies grava os textos que vão no ar (JSON da lista de textos) no rascunho.
+func (s *Store) SetFinalCopies(ctx context.Context, draftID int64, copies json.RawMessage) error {
+	_, err := s.pool.Exec(ctx, `UPDATE campaign_drafts SET final_copies = $2 WHERE id = $1`, draftID, string(copies))
+	return err
 }

@@ -7,11 +7,13 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/meta"
 )
@@ -133,5 +135,23 @@ func TestParseSignedRequest(t *testing.T) {
 		if _, err := meta.ParseSignedRequest(s, secret); !errors.Is(err, meta.ErrBadSignature) {
 			t.Errorf("%q aceito: %v", s, err)
 		}
+	}
+}
+
+func TestTokenExpiry(t *testing.T) {
+	var q url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q = r.URL.Query()
+		io.WriteString(w, `{"data":{"type":"USER","expires_at":1797094838,"data_access_expires_at":1799711882,"is_valid":true}}`)
+	}))
+	defer srv.Close()
+	c := meta.New("123", "segredo", "", "")
+	c.GraphURL = srv.URL
+	at, err := c.TokenExpiry(context.Background(), "TOKCLIENTE")
+	if err != nil || !at.Equal(time.Unix(1797094838, 0).UTC()) {
+		t.Fatalf("at=%v err=%v", at, err)
+	}
+	if q.Get("input_token") != "TOKCLIENTE" || q.Get("access_token") != "123|segredo" || q.Get("appsecret_proof") == "" {
+		t.Fatalf("query = %v", q)
 	}
 }

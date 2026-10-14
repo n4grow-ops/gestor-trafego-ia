@@ -55,6 +55,10 @@ func (e *Engine) HandleJob(ctx context.Context, job store.Job) error {
 		return e.dailyReport(ctx)
 	case JobCleanup:
 		return e.cleanup(ctx)
+	case JobAdsReview:
+		return e.adsReview(ctx, job.Payload)
+	case JobTokenCheck:
+		return e.tokenCheck(ctx)
 	case JobMediaArchive:
 		m, err := decodeMediaArchive(job.Payload)
 		if err != nil {

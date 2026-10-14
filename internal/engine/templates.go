@@ -29,6 +29,11 @@ type TemplateDefinition struct {
 
 var TemplateDefinitions = []TemplateDefinition{
 	{
+		Name:    TplMetaExpiring,
+		Body:    "Oi! A conexão do meu anúncio com a sua conta de anúncios da Meta vence em {{1}}. Pra suas campanhas continuarem funcionando, reconecte pelo link {{2}}. Leva 1 minuto.",
+		Example: []string{"12/12", "https://cadastro.meuanuncio.io/m/AbC123xYz789"},
+	},
+	{
 		Name:    TplSignupReminder,
 		Body:    "Oi! Seu cadastro no meu anúncio ainda está aberto. Para continuar e começar seus anúncios, acesse {{1}} e conclua em cerca de 2 minutos. Qualquer dúvida, é só responder esta mensagem.",
 		Example: []string{"https://cadastro.meuanuncio.io/c/AbC123xYz789"},

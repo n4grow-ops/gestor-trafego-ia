@@ -229,3 +229,29 @@ func ParseSignedRequest(signed, appSecret string) (string, error) {
 	}
 	return p.UserID, nil
 }
+
+// TokenExpiry diz quando o acesso do cliente para de valer: o menor entre a validade do token e a do
+// acesso aos dados (debug_token, com o token do app). Zero = não vence.
+func (c *Client) TokenExpiry(ctx context.Context, token string) (time.Time, error) {
+	var out struct {
+		Data struct {
+			ExpiresAt           int64 `json:"expires_at"`
+			DataAccessExpiresAt int64 `json:"data_access_expires_at"`
+		} `json:"data"`
+	}
+	q := url.Values{"input_token": {token}}
+	q = c.auth(c.AppID+"|"+c.AppSecret, q)
+	if err := c.get(ctx, "/debug_token", q, &out); err != nil {
+		return time.Time{}, err
+	}
+	var at int64
+	for _, v := range []int64{out.Data.ExpiresAt, out.Data.DataAccessExpiresAt} {
+		if v > 0 && (at == 0 || v < at) {
+			at = v
+		}
+	}
+	if at == 0 {
+		return time.Time{}, nil
+	}
+	return time.Unix(at, 0).UTC(), nil
+}

@@ -306,6 +306,9 @@ func (e *Engine) dispatch(ctx context.Context, ident store.Identity, conv store.
 	if e.MetaConnectBaseURL != "" && isMetaConnectCommand(conv.State, text) {
 		return e.sendMetaLink(ctx, ident, conv, "")
 	}
+	if isPaidCommand(conv.State, text) {
+		return e.paidCheck(ctx, ident, conv)
+	}
 	if isBillingCommand(conv.State, text) {
 		return e.sendBillingLink(ctx, ident, conv, "")
 	}
@@ -518,7 +521,7 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 }
 
 // promiseRe acha a resposta da IA que anuncia a proposta ("o especialista vai montar", "chega em instantes").
-var promiseRe = regexp.MustCompile(`(?i)especialista\s+(vai|já|ja|está|esta)|proposta.{0,80}(instantes|a caminho|já já|ja ja|chega)|(instantes|a caminho).{0,80}proposta`)
+var promiseRe = regexp.MustCompile(`(?i)especialista\s+(vai|já|ja|está|esta)\b|proposta.{0,80}(instantes|a caminho|já já|ja ja|chega)|(instantes|a caminho).{0,80}proposta`)
 
 // speakNoPromise fala a resposta da IA, menos quando ela promete a proposta sem o sistema ter pedido: o
 // cliente ficaria esperando algo que nunca chega. Aí a resposta vira a pergunta do que falta.

@@ -72,3 +72,24 @@ func TestActivateWarnsWithoutFunds(t *testing.T) {
 		t.Fatalf("statuses = %v mensagem = %q", pub.statuses, msg)
 	}
 }
+
+// "Paguei": a Mia confere na Meta, sem IA. Pagamento em dia confirma e lembra o ATIVAR da campanha pausada;
+// ainda pendente avisa com o link.
+func TestPaidCheckConfirms(t *testing.T) {
+	h, pub, _ := publishWith(t, &meta.Funding{Status: 1, HasSource: true, SourceType: 1, Source: "Visa *1234", AvailableCents: -1})
+	calls := h.att.Calls()
+	h.say("já paguei")
+	got := h.wa.last().Text
+	if !strings.Contains(got, "Confirmado") || !strings.Contains(got, "Visa *1234") || !strings.Contains(got, "ATIVAR") {
+		t.Fatalf("resposta = %q", got)
+	}
+	pub.funding = &meta.Funding{Status: 3, HasSource: true, SourceType: 1, Source: "Visa *1234", AvailableCents: -1}
+	h.say("paguei")
+	got = h.wa.last().Text
+	if !strings.Contains(got, "ainda aparece pendente") || !strings.Contains(got, engine.BillingURL("act_1")) {
+		t.Fatalf("pendente: %q", got)
+	}
+	if h.att.Calls() != calls {
+		t.Fatal("conferência de pagamento não deve chamar a IA")
+	}
+}

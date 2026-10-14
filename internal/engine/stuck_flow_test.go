@@ -67,3 +67,14 @@ func TestNoFalseProposalPromise(t *testing.T) {
 		t.Errorf("estado = %s", c.State)
 	}
 }
+
+// "O especialista vai montar" sem a proposta pedida também é promessa falsa (a regra tinha um caractere de
+// controle no lugar do \b e essa parte nunca casava).
+func TestNoFalsePromiseEspecialistaVai(t *testing.T) {
+	h := newHarness(t, "owner")
+	h.att.Responses = []string{`{"intent":"create_campaign","fields":{"offer":"pizza"},"reply":"Ótimo! O especialista vai montar tudo pra você."}`}
+	h.say("quero anunciar pizza")
+	if got := h.wa.last().Text; strings.Contains(got, "especialista vai") {
+		t.Fatalf("prometeu proposta sem pedir: %q", got)
+	}
+}

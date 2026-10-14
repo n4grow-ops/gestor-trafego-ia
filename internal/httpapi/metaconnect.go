@@ -26,6 +26,11 @@ type MetaAPI interface {
 	Assets(ctx context.Context, token string) (meta.Assets, error)
 }
 
+// TokenInspector lê quando o acesso do cliente à Meta vence (opcional no MetaAPI).
+type TokenInspector interface {
+	TokenExpiry(ctx context.Context, token string) (time.Time, error)
+}
+
 // MetaConnect serve o link de conexão da conta de anúncios, o retorno do Facebook e os avisos da Meta
 // (desautorização e exclusão de dados).
 type MetaConnect struct {
@@ -140,6 +145,14 @@ func (m *MetaConnect) callback(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		m.fail(w, r, err, http.StatusInternalServerError, "Algo deu errado", msgTryLater, retry)
 		return
+	}
+	// Validade do acesso: o worker avisa o cliente 7 dias antes de vencer. Falha aqui não segura a conexão.
+	if ti, ok := m.Meta.(TokenInspector); ok {
+		if at, err := ti.TokenExpiry(ctx, token); err != nil {
+			m.Log.Warn("validade do token da Meta não lida", "erro", err)
+		} else if err := m.Store.SetMetaTokenExpiry(r.Context(), connID, at); err != nil {
+			m.Log.Warn("validade do token da Meta não gravada", "erro", err)
+		}
 	}
 	if len(assets.AdAccounts) == 1 && len(assets.Pages) == 1 {
 		m.complete(w, r, link, connID, assets.AdAccounts[0], assets.Pages[0])

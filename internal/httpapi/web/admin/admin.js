@@ -133,6 +133,8 @@ const ACTIONS = {
   job_retried: ['Mandou tarefa de novo para a fila', 'info', 'refresh'], job_discarded: ['Descartou tarefa que falhou', 'warn', 'x'],
   project_archived: ['Projeto arquivado', 'info', 'tag'], billing_link_sent: ['Link de pagamento da Meta enviado', 'info', 'money'],
   preview_failed: ['Prévia do anúncio não enviada', 'warn', 'alert'], meta_published: ['Campanha criada na Meta', 'ok', 'meta'],
+  ad_rejected: ['Meta reprovou os anúncios', 'err', 'alert'], ad_partly_rejected: ['Meta reprovou parte dos anúncios', 'warn', 'alert'],
+  meta_token_expiring: ['Conexão com a Meta vencendo', 'warn', 'clock'], payment_checked: ['Pagamento da conta conferido', 'info', 'money'],
 };
 const actionOf = a => ACTIONS[a] || [String(a).replace(/_/g, ' '), 'info', 'log'];
 const PROJECT_STAGE = { collecting: 'Coleta', awaiting_proposal: 'Esperando proposta', awaiting_approval: 'Esperando aprovação', approved: 'Aprovada', awaiting_creatives: 'Esperando anúncios', ready: 'Pronta para publicar', archived: 'Arquivado' };

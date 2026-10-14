@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"regexp"
+	"strings"
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/contract"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/campaign"
@@ -24,12 +26,13 @@ func (e *Engine) fundingText(ctx context.Context, token, adAccountID string, dai
 		e.Log.Warn("pagamento da conta de anúncios não lido", "ad_account", adAccountID, "erro", err)
 		return ""
 	}
-	return describeFunding(f, dailyBRL, adAccountID)
+	text, _ := describeFunding(f, dailyBRL, adAccountID)
+	return text
 }
 
 // describeFunding monta o aviso de saldo: quanto tem e quantos dias cobre, ou o que falta para o anúncio
 // rodar, com o link de pagamento da conta.
-func describeFunding(f meta.Funding, dailyBRL float64, adAccountID string) string {
+func describeFunding(f meta.Funding, dailyBRL float64, adAccountID string) (string, bool) {
 	daily := int64(math.Round(dailyBRL * 100))
 	brl := func(cents int64) string { return campaign.BRL(float64(cents) / 100) }
 	var parts []string
@@ -68,7 +71,7 @@ func describeFunding(f meta.Funding, dailyBRL float64, adAccountID string) strin
 	if problem {
 		parts = append(parts, fmt.Sprintf(msgFundsAdd, BillingURL(adAccountID)))
 	}
-	return join(parts...)
+	return join(parts...), problem
 }
 
 // dailyBudget lê o orçamento por dia da proposta aprovada (0 se não achar).
@@ -95,4 +98,52 @@ func (e *Engine) activationFunding(ctx context.Context, orgID int64, token strin
 		daily += e.dailyBudget(ctx, p.DraftID)
 	}
 	return e.fundingText(ctx, token, conn.AdAccountID, daily)
+}
+
+// paidAsk: o cliente avisa que pagou ou colocou saldo.
+var paidAsk = regexp.MustCompile(`(?i)^\W*(j[aá]\s+)?(paguei|fiz o pagamento|fiz o pix|pix feito|depositei|coloquei (o |um )?saldo|adicionei (o |meu |um )?(cart[aã]o|saldo)|cadastrei (o |meu )?cart[aã]o|t[aá] pago|est[aá] pago)\b`)
+
+// isPaidCommand: aviso curto de pagamento, fora do atendimento humano.
+func isPaidCommand(state, text string) bool {
+	return state != store.StateNeedsHuman && len(strings.Fields(text)) <= 10 && paidAsk.MatchString(text)
+}
+
+// paidCheck confere o pagamento na Meta depois do "paguei" e responde com o estado real da conta.
+func (e *Engine) paidCheck(ctx context.Context, ident store.Identity, conv store.Conversation) error {
+	conn, ok, err := e.Store.ActiveMeta(ctx, ident.OrgID)
+	if err != nil {
+		return err
+	}
+	fr, canRead := e.Publisher.(meta.FundingReader)
+	if !ok || !canRead || e.MetaTokenKey == nil {
+		return e.sendBillingLink(ctx, ident, conv, "")
+	}
+	_, sealed, err := e.pubs().MetaTokenSealed(ctx, ident.OrgID)
+	if err != nil {
+		return e.send(ctx, conv, msgPaidUnknown)
+	}
+	token, err := e.MetaTokenKey.Open(sealed)
+	if err != nil {
+		return e.send(ctx, conv, msgPaidUnknown)
+	}
+	f, err := fr.Funding(ctx, string(token), conn.AdAccountID)
+	if err != nil {
+		e.Log.Warn("pagamento não conferido", "org_id", ident.OrgID, "erro", err)
+		return e.send(ctx, conv, msgPaidUnknown)
+	}
+	paused, _ := e.pubs().ListPublications(ctx, ident.OrgID, "paused")
+	var daily float64
+	for _, p := range paused {
+		daily += e.dailyBudget(ctx, p.DraftID)
+	}
+	text, problem := describeFunding(f, daily, conn.AdAccountID)
+	e.audit(ctx, ident.OrgID, member(ident), "payment_checked", map[string]any{"ok": !problem})
+	if problem {
+		return e.send(ctx, conv, join(msgPaidPending, text))
+	}
+	reply := []string{msgPaidOK, text}
+	if len(paused) > 0 {
+		reply = append(reply, msgPaidActivate)
+	}
+	return e.send(ctx, conv, join(reply...))
 }

@@ -53,6 +53,8 @@ type PublicationStore interface {
 	ListPublications(ctx context.Context, orgID int64, status string) ([]store.Publication, error)
 	AppendClientCopy(ctx context.Context, draftID int64, text string) error
 	PublishData(ctx context.Context, draftID int64) (store.PublishData, error)
+	GetPublication(ctx context.Context, id int64) (store.Publication, error)
+	RejectPublication(ctx context.Context, id int64, reason string) error
 }
 
 func (e *Engine) pubs() PublicationStore {
@@ -191,6 +193,7 @@ func (e *Engine) published(ctx context.Context, ident store.Identity, conv store
 		e.alertTeam(ctx, ident, fmt.Sprintf("campanha %s criada na Meta, mas a publicação %d não foi gravada no banco", res.CampaignID, pub.ID))
 	}
 	e.audit(ctx, ident.OrgID, member(ident), "meta_published", map[string]any{"draft_id": pub.DraftID, "campaign_id": res.CampaignID})
+	e.scheduleAdsReview(ctx, pub.ID)
 	// Os textos que vão no ar (podem ter sido reescritos com as referências do cliente depois da aprovação):
 	// o cliente confere antes do ATIVAR.
 	text := msgPublished
@@ -263,7 +266,7 @@ func (e *Engine) publishInput(ctx context.Context, ident store.Identity, conn st
 		Genders:          prop.Audience.Genders,
 		Interests:        prop.Audience.Interests,
 		Placements:       contract.NormalizePlacements(prop.Placements),
-		Copies:           e.publishCopies(ctx, ident.OrgID, prop, fields.Offer, data.ClientCopy),
+		Copies:           e.finalCopies(ctx, ident.OrgID, data, prop, fields.Offer),
 	}
 	// Só o número da própria Página (opcional na Meta). O telefone de quem conversa com a Mia não serve:
 	// a Meta recusa número que não é o vinculado à Página.
@@ -712,6 +715,9 @@ func (e *Engine) campaignCommand(ctx context.Context, ident store.Identity, conv
 		}
 		changed++
 		e.audit(ctx, ident.OrgID, member(ident), "campaign_"+status, map[string]any{"publication_id": p.ID, "campaign_id": p.CampaignID})
+		if cmd != cmdPause {
+			e.scheduleAdsReview(ctx, p.ID)
+		}
 	}
 	var reply []string
 	if changed > 0 {
@@ -841,4 +847,40 @@ func (e *Engine) retryPublish(ctx context.Context, ident store.Identity, conv st
 		return true, err
 	}
 	return true, e.send(ctx, conv, msgRetryPublish)
+}
+
+// finalCopies são os textos que vão no ar: os gravados no rascunho (decididos antes da prévia) ou, na
+// primeira vez, a proposta reescrita com as referências do cliente, que ficam gravados para a prévia, a
+// publicação e a mensagem dos textos usarem a mesma lista.
+func (e *Engine) finalCopies(ctx context.Context, orgID int64, data store.PublishData, prop contract.CampaignProposal, offer string) []meta.PublishCopy {
+	if len(data.FinalCopies) > 0 {
+		var saved []meta.PublishCopy
+		if err := json.Unmarshal(data.FinalCopies, &saved); err == nil && len(saved) > 0 {
+			return saved
+		}
+	}
+	copies := e.publishCopies(ctx, orgID, prop, offer, data.ClientCopy)
+	if raw, err := json.Marshal(copies); err == nil {
+		if err := e.Store.SetFinalCopies(ctx, data.DraftID, raw); err != nil {
+			e.Log.Warn("textos finais não gravados", "draft_id", data.DraftID, "erro", err)
+		}
+	}
+	return copies
+}
+
+// draftFinalCopies decide os textos finais do rascunho aprovado (usado pela prévia, antes da publicação).
+func (e *Engine) draftFinalCopies(ctx context.Context, draftID int64) ([]meta.PublishCopy, error) {
+	data, err := e.pubs().PublishData(ctx, draftID)
+	if err != nil {
+		return nil, err
+	}
+	var prop contract.CampaignProposal
+	if err := json.Unmarshal(data.Proposal, &prop); err != nil {
+		return nil, fmt.Errorf("engine: proposta inválida no rascunho %d: %w", draftID, err)
+	}
+	var fields struct {
+		Offer string `json:"offer"`
+	}
+	_ = json.Unmarshal(data.Fields, &fields)
+	return e.finalCopies(ctx, data.OrgID, data, prop, fields.Offer), nil
 }

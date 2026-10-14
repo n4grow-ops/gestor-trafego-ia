@@ -8,6 +8,7 @@ import (
 	"image"
 	"time"
 
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/contract"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/media"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/preview"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
@@ -35,6 +36,12 @@ func (e *Engine) sendPreview(ctx context.Context, j PreviewJob) error {
 	}
 	if err != nil {
 		return err
+	}
+	// Prévia com o texto que vai ao ar (reescrito com as referências do cliente e gravado no rascunho).
+	if copies, err := e.draftFinalCopies(ctx, j.DraftID); err == nil && len(copies) > 0 {
+		data.Copy = contract.Copy{Headline: copies[0].Headline, Text: copies[0].Text, CTA: copies[0].CTA}
+	} else if err != nil && !errors.Is(err, store.ErrNotFound) {
+		e.Log.Warn("prévia com o texto da proposta", "draft_id", j.DraftID, "erro", err)
 	}
 	list, err := e.Store.ListCreatives(ctx, j.DraftID)
 	if err != nil || len(list) == 0 {

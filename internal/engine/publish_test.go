@@ -51,7 +51,7 @@ func (f *fakePubs) StartPublication(_ context.Context, orgID, draftID int64, pro
 			continue
 		}
 		stale := p.Status == "publishing" && f.stale[p.ID]
-		if p.Status != "failed" && !stale {
+		if p.Status != "failed" && p.Status != "rejected" && !stale {
 			return *p, store.ErrAlreadyPublished
 		}
 		delete(f.stale, p.ID)
@@ -87,6 +87,24 @@ func (f *fakePubs) FailPublication(_ context.Context, id int64, msg string) erro
 	defer f.mu.Unlock()
 	p := f.find(id)
 	p.Status, p.Error = "failed", msg
+	return nil
+}
+
+func (f *fakePubs) GetPublication(_ context.Context, id int64) (store.Publication, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if p := f.find(id); p != nil {
+		return *p, nil
+	}
+	return store.Publication{}, store.ErrNotFound
+}
+
+func (f *fakePubs) RejectPublication(_ context.Context, id int64, reason string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if p := f.find(id); p != nil && (p.Status == "paused" || p.Status == "active") {
+		p.Status, p.Error = "rejected", reason
+	}
 	return nil
 }
 
@@ -137,9 +155,9 @@ func (f *fakePubs) AppendClientCopy(_ context.Context, draftID int64, text strin
 
 func (f *fakePubs) PublishData(ctx context.Context, draftID int64) (store.PublishData, error) {
 	d := store.PublishData{DraftID: draftID}
-	err := f.pool.QueryRow(ctx, `SELECT d.organization_id, d.project_id, o.name, coalesce(p.name, ''), d.proposal, d.briefing
+	err := f.pool.QueryRow(ctx, `SELECT d.organization_id, d.project_id, o.name, coalesce(p.name, ''), d.proposal, d.briefing, d.final_copies
 		FROM campaign_drafts d JOIN organizations o ON o.id = d.organization_id LEFT JOIN projects p ON p.id = d.project_id
-		WHERE d.id = $1`, draftID).Scan(&d.OrgID, &d.ProjectID, &d.OrgName, &d.ProjectName, &d.Proposal, &d.Fields)
+		WHERE d.id = $1`, draftID).Scan(&d.OrgID, &d.ProjectID, &d.OrgName, &d.ProjectName, &d.Proposal, &d.Fields, &d.FinalCopies)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return store.PublishData{}, store.ErrNotFound
 	}
@@ -172,6 +190,20 @@ type fakePublisher struct {
 	firsts   []meta.FirstActivation
 	result   meta.PublishResult
 	funding  *meta.Funding // nil = a Meta não respondeu (sem permissão, fora do ar)
+	expiry   time.Time     // validade do token (debug_token)
+	reviews  []meta.AdReview
+}
+
+func (p *fakePublisher) AdsReview(context.Context, string, []string) ([]meta.AdReview, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.reviews, nil
+}
+
+func (p *fakePublisher) TokenExpiry(context.Context, string) (time.Time, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.expiry, nil
 }
 
 func (p *fakePublisher) Funding(context.Context, string, string) (meta.Funding, error) {
@@ -1013,5 +1045,36 @@ func TestPreviewImageFailureStillPublishes(t *testing.T) {
 	h.runKind(engine.JobMetaPublish)
 	if pub.calls() != 1 {
 		t.Fatalf("Publish chamado %d vezes", pub.calls())
+	}
+}
+
+// A prévia já mostra o texto reescrito com as referências (a IA reescreve uma vez, antes da prévia) e a
+// publicação usa a mesma lista gravada no rascunho.
+func TestPreviewAndPublishShareFinalCopies(t *testing.T) {
+	h, _, pub := newPublishHarness(t, "owner")
+	h.connectMeta()
+	h.say("SIM " + h.reachApproval())
+	h.say("Curto anúncio direto tipo: Fome? A pizza chega em 30 minutos.")
+	h.sendFile(square)
+	h.say("pronto")
+	h.say("pronto")
+	calls := h.mgr.Calls()
+	h.mgr.Responses = append(h.mgr.Responses,
+		`{"copies":[{"headline":"Fome? Pizza em 30 min","text":"A pizza quentinha chega rapidinho.","cta":"WHATSAPP_MESSAGE"}]}`)
+	h.runKind(engine.JobCreativesPreview)
+	if h.mgr.Calls() != calls+1 {
+		t.Fatal("textos não foram decididos antes da prévia")
+	}
+	var saved string
+	h.must(h.pool.QueryRow(ctx, `SELECT coalesce(final_copies::text, '') FROM campaign_drafts WHERE status = 'approved'`).Scan(&saved))
+	if !strings.Contains(saved, "Fome? Pizza em 30 min") {
+		t.Fatalf("textos finais não gravados: %q", saved)
+	}
+	h.runKind(engine.JobMetaPublish)
+	if h.mgr.Calls() != calls+1 {
+		t.Fatal("publicação reescreveu de novo (prévia e anúncio podem divergir)")
+	}
+	if c := pub.inputs[0].Copies; len(c) != 1 || c[0].Headline != "Fome? Pizza em 30 min" {
+		t.Fatalf("copies = %+v", c)
 	}
 }

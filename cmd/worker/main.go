@@ -165,6 +165,9 @@ func run(log *slog.Logger) error {
 	if err := eng.EnsureCleanup(ctx); err != nil {
 		log.Error("falha ao agendar limpeza diária", "erro", err)
 	}
+	if err := eng.EnsureTokenCheck(ctx); err != nil {
+		return err
+	}
 	if err := eng.EnsureDailyReport(ctx); err != nil {
 		log.Error("falha ao agendar relatório diário", "erro", err)
 	}
