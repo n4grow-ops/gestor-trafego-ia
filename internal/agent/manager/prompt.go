@@ -11,7 +11,7 @@ const systemRules = `Regras obrigatórias:
 - duration_days: entre 1 e 90.
 - audience.age_min >= 18, audience.age_max <= 65, age_min <= age_max.
 - audience.genders: lista com "male" e/ou "female"; vazia para todos os gêneros.
-- audience.radius_km: entre 1 e 80, a partir da localização do briefing.
+- audience.radius_km: 0 = só a cidade (sem raio em volta); ou entre 17 e 80 km em volta dela (a Meta não aceita raio menor que 17 km). Use 0 quando o cliente pedir "só a cidade", "sem raio" ou um raio menor que 17 km.
 - copies: de 1 a 3 variações; headline com até 40 caracteres; text com até 500 caracteres; cta: WHATSAPP_MESSAGE, LEARN_MORE ou CONTACT_US.
 - Textos em português do Brasil, sem prometer resultado garantido e sem afirmações proibidas pelas políticas de anúncios da Meta.
 - rationale: 2 a 4 frases em tom de consultora, começando por "Minha sugestão é...": o que recomenda, por que (justificativa simples) e o que observar. Diferencie fato de hipótese.

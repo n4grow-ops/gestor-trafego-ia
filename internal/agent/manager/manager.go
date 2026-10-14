@@ -49,6 +49,7 @@ func (a *Agent) ProposeWith(ctx context.Context, b contract.Briefing, extra stri
 		var p contract.CampaignProposal
 		err = json.Unmarshal([]byte(llm.StripFences(resp.Content)), &p)
 		if err == nil {
+			p.Normalize()
 			err = p.Validate(b)
 		}
 		if err == nil {

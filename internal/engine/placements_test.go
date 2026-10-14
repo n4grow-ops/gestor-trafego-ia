@@ -69,3 +69,33 @@ func TestAttendantKnowsPlacements(t *testing.T) {
 		t.Fatal("prompt da Atendente sem placements")
 	}
 }
+
+// Caso real (conversa 51): no ajuste da proposta a IA escreveu "Pode confirmar com *SIM 250532*", um código
+// que não valia, e em outro ajuste "Proposta aprovada!" sem o cliente ter aprovado. O código só sai no
+// resumo oficial; a fala da IA nunca leva código nem diz que aprovou.
+func TestAttendantNeverWritesCodeOrApproval(t *testing.T) {
+	h := newHarness(t, "owner")
+	h.reachApproval()
+	before := h.wa.count()
+	h.att.Responses = append(h.att.Responses, `{"intent":"provide_info","fields":{"audience":"mulheres de 18 a 30 anos"},"reply":"Entendido! Vou ajustar a idade para 18 a 30 anos. Proposta aprovada! Pode confirmar com *SIM 250532* para ativar a campanha."}`)
+	h.mgr.Responses = append(h.mgr.Responses, validProposal)
+	h.say("quero a idade de 18 a 30")
+	h.wa.mu.Lock()
+	lead := h.wa.sent[before:]
+	h.wa.mu.Unlock()
+	if len(lead) == 0 {
+		t.Fatal("nenhuma resposta")
+	}
+	for _, s := range lead {
+		if strings.Contains(s.Text, "250532") || strings.Contains(strings.ToLower(s.Text), "aprovada") {
+			t.Fatalf("fala da IA com código ou aprovação falsa: %q", s.Text)
+		}
+	}
+	if !strings.Contains(lead[0].Text, "ajustar a idade") {
+		t.Errorf("o resto da fala devia ficar: %q", lead[0].Text)
+	}
+	h.runJobs()
+	if m := codeRe.FindStringSubmatch(h.wa.last().Text); m == nil || m[1] == "250532" {
+		t.Fatalf("resumo oficial sem código novo: %q", h.wa.last().Text)
+	}
+}

@@ -316,7 +316,7 @@ func TestPublishAfterPreviewWhenConnected(t *testing.T) {
 	case !in.StartTime.IsZero() || !in.EndTime.IsZero():
 		// I6: o período conta da ativação, não da criação
 		t.Errorf("datas = %v até %v", in.StartTime, in.EndTime)
-	case in.LocationQuery != "Campinas" || in.RadiusKM != 8 || in.AgeMin != 25 || in.AgeMax != 55:
+	case in.LocationQuery != "Campinas" || in.RadiusKM != 20 || in.AgeMin != 25 || in.AgeMax != 55:
 		t.Errorf("segmentação = %q %d %d-%d", in.LocationQuery, in.RadiusKM, in.AgeMin, in.AgeMax)
 	case !slices.Equal(in.Interests, []string{"pizza"}) || len(in.Genders) != 0:
 		t.Errorf("interesses/gêneros = %v %v", in.Interests, in.Genders)

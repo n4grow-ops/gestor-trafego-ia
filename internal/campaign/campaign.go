@@ -70,7 +70,11 @@ func Summary(p contract.CampaignProposal, code string) string {
 		label = p.Objective
 	}
 	fmt.Fprintf(&b, "Objetivo: %s\n", label)
-	fmt.Fprintf(&b, "Público: %d a %d anos, %s, raio de %d km\n", p.Audience.AgeMin, p.Audience.AgeMax, genders(p.Audience.Genders), p.Audience.RadiusKM)
+	area := fmt.Sprintf("raio de %d km", p.Audience.RadiusKM)
+	if p.Audience.RadiusKM == 0 {
+		area = "somente a cidade (sem raio)"
+	}
+	fmt.Fprintf(&b, "Público: %d a %d anos, %s, %s\n", p.Audience.AgeMin, p.Audience.AgeMax, genders(p.Audience.Genders), area)
 	if len(p.Audience.Interests) > 0 {
 		fmt.Fprintf(&b, "Interesses: %s\n", strings.Join(p.Audience.Interests, ", "))
 	}

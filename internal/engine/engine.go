@@ -388,6 +388,9 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 		return e.send(ctx, conv, msgRetryLater)
 	}
 
+	// Código de aprovação só no resumo oficial; antes do SIM, a IA não diz que aprovou.
+	turn.Reply = scrubReply(turn.Reply, conv.State == store.StateAwaitingApproval || conv.State == store.StateAwaitingProposal)
+
 	// Memória do negócio: o Go mescla e grava; texto vazio não apaga.
 	if turn.Profile.HasData() {
 		ident.Profile = ident.Profile.Merge(turn.Profile)
@@ -645,4 +648,31 @@ func audioFormat(mime string) string {
 	default:
 		return "ogg"
 	}
+}
+
+var (
+	replySentenceRe = regexp.MustCompile(`[^.!?\n]+[.!?]*[ \t]*|\n`)
+	// replyCodeRe: código de aprovação escrito pela IA (inventado ou de uma proposta antiga).
+	replyCodeRe = regexp.MustCompile(`(?i)\bSIM\b\W{0,3}\d{6}|c[oó]digo\D{0,12}\d{6}`)
+	// replyApprovedRe: a IA dizendo que a proposta foi aprovada (só o SIM com o código aprova).
+	replyApprovedRe = regexp.MustCompile(`(?i)\baprovad[ao]s?\b`)
+)
+
+// scrubReply tira da fala da IA as frases com código de aprovação e, antes da aprovação (claims), as que
+// dizem que algo foi aprovado. O código válido vai só no resumo oficial da proposta.
+func scrubReply(reply string, claims bool) string {
+	var b strings.Builder
+	removed := false
+	for _, s := range replySentenceRe.FindAllString(reply, -1) {
+		if replyCodeRe.MatchString(s) || (claims && replyApprovedRe.MatchString(s)) {
+			removed = true
+			continue
+		}
+		b.WriteString(s)
+	}
+	out := strings.TrimSpace(b.String())
+	if out == "" && removed {
+		return "Certo!"
+	}
+	return out
 }

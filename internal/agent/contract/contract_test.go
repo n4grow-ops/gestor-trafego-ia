@@ -9,7 +9,7 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/contract"
 )
 
-const validProposalJSON = `{"objective":"OUTCOME_ENGAGEMENT","audience":{"age_min":25,"age_max":55,"genders":[],"interests":["pizza"],"radius_km":8},"daily_budget_brl":40,"duration_days":7,"copies":[{"headline":"Pizza quentinha","text":"Peça pelo WhatsApp","cta":"WHATSAPP_MESSAGE"}],"rationale":"Público local.","risks":[]}`
+const validProposalJSON = `{"objective":"OUTCOME_ENGAGEMENT","audience":{"age_min":25,"age_max":55,"genders":[],"interests":["pizza"],"radius_km":20},"daily_budget_brl":40,"duration_days":7,"copies":[{"headline":"Pizza quentinha","text":"Peça pelo WhatsApp","cta":"WHATSAPP_MESSAGE"}],"rationale":"Público local.","risks":[]}`
 
 func briefing() contract.Briefing {
 	return contract.Briefing{
@@ -125,7 +125,7 @@ func TestProposalValidateRejects(t *testing.T) {
 			p.Audience.AgeMin, p.Audience.AgeMax = 50, 30
 		}, "idade"},
 		{"gênero", func(p *contract.CampaignProposal, _ *contract.Briefing) { p.Audience.Genders = []string{"x"} }, "gender"},
-		{"raio", func(p *contract.CampaignProposal, _ *contract.Briefing) { p.Audience.RadiusKM = 0 }, "radius_km"},
+		{"raio", func(p *contract.CampaignProposal, _ *contract.Briefing) { p.Audience.RadiusKM = 90 }, "radius_km"},
 		{"sem copies", func(p *contract.CampaignProposal, _ *contract.Briefing) { p.Copies = nil }, "copies"},
 		{"headline longo", func(p *contract.CampaignProposal, _ *contract.Briefing) {
 			p.Copies[0].Headline = strings.Repeat("é", 41)
@@ -185,5 +185,25 @@ func TestMergePlacements(t *testing.T) {
 		DailyBudgetBRL: contract.Num(10), Placements: []string{"stories"}}, contract.Constraints{})
 	if err != nil || !slices.Equal(b.Placements, []string{"stories"}) {
 		t.Fatalf("briefing sem placements: %v %v", b.Placements, err)
+	}
+}
+
+// Raio: 0 é só a cidade; a Meta não aceita raio de 1 a 16 km em volta de cidade.
+func TestProposalRadius(t *testing.T) {
+	var p contract.CampaignProposal
+	if err := json.Unmarshal([]byte(validProposalJSON), &p); err != nil {
+		t.Fatal(err)
+	}
+	b := contract.Briefing{DailyBudgetBRL: 50, Constraints: contract.Constraints{MaxDailyBudgetBRL: 100, AllowedObjectives: []string{"OUTCOME_ENGAGEMENT"}}}
+	for r, ok := range map[int]bool{0: true, 17: true, 80: true, 5: false, 16: false, 81: false} {
+		p.Audience.RadiusKM = r
+		if err := p.Validate(b); (err == nil) != ok {
+			t.Errorf("raio %d: err = %v", r, err)
+		}
+	}
+	p.Audience.RadiusKM = 10
+	p.Normalize()
+	if p.Audience.RadiusKM != 0 {
+		t.Errorf("raio pequeno devia virar só a cidade: %d", p.Audience.RadiusKM)
 	}
 }

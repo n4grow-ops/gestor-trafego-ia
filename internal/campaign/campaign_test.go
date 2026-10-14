@@ -12,7 +12,7 @@ import (
 func proposal() contract.CampaignProposal {
 	return contract.CampaignProposal{
 		Objective:      "OUTCOME_ENGAGEMENT",
-		Audience:       contract.Audience{AgeMin: 25, AgeMax: 55, Interests: []string{"pizza", "delivery"}, RadiusKM: 8},
+		Audience:       contract.Audience{AgeMin: 25, AgeMax: 55, Interests: []string{"pizza", "delivery"}, RadiusKM: 20},
 		DailyBudgetBRL: 40, DurationDays: 7,
 		Copies:    []contract.Copy{{Headline: "Pizza quentinha", Text: "Peça pelo WhatsApp", CTA: "WHATSAPP_MESSAGE"}},
 		Rationale: "Público local.",
@@ -78,7 +78,7 @@ func TestBRL(t *testing.T) {
 func TestSummaryHasCodeAndValues(t *testing.T) {
 	s := campaign.Summary(proposal(), "482913")
 	for _, want := range []string{"*SIM 482913*", "R$ 40,00", "7 dias", "R$ 280,00", "25 a 55 anos", "todos os gêneros",
-		"8 km", "pizza, delivery", "Pizza quentinha", "Público local.", "30 minutos", "conversas no WhatsApp"} {
+		"raio de 20 km", "pizza, delivery", "Pizza quentinha", "Público local.", "30 minutos", "conversas no WhatsApp"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("resumo sem %q:\n%s", want, s)
 		}
@@ -105,5 +105,15 @@ func TestSummaryPlacements(t *testing.T) {
 	p.Placements = []string{"feed", "stories"}
 	if s := campaign.Summary(p, "000000"); !strings.Contains(s, "Onde aparece: só no Feed e nos Stories (Facebook e Instagram)") {
 		t.Errorf("feed e stories:\n%s", s)
+	}
+}
+
+// Raio 0 = só a cidade: a proposta diz isso em vez de "raio de 0 km".
+func TestSummaryCityOnly(t *testing.T) {
+	p := proposal()
+	p.Audience.RadiusKM = 0
+	s := campaign.Summary(p, "000000")
+	if !strings.Contains(s, "somente a cidade (sem raio)") || strings.Contains(s, "raio de 0 km") {
+		t.Fatalf("resumo:\n%s", s)
 	}
 }

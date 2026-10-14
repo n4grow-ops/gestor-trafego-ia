@@ -13,7 +13,7 @@ import (
 
 var ctx = context.Background()
 
-const validProposal = `{"objective":"OUTCOME_ENGAGEMENT","audience":{"age_min":25,"age_max":55,"genders":[],"interests":["pizza"],"radius_km":8},"daily_budget_brl":40,"duration_days":7,"copies":[{"headline":"Pizza quentinha","text":"Peça pelo WhatsApp","cta":"WHATSAPP_MESSAGE"}],"rationale":"Público local.","risks":[]}`
+const validProposal = `{"objective":"OUTCOME_ENGAGEMENT","audience":{"age_min":25,"age_max":55,"genders":[],"interests":["pizza"],"radius_km":20},"daily_budget_brl":40,"duration_days":7,"copies":[{"headline":"Pizza quentinha","text":"Peça pelo WhatsApp","cta":"WHATSAPP_MESSAGE"}],"rationale":"Público local.","risks":[]}`
 
 func briefing() contract.Briefing {
 	return contract.Briefing{

@@ -233,7 +233,18 @@ type CampaignProposal struct {
 	Placements []string `json:"placements,omitempty"`
 }
 
-var allowedCTAs = []string{"WHATSAPP_MESSAGE", "LEARN_MORE", "CONTACT_US"}
+// MinRadiusKM é o menor raio que a Meta aceita em volta de cidade. Raio 0 = só a cidade.
+const MinRadiusKM = 17
+
+// Normalize ajusta o que a Meta não aceita do jeito mais fiel ao pedido: raio menor que o mínimo vira
+// só a cidade (um raio pequeno fica mais perto da cidade do que de 17 km em volta).
+func (p *CampaignProposal) Normalize() {
+	if p.Audience.RadiusKM > 0 && p.Audience.RadiusKM < MinRadiusKM {
+		p.Audience.RadiusKM = 0
+	}
+}
+
+var allowedCTAs =[]string{"WHATSAPP_MESSAGE", "LEARN_MORE", "CONTACT_US"}
 
 // Validate confere estrutura e regras de negócio contra o briefing. Devolve todos os erros juntos,
 // para o Gestor corrigir tudo numa tentativa.
@@ -264,8 +275,8 @@ func (p CampaignProposal) Validate(b Briefing) error {
 			add("gender %q inválido (use male ou female)", g)
 		}
 	}
-	if a.RadiusKM < 1 || a.RadiusKM > 80 {
-		add("radius_km deve estar entre 1 e 80")
+	if a.RadiusKM != 0 && (a.RadiusKM < MinRadiusKM || a.RadiusKM > 80) {
+		add("radius_km deve ser 0 (só a cidade) ou entre %d e 80", MinRadiusKM)
 	}
 	if len(p.Copies) < 1 || len(p.Copies) > 3 {
 		add("copies deve ter de 1 a 3 itens")
