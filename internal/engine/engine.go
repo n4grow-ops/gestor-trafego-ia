@@ -301,6 +301,11 @@ func (e *Engine) dispatch(ctx context.Context, ident store.Identity, conv store.
 	if isBillingCommand(conv.State, text) {
 		return e.sendBillingLink(ctx, ident, conv, "")
 	}
+	if conv.State != store.StateNeedsHuman {
+		if done, err := e.archiveChoiceTurn(ctx, ident, conv, text); done || err != nil {
+			return err
+		}
+	}
 	if done, err := e.profileLinkTurn(ctx, ident, conv, text, msgs); done || err != nil {
 		return err
 	}
@@ -455,8 +460,8 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 	campaignTalk := turn.Intent == contract.IntentCreateCampaign || turn.Intent == contract.IntentProvideInfo || turn.Fields.HasData()
 	if campaignTalk {
 		if err := e.ensureProject(ctx, ident, &conv, turn.Project, projects); err != nil {
-			if limit, ok := projectLimit(err); ok {
-				return e.send(ctx, conv, limit)
+			if max, ok := projectLimit(err); ok {
+				return e.askArchive(ctx, ident, conv, max, turn.Project, merged)
 			}
 			return err
 		}
