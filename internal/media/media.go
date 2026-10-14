@@ -134,7 +134,7 @@ func Check(i Info) Verdict {
 	case r < extremeRatioMin || r > extremeRatioMax:
 		return Verdict{Reason: "a imagem é comprida demais; o ideal é quadrada, em pé (4:5) ou vertical (tela cheia)"}
 	case short < sharpSide:
-		return Verdict{OK: true, Warning: "a imagem é um pouco pequena e pode sair menos nítida; se tiver uma maior (1080 pixels ou mais), manda também"}
+		return Verdict{OK: true, Warning: "a imagem é um pouco pequena e pode sair menos nítida; se tiver uma maior (1080 pixels ou mais), manda também; como *documento* (📎 → Documento) ela chega sem a compressão do WhatsApp"}
 	case i.Format() == Other:
 		return Verdict{OK: true, Warning: "o formato foge do padrão; a Meta vai cortar um pouco as bordas"}
 	}

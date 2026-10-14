@@ -281,3 +281,25 @@ func TestInboundImageKeepsMediaRef(t *testing.T) {
 		t.Fatalf("texto ganhou referência de mídia: %q", ref)
 	}
 }
+
+// Foto mandada como documento (sem a compressão do WhatsApp) às vezes chega com tipo genérico: o arquivo
+// original vale como anúncio, com o tipo lido do conteúdo e os bytes intactos.
+func TestDocumentPhotoKeepsOriginal(t *testing.T) {
+	h, fs := newCreativeHarness(t)
+	code := h.reachApproval()
+	h.say("SIM " + code)
+	if msg := h.wa.last().Text; !strings.Contains(msg, "documento") {
+		t.Errorf("pedido dos anúncios não ensina a mandar como documento: %q", msg)
+	}
+	orig := mediatest.JPEG(1080, 1350)
+	h.sendFile(func() ([]byte, string) { return orig, "application/octet-stream" })
+	var mime, path string
+	var w, hgt int
+	h.must(h.pool.QueryRow(ctx, `SELECT mime, storage_path, width, height FROM creatives`).Scan(&mime, &path, &w, &hgt))
+	if mime != "image/jpeg" || !strings.HasSuffix(path, ".jpg") || w != 1080 || hgt != 1350 {
+		t.Fatalf("documento gravado como %s %s %dx%d", mime, path, w, hgt)
+	}
+	if got := fs.data["creatives/"+path]; !bytes.Equal(got, orig) || fs.files["creatives/"+path] != "image/jpeg" {
+		t.Fatal("arquivo guardado não é o original")
+	}
+}

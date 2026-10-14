@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"regexp"
 	"slices"
 	"strconv"
@@ -52,11 +53,25 @@ func (e *Engine) saveCreative(ctx context.Context, ident store.Identity, conv st
 		e.Log.Error("falha ao baixar criativo", "conversation_id", conv.ID, "erro", err)
 		return creativeFailed
 	}
+	mime = mediaMime(mime, data)
 	kind := "image"
 	if in.Kind == whatsapp.KindVideo || strings.HasPrefix(mime, "video/") {
 		kind = "video"
 	}
 	return e.keepCreative(ctx, ident, conv.ID, d, creativeFile{data: data, mime: mime, kind: kind, name: in.ExternalID})
+}
+
+// mediaMime confia no tipo do provedor só quando é imagem ou vídeo; foto mandada como documento pode chegar
+// como application/octet-stream, e aí o tipo sai do conteúdo. Vazio quando nem o conteúdo diz.
+func mediaMime(mime string, data []byte) string {
+	mime = strings.TrimSpace(strings.Split(mime, ";")[0])
+	if strings.HasPrefix(mime, "image/") || strings.HasPrefix(mime, "video/") {
+		return mime
+	}
+	if sniff := http.DetectContentType(data); strings.HasPrefix(sniff, "image/") || strings.HasPrefix(sniff, "video/") {
+		return sniff
+	}
+	return ""
 }
 
 // creativeFile é o arquivo a guardar como anúncio, com a origem (vazia = upload pelo WhatsApp).
