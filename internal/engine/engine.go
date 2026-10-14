@@ -280,7 +280,15 @@ func (e *Engine) HandleInbound(ctx context.Context, in whatsapp.Inbound) error {
 // addInbound grava a mensagem do cliente; foto e vídeo levam a referência da mídia para o painel mostrar.
 func (e *Engine) addInbound(ctx context.Context, convID int64, in whatsapp.Inbound, text string) (int64, error) {
 	if in.Kind == whatsapp.KindImage || in.Kind == whatsapp.KindVideo {
-		return e.Store.AddInboundMedia(ctx, convID, string(in.Kind), text, in.ExternalID)
+		id, err := e.Store.AddInboundMedia(ctx, convID, string(in.Kind), text, in.ExternalID)
+		if err == nil && e.Storage != nil {
+			// cópia guardada à parte: falha aqui não segura a resposta ao cliente
+			if qerr := e.Store.Enqueue(ctx, store.JobSpec{Kind: JobMediaArchive, Payload: MediaArchiveJob{
+				ConversationID: convID, MessageID: id, ExternalID: in.ExternalID, Kind: string(in.Kind)}}); qerr != nil {
+				e.Log.Warn("mídia não enfileirada para guardar", "message_id", id, "erro", qerr)
+			}
+		}
+		return id, err
 	}
 	return e.Store.AddInbound(ctx, convID, string(in.Kind), text)
 }

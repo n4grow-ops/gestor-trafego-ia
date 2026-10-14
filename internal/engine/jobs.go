@@ -55,6 +55,12 @@ func (e *Engine) HandleJob(ctx context.Context, job store.Job) error {
 		return e.dailyReport(ctx)
 	case JobCleanup:
 		return e.cleanup(ctx)
+	case JobMediaArchive:
+		m, err := decodeMediaArchive(job.Payload)
+		if err != nil {
+			return err
+		}
+		return e.archiveMedia(ctx, m)
 	case JobSignupRemind:
 		var r RemindJob
 		if err := json.Unmarshal(job.Payload, &r); err != nil {

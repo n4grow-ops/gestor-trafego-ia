@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"image"
 	"time"
 
@@ -39,7 +40,7 @@ func (e *Engine) sendPreview(ctx context.Context, j PreviewJob) error {
 	if err != nil || len(list) == 0 {
 		return err
 	}
-	if err := e.sendPreviewImages(ctx, conv, data, list); err != nil {
+	if err := e.sendPreviewImages(ctx, conv, j.DraftID, data, list); err != nil {
 		if ctx.Err() != nil {
 			return err // desligando: o job volta e tenta de novo
 		}
@@ -62,7 +63,7 @@ func (e *Engine) sendPreview(ctx context.Context, j PreviewJob) error {
 }
 
 // sendPreviewImages monta e manda as imagens da prévia (feed e Stories).
-func (e *Engine) sendPreviewImages(ctx context.Context, conv store.Conversation, data store.PreviewData, list []store.Creative) error {
+func (e *Engine) sendPreviewImages(ctx context.Context, conv store.Conversation, draftID int64, data store.PreviewData, list []store.Creative) error {
 	feed, story := pickPreview(list)
 	if feed != nil {
 		post, err := e.previewPost(ctx, data, *feed)
@@ -73,6 +74,7 @@ func (e *Engine) sendPreviewImages(ctx context.Context, conv store.Conversation,
 		if err != nil {
 			return err
 		}
+		e.keepPreview(ctx, draftID, "feed", img)
 		if err := e.WA.SendImage(ctx, conv.ChatID, img, "image/jpeg", msgPreviewFeed); err != nil {
 			return err
 		}
@@ -86,6 +88,7 @@ func (e *Engine) sendPreviewImages(ctx context.Context, conv store.Conversation,
 		if err != nil {
 			return err
 		}
+		e.keepPreview(ctx, draftID, "story", img)
 		caption := msgPreviewStory
 		if feed == nil {
 			caption = msgPreviewStoryOnly
@@ -149,4 +152,16 @@ func (e *Engine) previewPost(ctx context.Context, data store.PreviewData, c stor
 	}
 	p.Media = img
 	return p, nil
+}
+
+// keepPreview guarda a imagem da prévia com link, para o painel mostrar na aba do projeto. Falha só vai pro log.
+func (e *Engine) keepPreview(ctx context.Context, draftID int64, name string, img []byte) {
+	path := fmt.Sprintf("draft/%d/%s.jpg", draftID, name)
+	if err := e.Storage.Upload(ctx, PreviewsBucket, path, "image/jpeg", img); err != nil {
+		e.Log.Warn("prévia não guardada", "draft_id", draftID, "erro", err)
+		return
+	}
+	if err := e.linkFile(ctx, "preview", draftID, PreviewsBucket, path, "image/jpeg"); err != nil {
+		e.Log.Warn("prévia sem link", "draft_id", draftID, "erro", err)
+	}
 }

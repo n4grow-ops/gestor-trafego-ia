@@ -25,6 +25,7 @@ type Storage interface {
 	Upload(ctx context.Context, bucket, path, contentType string, data []byte) error
 	Download(ctx context.Context, bucket, path string) ([]byte, error)
 	Delete(ctx context.Context, bucket, path string) error
+	SignedURL(ctx context.Context, bucket, path string, expiresIn int) (string, error)
 }
 
 const (
@@ -131,9 +132,13 @@ func (e *Engine) keepCreative(ctx context.Context, ident store.Identity, convID 
 		e.Log.Error("falha ao guardar criativo", "conversation_id", convID, "erro", err)
 		return creativeFailed
 	}
-	if _, err := e.Store.AddCreative(ctx, c); err != nil {
+	id, err := e.Store.AddCreative(ctx, c)
+	if err != nil {
 		e.Log.Error("falha ao registrar criativo", "conversation_id", convID, "erro", err)
 		return creativeFailed
+	}
+	if err := e.linkFile(ctx, "creative", id, CreativesBucket, c.Path, c.Mime); err != nil {
+		e.Log.Warn("anúncio sem link para o painel", "creative_id", id, "erro", err) // o anúncio vale mesmo assim
 	}
 	e.audit(ctx, ident.OrgID, member(ident), "creative_received", map[string]any{"draft_id": d.ID, "kind": kind, "format": c.Format, "origin": c.Origin})
 	if warning != "" {

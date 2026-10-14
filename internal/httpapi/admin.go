@@ -41,6 +41,10 @@ type Admin struct {
 	USDBRL         float64
 	// Media baixa a foto ou o vídeo do cliente pela referência no provedor; nil = o painel não mostra mídia.
 	Media func(ctx context.Context, ref string) ([]byte, string, error)
+	// MediaHTTP busca os arquivos guardados pelo worker (link assinado do Storage); nil = cliente padrão.
+	MediaHTTP *http.Client
+	// AllowHTTPMedia aceita link sem https (só nos testes, com servidor local).
+	AllowHTTPMedia bool
 
 	// Mia: configuração em vigor (cache) e o que a aba Mia usa para testar e ouvir amostra.
 	Mia      *mia.Cache
@@ -98,6 +102,10 @@ func (a *Admin) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /admin/api/conversations", a.only(false, a.inbox))
 	mux.HandleFunc("GET /admin/api/conversations/{id}", a.only(false, a.thread))
 	mux.HandleFunc("GET /admin/api/messages/{id}/media", a.only(false, a.messageMedia))
+	mux.HandleFunc("GET /admin/api/media/{id}", a.only(false, a.storedMedia))
+	mux.HandleFunc("GET /admin/api/jobs", a.only(false, a.failedJobs))
+	mux.HandleFunc("POST /admin/api/jobs/{id}/retry", a.only(true, a.retryJob))
+	mux.HandleFunc("POST /admin/api/jobs/{id}/discard", a.only(true, a.discardJob))
 	mux.HandleFunc("POST /admin/api/conversations/{id}/takeover", a.only(false, a.takeover))
 	mux.HandleFunc("POST /admin/api/conversations/{id}/send", a.only(false, a.send))
 	mux.HandleFunc("POST /admin/api/conversations/{id}/release", a.only(false, a.release))

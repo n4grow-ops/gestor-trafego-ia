@@ -222,6 +222,7 @@ type ClientProject struct {
 	UpdatedAt time.Time       `json:"updated_at"`
 	Creatives int             `json:"creatives"`
 	Draft     *ClientDraft    `json:"draft"`
+	Media     []ProjectMedia  `json:"media"` // anúncios e prévia do último rascunho, com link para o painel
 }
 
 // TimelineEvent junta o que o sistema (audit_events) e a equipe (admin_audit_log) fizeram.
@@ -364,6 +365,14 @@ func (s *Store) ClientDetail(ctx context.Context, orgID int64) (ClientDetail, er
 		return p, err
 	}); err != nil {
 		return d, err
+	}
+
+	for i := range d.Projects {
+		if dr := d.Projects[i].Draft; dr != nil {
+			if d.Projects[i].Media, err = s.ProjectMedia(ctx, dr.ID); err != nil {
+				return d, err
+			}
+		}
 	}
 
 	if d.Timeline, err = s.timeline(ctx, orgID, 100); err != nil {

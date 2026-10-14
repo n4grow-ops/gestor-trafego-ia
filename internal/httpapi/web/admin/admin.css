@@ -734,3 +734,13 @@ video.b-media { object-fit: contain; }
   .t-row { grid-template-columns: minmax(0, 1fr); }
   .t-act .btn { flex: 1; min-height: 2.5rem; }
 }
+
+/* mídia do projeto (anúncios e prévia) */
+.pm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr)); gap: 0.5rem; margin-top: 0.5rem; }
+.pm { margin: 0; display: grid; gap: 0.2rem; min-width: 0; }
+.pm .b-media { max-width: 100%; max-height: 10rem; margin: 0; }
+.pm figcaption { font-size: 0.7rem; color: var(--muted, inherit); }
+
+/* fila de tarefas */
+.err-code { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.75rem; }
+.row-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; justify-content: flex-end; }

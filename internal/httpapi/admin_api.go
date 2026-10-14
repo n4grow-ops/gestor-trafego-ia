@@ -3,6 +3,9 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -224,12 +227,21 @@ func (a *Admin) messageMedia(w http.ResponseWriter, r *http.Request, _ store.Tea
 	if !ok {
 		return
 	}
-	if a.Media == nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "midia_desligada"})
-		return
-	}
 	kind, ref, err := a.Store.MessageMedia(r.Context(), id)
 	if a.storeError(w, err) {
+		return
+	}
+	// Cópia guardada no Storage primeiro (não expira); sem ela, busca no provedor do WhatsApp.
+	if links, err := a.Store.MediaLinksFor(r.Context(), "message", id); err == nil && len(links) > 0 {
+		if data, mime, err := a.fetchLink(r.Context(), links[0]); err == nil {
+			serveMedia(w, r, kind, data, mime)
+			return
+		} else {
+			a.Log.Warn("cópia guardada da mídia indisponível", "message_id", id, "erro", err)
+		}
+	}
+	if a.Media == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "midia_desligada"})
 		return
 	}
 	data, mime, err := a.Media(r.Context(), ref)
@@ -238,7 +250,69 @@ func (a *Admin) messageMedia(w http.ResponseWriter, r *http.Request, _ store.Tea
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "midia_indisponivel"})
 		return
 	}
-	// Só imagem ou vídeo vai como tal; qualquer outra coisa desce como arquivo, sem o navegador interpretar.
+	serveMedia(w, r, kind, data, mime)
+}
+
+// storedMedia serve um arquivo guardado pelo worker (anúncio ou prévia) pelo link dele.
+func (a *Admin) storedMedia(w http.ResponseWriter, r *http.Request, _ store.TeamMember, _ adminSession) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	l, err := a.Store.GetMediaLink(r.Context(), id)
+	if a.storeError(w, err) {
+		return
+	}
+	data, mime, err := a.fetchLink(r.Context(), l)
+	if err != nil {
+		a.Log.Warn("arquivo guardado indisponível", "media_link_id", id, "erro", err)
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "midia_indisponivel"})
+		return
+	}
+	kind := "image"
+	if strings.HasPrefix(l.Mime, "video/") {
+		kind = "video"
+	}
+	serveMedia(w, r, kind, data, mime)
+}
+
+// maxStoredMedia limita o que a api traz do Storage (vídeo de anúncio fica bem abaixo).
+const maxStoredMedia = 100 << 20
+
+// fetchLink busca o arquivo pelo link assinado (só https; o link foi gravado pelo worker).
+func (a *Admin) fetchLink(ctx context.Context, l store.MediaLink) ([]byte, string, error) {
+	if !strings.HasPrefix(l.URL, "https://") && !a.AllowHTTPMedia {
+		return nil, "", errors.New("link de mídia sem https")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, l.URL, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	hc := a.MediaHTTP
+	if hc == nil {
+		hc = &http.Client{Timeout: 60 * time.Second}
+	}
+	res, err := hc.Do(req)
+	if err != nil {
+		return nil, "", err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("storage: status %d", res.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(res.Body, maxStoredMedia))
+	if err != nil {
+		return nil, "", err
+	}
+	mime := l.Mime
+	if mime == "" {
+		mime = res.Header.Get("Content-Type")
+	}
+	return data, mime, nil
+}
+
+// serveMedia entrega imagem ou vídeo; qualquer outra coisa desce como arquivo, sem o navegador interpretar.
+func serveMedia(w http.ResponseWriter, r *http.Request, kind string, data []byte, mime string) {
 	mime = strings.TrimSpace(strings.Split(mime, ";")[0])
 	if !strings.HasPrefix(mime, kind+"/") {
 		mime = http.DetectContentType(data)

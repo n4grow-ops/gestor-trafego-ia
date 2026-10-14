@@ -40,6 +40,10 @@ func (e *Engine) cleanup(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	e.Log.Info("limpeza diária", "eventos", inbox, "jobs", jobs)
+	renewed, err := e.renewMediaLinks(ctx)
+	if err != nil {
+		e.Log.Error("renovação dos links de mídia", "erro", err)
+	}
+	e.Log.Info("limpeza diária", "eventos", inbox, "jobs", jobs, "links_renovados", renewed)
 	return e.enqueueCleanup(ctx)
 }

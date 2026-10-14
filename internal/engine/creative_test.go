@@ -1,6 +1,7 @@
 package engine_test
 
 import (
+	"strconv"
 	"bytes"
 	"context"
 	"errors"
@@ -54,6 +55,10 @@ func (f *fakeStorage) Delete(_ context.Context, bucket, path string) error {
 	delete(f.files, bucket+"/"+path)
 	delete(f.data, bucket+"/"+path)
 	return nil
+}
+
+func (f *fakeStorage) SignedURL(_ context.Context, bucket, path string, ttl int) (string, error) {
+	return "https://files.test/" + bucket + "/" + path + "?ttl=" + strconv.Itoa(ttl), nil
 }
 
 func (f *fakeStorage) count() int {

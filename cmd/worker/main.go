@@ -108,6 +108,12 @@ func run(log *slog.Logger) error {
 			log.Error("bucket dos anúncios indisponível; etapa de anúncios desligada", "erro", err)
 		} else {
 			eng.Storage = files
+			// prévias e mídia da conversa: guardadas com link para o painel
+			for _, b := range []string{engine.PreviewsBucket, engine.ChatMediaBucket} {
+				if err := files.EnsureBucket(ctx, b); err != nil {
+					log.Error("bucket indisponível", "bucket", b, "erro", err)
+				}
+			}
 		}
 		// Conta oficial: imagem (prévia do anúncio) só vai por link. Sobe num bucket privado e manda o
 		// link temporário.

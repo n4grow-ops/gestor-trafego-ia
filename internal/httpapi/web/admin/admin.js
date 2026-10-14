@@ -130,6 +130,9 @@ const ACTIONS = {
   team_alerts: ['Mudou o WhatsApp de avisos', 'info', 'wa'], team_alerts_test: ['Mandou teste de aviso', 'info', 'send'],
   plan_create: ['Criou plano', 'ok', 'tag'], plan_update: ['Editou plano', 'info', 'tag'], plan_delete: ['Apagou plano', 'warn', 'trash'],
   tester_added: ['Adicionou testador na Meta', 'ok', 'flask'], tester_resend: ['Reenviou aviso de testador', 'info', 'send'],
+  job_retried: ['Mandou tarefa de novo para a fila', 'info', 'refresh'], job_discarded: ['Descartou tarefa que falhou', 'warn', 'x'],
+  project_archived: ['Projeto arquivado', 'info', 'tag'], billing_link_sent: ['Link de pagamento da Meta enviado', 'info', 'money'],
+  preview_failed: ['Prévia do anúncio não enviada', 'warn', 'alert'], meta_published: ['Campanha criada na Meta', 'ok', 'meta'],
 };
 const actionOf = a => ACTIONS[a] || [String(a).replace(/_/g, ' '), 'info', 'log'];
 const PROJECT_STAGE = { collecting: 'Coleta', awaiting_proposal: 'Esperando proposta', awaiting_approval: 'Esperando aprovação', approved: 'Aprovada', awaiting_creatives: 'Esperando anúncios', ready: 'Pronta para publicar', archived: 'Arquivado' };
@@ -480,7 +483,8 @@ function drawerTab(n) {
       return `<div class="proj"><div class="proj-top"><b>${esc(p.name)}</b><span class="chip ${p.stage === 'ready' ? 'ok' : p.stage.startsWith('awaiting') ? 'warn' : 'info'}">${esc(PROJECT_STAGE[p.stage] || p.stage)}</span></div>
         <small>${esc([f.offer, f.audience, f.location].filter(Boolean).join(' · ') || 'dados em coleta')}${f.daily_budget_brl ? ' · ' + brl(f.daily_budget_brl * 100) + '/dia' : ''}</small>
         ${dr ? `<small>Proposta: ${brl(dr.daily_budget_brl * 100)}/dia · ${dr.duration_days} dias · ${esc(dr.objective.replace('OUTCOME_', '').toLowerCase())} · <b>${dr.status === 'approved' ? 'aprovada em ' + esc(dt(dr.approved_at)) : esc(dr.status)}</b></small>` : ''}
-        <small>${p.creatives} anúncio(s) recebido(s) · atualizado ${ago(p.updated_at)} atrás</small></div>`; }).join('')}</div>`;
+        <small>${p.creatives} anúncio(s) recebido(s) · atualizado ${ago(p.updated_at)} atrás</small>
+        ${(p.media || []).length ? `<div class="pm-grid">${p.media.map(projectMedia).join('')}</div>` : ''}</div>`; }).join('')}</div>`;
   }
   if (!c.timeline.length) return `<div class="empty"><b>Sem eventos</b>Nada registrado para este cliente.</div>`;
   return `<ol class="timeline">${c.timeline.map(e => { const [label, kind] = actionOf(e.action);
@@ -728,6 +732,38 @@ views.whatsapp = async view => {
   every(20000, async () => { if (state.route === 'whatsapp') { try { const n = await api('GET', '/whatsapp'); if (JSON.stringify(n) !== JSON.stringify(d)) rerender(true); } catch { /* próximo ciclo */ } } });
 };
 
+/* ---------- mídia do projeto (anúncios e prévia guardados pelo worker) ---------- */
+const MEDIA_LABEL = { feed: 'feed', stories: 'stories', square: 'quadrada', portrait: 'em pé', vertical: 'vertical', landscape: 'deitada' };
+function projectMedia(m) {
+  const src = `${BASE}/api/media/${m.link_id}`;
+  const cap = m.kind === 'preview' ? 'Prévia' : [m.kind === 'video' ? 'Vídeo' : 'Imagem', MEDIA_LABEL[m.format], MEDIA_LABEL[m.placement]].filter(Boolean).join(' · ');
+  const el = m.kind === 'video'
+    ? `<video class="b-media" controls preload="metadata" src="${src}"></video>`
+    : `<a class="b-media-link" href="${src}" target="_blank" rel="noopener" title="Abrir em tamanho real"><img class="b-media" loading="lazy" alt="${esc(cap)}" src="${src}"></a>`;
+  return `<figure class="pm">${el}<figcaption>${esc(cap)}</figcaption></figure>`;
+}
+
+/* ---------- fila de tarefas que falharam ---------- */
+const JOB_LABEL = {
+  'creatives.preview': 'Prévia do anúncio', 'meta.publish': 'Publicação na Meta', 'whatsapp.send': 'Envio no WhatsApp',
+  'manager.propose': 'Proposta do especialista', 'conversation.reply': 'Resposta da Mia', 'media.archive': 'Guardar mídia',
+  'instagram.fetch': 'Post do Instagram', 'tester.added': 'Aviso de testador', 'report.daily': 'Relatório diário',
+};
+views.fila = async view => {
+  const d = await api('GET', '/jobs?days=7');
+  const admin = state.me.role === 'admin';
+  view.innerHTML = `<div class="page">
+    <div class="page-head"><div><h1>Fila de tarefas</h1><p>Tarefas que falharam depois de 3 tentativas, nos últimos ${d.days} dias</p></div></div>
+    <section class="panel"><div class="panel-body table-wrap">${d.jobs.length ? `<table class="table"><thead><tr><th>Tarefa</th><th>Cliente</th><th class="hide-sm">Quando</th><th>Erro</th>${admin ? '<th class="r">Ação</th>' : ''}</tr></thead><tbody>
+      ${d.jobs.map(j => `<tr data-job-row="${j.id}"><td><b>${esc(JOB_LABEL[j.kind] || j.kind)}</b><br><span class="faint small num">#${j.id} · ${j.attempts} tentativa(s)</span></td>
+        <td>${j.org_name ? esc(j.org_name) : '<span class="faint">sistema</span>'}</td>
+        <td class="hide-sm num">${esc(dt(j.updated_at))}</td>
+        <td><code class="err-code">${esc(j.error || 'sem detalhe')}</code></td>
+        ${admin ? `<td class="r"><div class="row-actions"><button class="btn sm" type="button" data-job-retry="${j.id}">${icon('refresh')}Tentar de novo</button><button class="btn sm ghost" type="button" data-job-discard="${j.id}">${icon('x')}Descartar</button></div></td>` : ''}</tr>`).join('')}
+      </tbody></table>` : '<div class="empty"><b>Nenhuma tarefa falhou</b>Tudo que o sistema tentou fazer nos últimos dias deu certo.</div>'}</div></section>
+    ${admin ? '' : '<p class="muted small">Só administradores mandam de novo ou descartam.</p>'}</div>`;
+};
+
 /* ---------- equipe ---------- */
 views.equipe = async view => {
   const d = await api('GET', '/team');
@@ -880,6 +916,18 @@ document.addEventListener('click', async e => {
     const id = state.conv.sel;
     const ok = await act(t, () => api('POST', '/conversations/' + id + '/takeover'));
     if (ok) { toast('Você assumiu a conversa. A IA está pausada para este cliente.', 'warn', 'hand'); await openThread(id, true); loadInbox(); }
+    return;
+  }
+  if (ds.jobRetry) {
+    const r = await act(t, () => api('POST', '/jobs/' + ds.jobRetry + '/retry'));
+    if (r) { toast('Tarefa de volta na fila. O worker tenta de novo em instantes.', 'ok', 'refresh'); t.closest('tr')?.remove(); }
+    return;
+  }
+  if (ds.jobDiscard) {
+    // confirmação na própria página: o primeiro clique arma, o segundo descarta
+    if (t.dataset.armed !== '1') { t.dataset.armed = '1'; t.innerHTML = icon('x') + 'Confirmar descarte'; setTimeout(() => { if (t.isConnected) { t.dataset.armed = ''; t.innerHTML = icon('x') + 'Descartar'; } }, 4000); return; }
+    const r = await act(t, () => api('POST', '/jobs/' + ds.jobDiscard + '/discard'));
+    if (r) { toast('Tarefa descartada.', 'ok', 'check'); t.closest('tr')?.remove(); }
     return;
   }
   if (ds.convTester !== undefined) {
