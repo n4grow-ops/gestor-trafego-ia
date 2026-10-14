@@ -148,6 +148,7 @@ type Thread struct {
 	Blocked        bool            `json:"blocked"`
 	Messages       []ThreadMessage `json:"messages"`
 	Pending        []PendingSend   `json:"pending"`
+	Turns          []MiaTurn       `json:"turns"` // o que a Mia entendeu de cada mensagem e o que o sistema fez
 }
 
 // Thread devolve a conversa; com after > 0, só as mensagens com id maior (atualização ao vivo).
@@ -179,6 +180,9 @@ func (s *Store) Thread(ctx context.Context, convID, after int64) (Thread, error)
 		return m, err
 	})
 	if err != nil {
+		return Thread{}, err
+	}
+	if t.Turns, err = s.MiaTurns(ctx, convID); err != nil {
 		return Thread{}, err
 	}
 	// Envios da equipe ainda não entregues; os que falharam ficam 24 h à vista.

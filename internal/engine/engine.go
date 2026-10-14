@@ -297,6 +297,8 @@ func (e *Engine) addInbound(ctx context.Context, convID int64, in whatsapp.Inbou
 // (a aprovação vale a mais nova que tiver código); batch são os ids do lote, fora do histórico
 // (nil = só a última mensagem gravada).
 func (e *Engine) dispatch(ctx context.Context, ident store.Identity, conv store.Conversation, text string, msgs []string, batch []int64) error {
+	ctx, tl := withTurnLog(ctx)
+	defer e.saveTurn(ctx, tl, conv.ID, batch)
 	// ATIVAR, PAUSAR e "tenta de novo" valem com campanha na Meta, em qualquer etapa.
 	if conv.State != store.StateNeedsHuman && len(msgs) > 0 {
 		if handled, err := e.campaignCommand(ctx, ident, conv, msgs[len(msgs)-1]); handled || err != nil {
@@ -304,12 +306,15 @@ func (e *Engine) dispatch(ctx context.Context, ident store.Identity, conv store.
 		}
 	}
 	if e.MetaConnectBaseURL != "" && isMetaConnectCommand(conv.State, text) {
+		noteAction(ctx, "comando de conexão (sem IA)")
 		return e.sendMetaLink(ctx, ident, conv, "")
 	}
 	if isPaidCommand(conv.State, text) {
+		noteAction(ctx, "aviso de pagamento (sem IA)")
 		return e.paidCheck(ctx, ident, conv)
 	}
 	if isBillingCommand(conv.State, text) {
+		noteAction(ctx, "pedido de pagamento (sem IA)")
 		return e.sendBillingLink(ctx, ident, conv, "")
 	}
 	if conv.State != store.StateNeedsHuman {
@@ -324,6 +329,7 @@ func (e *Engine) dispatch(ctx context.Context, ident store.Identity, conv store.
 	case store.StateNeedsHuman:
 		return nil
 	case store.StateAwaitingProposal:
+		noteAction(ctx, "proposta em preparo: pediu para aguardar")
 		return e.send(ctx, conv, msgBusy)
 	case store.StateAwaitingCreatives:
 		if e.Storage != nil {
@@ -337,6 +343,7 @@ func (e *Engine) dispatch(ctx context.Context, ident store.Identity, conv store.
 		}
 		// "ok", "sim" sem código: não aprova; lembra como aprovar sem gastar IA.
 		if len(msgs) > 0 && approvalAck.MatchString(strings.TrimSpace(msgs[len(msgs)-1])) {
+			noteAction(ctx, "concordou sem código: lembrou como aprovar")
 			return e.send(ctx, conv, msgApprovalHowTo)
 		}
 	}
@@ -411,8 +418,12 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 		return e.send(ctx, conv, msgRetryLater)
 	}
 
+	noteTurn(ctx, turn)
 	// Código de aprovação só no resumo oficial; antes do SIM, a IA não diz que aprovou.
-	turn.Reply = scrubReply(turn.Reply, conv.State == store.StateAwaitingApproval || conv.State == store.StateAwaitingProposal)
+	if clean := scrubReply(turn.Reply, conv.State == store.StateAwaitingApproval || conv.State == store.StateAwaitingProposal); clean != turn.Reply {
+		noteAction(ctx, "tirou código ou aprovação falsa da fala da IA")
+		turn.Reply = clean
+	}
 
 	// Memória do negócio: o Go mescla e grava; texto vazio não apaga.
 	if turn.Profile.HasData() {
@@ -497,6 +508,7 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 		// Pedido de ajuste com a proposta na mesa vira proposta nova mesmo que a IA não tenha separado
 		// dados (ex.: idade, que não é campo próprio): o pedido vai inteiro para o especialista.
 		if !campaignTalk && looksLikeAdjustment(text) {
+			noteAction(ctx, "pedido de ajuste reconhecido pelo sistema")
 			campaignTalk = true
 		}
 		if !campaignTalk {
@@ -527,6 +539,7 @@ var promiseRe = regexp.MustCompile(`(?i)especialista\s+(vai|já|ja|está|esta)\b
 // cliente ficaria esperando algo que nunca chega. Aí a resposta vira a pergunta do que falta.
 func (e *Engine) speakNoPromise(ctx context.Context, ident store.Identity, conv store.Conversation, reply string, f contract.Fields, cfg mia.Config) error {
 	if promiseRe.MatchString(reply) {
+		noteAction(ctx, "trocou promessa de proposta que não foi pedida")
 		if m := missingText(cfg, f); m != "" {
 			reply = fmt.Sprintf(msgStillMissing, m)
 		} else {
@@ -540,6 +553,11 @@ func (e *Engine) speakNoPromise(ctx context.Context, ident store.Identity, conv 
 // requestProposal pede a proposta ao Gestor; fixed indica que reply é mensagem fixa (nunca vira voz).
 // No modo humano o Gestor só começa depois dos balões da resposta, para o resumo chegar por último.
 func (e *Engine) requestProposal(ctx context.Context, ident store.Identity, conv store.Conversation, f contract.Fields, adjustment, reply string, fixed bool) error {
+	if adjustment != "" {
+		noteAction(ctx, "ajuste: pediu proposta nova ao especialista")
+	} else {
+		noteAction(ctx, "pediu proposta ao especialista")
+	}
 	job := store.JobSpec{Kind: JobPropose, Payload: ProposeJob{ConversationID: conv.ID, Adjustment: adjustment}}
 	if e.Humanize {
 		job.Delay = humanize.ChainDuration(reply) + time.Second

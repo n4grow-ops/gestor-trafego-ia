@@ -139,6 +139,11 @@ func (e *Engine) paidCheck(ctx context.Context, ident store.Identity, conv store
 		daily += e.dailyBudget(ctx, p.DraftID)
 	}
 	text, problem := describeFunding(f, daily, conn.AdAccountID)
+	if problem {
+		noteAction(ctx, "conferiu pagamento: ainda pendente")
+	} else {
+		noteAction(ctx, "conferiu pagamento: em dia")
+	}
 	e.audit(ctx, ident.OrgID, member(ident), "payment_checked", map[string]any{"ok": !problem})
 	if problem {
 		return e.send(ctx, conv, join(msgPaidPending, text))

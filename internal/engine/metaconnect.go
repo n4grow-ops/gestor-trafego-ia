@@ -44,8 +44,10 @@ func (e *Engine) sendMetaLink(ctx context.Context, ident store.Identity, conv st
 		return err
 	}
 	if recent {
+		noteAction(ctx, "link de conexão já enviado há pouco")
 		return e.send(ctx, conv, join(lead, msgMetaLinkRecent))
 	}
+	noteAction(ctx, "mandou link de conexão Meta")
 	// Já conectado: é troca ou inclusão de conta. O cliente já é testador, então nada de pedir o perfil;
 	// o login novo gera outro token e substitui a conexão atual quando ele escolher.
 	_, connected, err := e.Store.ActiveMeta(ctx, ident.OrgID)

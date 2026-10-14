@@ -40,6 +40,11 @@ func (e *Engine) cleanup(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if n, err := e.Store.PurgeMiaTurns(ctx, e.now().Add(-keepTurns)); err != nil {
+		e.Log.Error("limpeza dos turnos da Mia", "erro", err)
+	} else if n > 0 {
+		e.Log.Info("turnos da Mia apagados", "quantos", n)
+	}
 	renewed, err := e.renewMediaLinks(ctx)
 	if err != nil {
 		e.Log.Error("renovação dos links de mídia", "erro", err)

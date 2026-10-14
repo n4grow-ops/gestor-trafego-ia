@@ -74,6 +74,8 @@ function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTi
 /* ===================== API ===================== */
 class ApiError extends Error { constructor(status, data) { super((data && data.error) || 'erro_' + status); this.status = status; this.data = data || {}; } }
 const ERRORS = {
+  janela_fechada: 'O cliente não escreve há mais de 24 h: a proposta só chega depois que ele mandar uma mensagem.',
+  dados_incompletos: 'Faltam dados no projeto para pedir a proposta.', projeto_arquivado: 'Projeto arquivado.',
   aguarde: 'O aviso saiu há pouco. Espere 2 minutos para mandar de novo.',
   ia_atendendo: 'A IA está atendendo. Assuma a conversa antes de escrever.',
   outra_pessoa: 'Outra pessoa assumiu esta conversa. Assuma você antes de escrever.',
@@ -135,6 +137,8 @@ const ACTIONS = {
   preview_failed: ['Prévia do anúncio não enviada', 'warn', 'alert'], meta_published: ['Campanha criada na Meta', 'ok', 'meta'],
   campaign_pause_requested: ['Pediu pausa de campanha', 'warn', 'x'], campaign_paused_by_team: ['Equipe pausou a campanha', 'warn', 'x'],
   results_sent: ['Resultado do dia enviado', 'info', 'money'],
+  project_archive: ['Arquivou projeto', 'warn', 'x'], project_rename: ['Renomeou projeto', 'info', 'tag'], project_fields: ['Editou dados do projeto', 'info', 'tag'],
+  project_propose: ['Pediu proposta nova', 'info', 'send'], proposal_requested_by_team: ['Equipe pediu proposta nova', 'info', 'send'],
   ad_rejected: ['Meta reprovou os anúncios', 'err', 'alert'], ad_partly_rejected: ['Meta reprovou parte dos anúncios', 'warn', 'alert'],
   meta_token_expiring: ['Conexão com a Meta vencendo', 'warn', 'clock'], payment_checked: ['Pagamento da conta conferido', 'info', 'money'],
 };
@@ -489,7 +493,8 @@ function drawerTab(n) {
         <small>${esc([f.offer, f.audience, f.location].filter(Boolean).join(' · ') || 'dados em coleta')}${f.daily_budget_brl ? ' · ' + brl(f.daily_budget_brl * 100) + '/dia' : ''}</small>
         ${dr ? `<small>Proposta: ${brl(dr.daily_budget_brl * 100)}/dia · ${dr.duration_days} dias · ${esc(dr.objective.replace('OUTCOME_', '').toLowerCase())} · <b>${dr.status === 'approved' ? 'aprovada em ' + esc(dt(dr.approved_at)) : esc(dr.status)}</b></small>` : ''}
         <small>${p.creatives} anúncio(s) recebido(s) · atualizado ${ago(p.updated_at)} atrás</small>
-        ${(p.media || []).length ? `<div class="pm-grid">${p.media.map(projectMedia).join('')}</div>` : ''}</div>`; }).join('')}</div>`;
+        ${(p.media || []).length ? `<div class="pm-grid">${p.media.map(projectMedia).join('')}</div>` : ''}
+        ${projectActions(p)}</div>`; }).join('')}</div>`;
   }
   if (!c.timeline.length) return `<div class="empty"><b>Sem eventos</b>Nada registrado para este cliente.</div>`;
   return `<ol class="timeline">${c.timeline.map(e => { const [label, kind] = actionOf(e.action);
@@ -597,6 +602,8 @@ function msgsHTML(messages) {
 }
 function renderThread(d) {
   const t = d.thread, c = state.conv, human = t.state === 'needs_human', mine = human && t.human_by === state.me.email;
+  state.turns = new Map((t.turns || []).map(x => [x.message_id, x]));
+  setTimeout(attachWhy, 0);
   c.lastId = t.messages.length ? t.messages[t.messages.length - 1].id : 0;
   c.lastDay = t.messages.length ? dayLabel(t.messages[t.messages.length - 1].created_at) : '';
   const banner = !human ? '' : t.human_by
@@ -638,6 +645,8 @@ async function pollThread() {
       if (draft && $('#composer-text')) $('#composer-text').value = draft;
       return;
     }
+    for (const x of t.turns || []) state.turns?.set(x.message_id, x);
+    setTimeout(attachWhy, 0);
     const msgs = $('#msgs'), atBottom = msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 80;
     if (t.messages.length) {
       let html = '';
@@ -736,6 +745,57 @@ views.whatsapp = async view => {
   applyDyn(view);
   every(20000, async () => { if (state.route === 'whatsapp') { try { const n = await api('GET', '/whatsapp'); if (JSON.stringify(n) !== JSON.stringify(d)) rerender(true); } catch { /* próximo ciclo */ } } });
 };
+
+/* ---------- por que a Mia respondeu assim ---------- */
+const INTENT_LABEL = { create_campaign: 'quer criar anúncio', provide_info: 'passou dados', approve: 'aprovou', reject: 'recusou', question: 'dúvida',
+  human: 'pediu humano', new_project: 'projeto novo', switch_project: 'trocou de projeto', list_projects: 'listou projetos',
+  project_status: 'status do projeto', connect_meta: 'conectar Meta', billing: 'pagamento', other: 'outro assunto', sistema: 'sistema (sem IA)' };
+const FIELD_LABEL = { offer: 'oferta', audience: 'público', location: 'local', daily_budget_brl: 'orçamento/dia', objective_hint: 'objetivo', placements: 'lugares' };
+function attachWhy() {
+  if (!state.turns) return;
+  $$('#msgs .b.in[data-id]').forEach(b => {
+    if (b.querySelector('.why-btn') || !state.turns.has(+b.dataset.id)) return;
+    b.insertAdjacentHTML('beforeend', `<button class="why-btn" type="button" data-why="${b.dataset.id}">por quê?</button>`);
+  });
+}
+function whyHTML(x) {
+  const fields = Object.entries(x.fields || {}).filter(([, v]) => v !== null && v !== '' && !(Array.isArray(v) && !v.length))
+    .map(([k, v]) => `${FIELD_LABEL[k] || k}: ${Array.isArray(v) ? v.join(', ') : v}`);
+  const profile = Object.entries(x.profile || {}).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`);
+  return `<div class="why"><dl class="kv">
+    <dt>A IA entendeu</dt><dd>${esc(INTENT_LABEL[x.intent] || x.intent)}${x.project ? ' · projeto ' + esc(x.project) : ''}</dd>
+    ${fields.length ? `<dt>Dados da campanha</dt><dd>${esc(fields.join(' · '))}</dd>` : ''}
+    ${profile.length ? `<dt>Ficha do negócio</dt><dd>${esc(profile.join(' · '))}</dd>` : ''}
+    <dt>O sistema fez</dt><dd>${esc(x.action || '—')}</dd>
+    ${x.reply ? `<dt>Fala da IA</dt><dd>${esc(x.reply)}</dd>` : ''}</dl></div>`;
+}
+
+/* ---------- ações no projeto ---------- */
+const PLACE_OPTS = [['feed', 'Feed'], ['stories', 'Stories'], ['reels', 'Reels']];
+function projectActions(p) {
+  if (p.stage === 'archived') return '';
+  return `<div class="proj-actions">
+    <button class="btn sm ghost" type="button" data-proj-edit="${p.id}">${icon('tag')}Editar dados</button>
+    <button class="btn sm ghost" type="button" data-proj-rename="${p.id}">${icon('tag')}Renomear</button>
+    <button class="btn sm" type="button" data-proj-propose="${p.id}">${icon('send')}Pedir proposta</button>
+    <button class="btn sm ghost" type="button" data-proj-archive="${p.id}">${icon('x')}Arquivar</button></div>
+    <div class="proj-form" id="proj-form-${p.id}" hidden></div>`;
+}
+function projectEditForm(p) {
+  const f = p.fields || {}, pl = f.placements || [];
+  return `<div class="form-grid">
+    <label>Oferta<input id="pf-offer-${p.id}" value="${esc(f.offer || '')}" maxlength="200"></label>
+    <label>Público<input id="pf-audience-${p.id}" value="${esc(f.audience || '')}" maxlength="200" placeholder="ex.: homens de 40 a 56 anos"></label>
+    <label>Local<input id="pf-location-${p.id}" value="${esc(f.location || '')}" maxlength="120"></label>
+    <label>Orçamento por dia (R$)<input id="pf-budget-${p.id}" type="number" min="1" step="1" value="${f.daily_budget_brl || ''}"></label>
+    <fieldset class="pf-places"><legend>Onde aparece (nenhum = automático)</legend>${PLACE_OPTS.map(([k, l]) => `<label class="check"><input type="checkbox" data-pf-place="${p.id}" value="${k}"${pl.includes(k) ? ' checked' : ''}> ${l}</label>`).join('')}</fieldset>
+    <div class="actions"><button class="btn sm" type="button" data-proj-save="${p.id}">${icon('check')}Salvar</button></div></div>`;
+}
+async function reloadDrawer(tab) {
+  if (!state.drawer) return;
+  state.drawer = await api('GET', '/clients/' + state.drawer.org_id);
+  renderDrawer(tab);
+}
 
 /* ---------- pagamento da conta de anúncios ---------- */
 const FUNDING_FLAG = { ok: ['pagamento em dia', 'ok'], sem_pagamento: ['sem saldo nem cartão', 'err'], pendente: ['pagamento pendente', 'err'],
@@ -958,6 +1018,47 @@ document.addEventListener('click', async e => {
     const id = state.conv.sel;
     const ok = await act(t, () => api('POST', '/conversations/' + id + '/takeover'));
     if (ok) { toast('Você assumiu a conversa. A IA está pausada para este cliente.', 'warn', 'hand'); await openThread(id, true); loadInbox(); }
+    return;
+  }
+  if (ds.why) {
+    const b = t.closest('.b'), open = b.querySelector('.why');
+    if (open) { open.remove(); return; }
+    const x = state.turns?.get(+ds.why);
+    if (x) t.insertAdjacentHTML('afterend', whyHTML(x));
+    return;
+  }
+  if (ds.projEdit || ds.projRename) {
+    const id = ds.projEdit || ds.projRename, box = $('#proj-form-' + id), p = state.drawer.projects.find(x => x.id === +id);
+    box.innerHTML = ds.projEdit ? projectEditForm(p)
+      : `<div class="form-grid"><label>Novo nome<input id="pf-name-${id}" value="${esc(p.name)}" maxlength="60"></label><div class="actions"><button class="btn sm" type="button" data-proj-rename-save="${id}">${icon('check')}Salvar</button></div></div>`;
+    box.hidden = false;
+    return;
+  }
+  if (ds.projRenameSave) {
+    const id = ds.projRenameSave;
+    const r = await act(t, () => api('POST', '/projects/' + id + '/rename', { name: $('#pf-name-' + id).value }));
+    if (r) { toast('Projeto renomeado.', 'ok', 'check'); await reloadDrawer(3); }
+    return;
+  }
+  if (ds.projSave) {
+    const id = ds.projSave, v = k => $('#pf-' + k + '-' + id).value.trim(), body = {};
+    for (const [k, f] of [['offer', 'offer'], ['audience', 'audience'], ['location', 'location']]) if (v(k)) body[f] = v(k);
+    if (v('budget')) body.daily_budget_brl = Number(v('budget'));
+    body.placements = $$('[data-pf-place="' + id + '"]').filter(x => x.checked).map(x => x.value);
+    if (!body.placements.length) delete body.placements;
+    const r = await act(t, () => api('POST', '/projects/' + id + '/fields', body));
+    if (r) { toast('Dados do projeto salvos.', 'ok', 'check'); await reloadDrawer(3); }
+    return;
+  }
+  if (ds.projPropose) {
+    const r = await act(t, () => api('POST', '/projects/' + ds.projPropose + '/propose'));
+    if (r) toast('Pedido enviado: o cliente recebe a proposta nova com o código no WhatsApp.', 'ok', 'send');
+    return;
+  }
+  if (ds.projArchive) {
+    if (t.dataset.armed !== '1') { t.dataset.armed = '1'; t.innerHTML = icon('x') + 'Confirmar arquivamento'; setTimeout(() => { if (t.isConnected) { t.dataset.armed = ''; t.innerHTML = icon('x') + 'Arquivar'; } }, 4000); return; }
+    const r = await act(t, () => api('POST', '/projects/' + ds.projArchive + '/archive'));
+    if (r) { toast('Projeto arquivado.', 'ok', 'check'); await reloadDrawer(3); }
     return;
   }
   if (ds.campaignFilter !== undefined) { state.campaignFilter = ds.campaignFilter; rerender(true); return; }

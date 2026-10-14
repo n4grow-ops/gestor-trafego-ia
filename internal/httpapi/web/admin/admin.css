@@ -747,3 +747,18 @@ video.b-media { object-fit: contain; }
 
 /* campanhas */
 .filter-row { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-block: 0 0.75rem; }
+
+/* por que a Mia respondeu */
+.why-btn { display: inline-block; margin-top: 0.3rem; font-size: 0.7rem; padding: 0.05rem 0.45rem; border-radius: 999px; border: 1px solid oklch(0.88 0.02 255 / 0.35); background: transparent; color: inherit; cursor: pointer; opacity: .8; }
+.why-btn:hover, .why-btn:focus-visible { opacity: 1; }
+.why { margin-top: 0.4rem; padding-top: 0.4rem; border-top: 1px solid oklch(0.88 0.02 255 / 0.2); font-size: 0.78rem; white-space: normal; }
+.why .kv { display: grid; grid-template-columns: auto 1fr; gap: 0.15rem 0.6rem; margin: 0; }
+.why dt { opacity: .7; }
+.why dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+
+/* ações no projeto */
+.proj-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.5rem; }
+.proj-form { margin-top: 0.5rem; }
+.proj-form .form-grid { display: grid; gap: 0.5rem; }
+.proj-form label { display: grid; gap: 0.2rem; font-size: 0.8rem; }
+.pf-places { border: 0; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 0.6rem; font-size: 0.8rem; }

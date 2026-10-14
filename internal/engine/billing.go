@@ -39,6 +39,7 @@ func (e *Engine) sendBillingLink(ctx context.Context, ident store.Identity, conv
 		}
 		return e.sendMetaLink(ctx, ident, conv, join(lead, msgBillingConnectFirst))
 	}
+	noteAction(ctx, "mandou link de pagamento da Meta")
 	e.audit(ctx, ident.OrgID, member(ident), "billing_link_sent", map[string]any{"conversation_id": conv.ID})
 	return e.send(ctx, conv, join(lead, billingText(conn.AdAccountID, conn.AdAccountName)))
 }

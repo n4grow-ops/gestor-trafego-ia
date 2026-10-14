@@ -33,6 +33,7 @@ func (e *Engine) askArchive(ctx context.Context, ident store.Identity, conv stor
 	if err := e.Store.SetPendingProject(ctx, conv.ID, pend); err != nil {
 		return err
 	}
+	noteAction(ctx, "limite de projetos: pediu para escolher qual arquivar")
 	label := "o projeto novo"
 	if pend.Name != "" {
 		label = "o *" + pend.Name + "*"
@@ -109,6 +110,7 @@ func (e *Engine) archiveAndContinue(ctx context.Context, ident store.Identity, c
 	if err := e.Store.SetPendingProject(ctx, conv.ID, nil); err != nil {
 		return err
 	}
+	noteAction(ctx, "arquivou o projeto "+p.Name)
 	e.audit(ctx, ident.OrgID, member(ident), "project_archived", map[string]any{"project_id": p.ID, "reason": "limite do plano"})
 	if err := e.send(ctx, conv, fmt.Sprintf(msgArchived, p.Name)); err != nil {
 		return err
