@@ -171,6 +171,16 @@ type fakePublisher struct {
 	statuses []string
 	firsts   []meta.FirstActivation
 	result   meta.PublishResult
+	funding  *meta.Funding // nil = a Meta não respondeu (sem permissão, fora do ar)
+}
+
+func (p *fakePublisher) Funding(context.Context, string, string) (meta.Funding, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.funding == nil {
+		return meta.Funding{}, errors.New("sem permissão")
+	}
+	return *p.funding, nil
 }
 
 func (p *fakePublisher) Publish(_ context.Context, token string, in meta.PublishInput) (meta.PublishResult, error) {

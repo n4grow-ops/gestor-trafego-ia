@@ -154,7 +154,7 @@ func (e *Engine) publish(ctx context.Context, j PublishJob) error {
 			}
 		}
 		if err == nil {
-			return e.published(ctx, ident, conv, pub, res, in)
+			return e.published(ctx, ident, conv, pub, res, in, string(token))
 		}
 	}
 	// Sem cancelamento: a publicação precisa ficar failed para a nova tentativa reaproveitar a linha.
@@ -181,7 +181,7 @@ func (e *Engine) publish(ctx context.Context, j PublishJob) error {
 	return e.send(ctx, conv, fmt.Sprintf(msgPublishFailed, user))
 }
 
-func (e *Engine) published(ctx context.Context, ident store.Identity, conv store.Conversation, pub store.Publication, res meta.PublishResult, in meta.PublishInput) error {
+func (e *Engine) published(ctx context.Context, ident store.Identity, conv store.Conversation, pub store.Publication, res meta.PublishResult, in meta.PublishInput, token string) error {
 	// A campanha já existe na Meta: prazo do job ou worker parando não podem impedir gravar e avisar.
 	ctx = context.WithoutCancel(ctx)
 	if err := e.pubs().FinishPublication(ctx, pub.ID, store.PublicationResult{CampaignID: res.CampaignID, AdSetID: res.AdSetID,
@@ -203,6 +203,8 @@ func (e *Engine) published(ctx context.Context, ident store.Identity, conv store
 	if len(res.Warnings) > 0 {
 		text = join(text, fmt.Sprintf(msgPublishedWarnings, "• "+strings.Join(res.Warnings, "\n• ")))
 	}
+	// Saldo da conta: quanto tem e quantos dias cobre, ou o que falta para o anúncio rodar depois do ATIVAR.
+	text = join(text, e.fundingText(ctx, token, in.AdAccountID, float64(in.DailyBudgetCents)/100))
 	return e.send(ctx, conv, text)
 }
 
@@ -714,6 +716,9 @@ func (e *Engine) campaignCommand(ctx context.Context, ident store.Identity, conv
 	var reply []string
 	if changed > 0 {
 		reply = append(reply, done)
+		if cmd != cmdPause {
+			reply = append(reply, e.activationFunding(ctx, ident.OrgID, string(token), targets))
+		}
 	}
 	if failMsg != "" {
 		reply = append(reply, failMsg)
