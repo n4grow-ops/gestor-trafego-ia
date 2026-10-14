@@ -6,12 +6,15 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/attendant"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/manager"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/config"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/copylab"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/db"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/engine"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/instagram"
@@ -150,6 +153,13 @@ func run(log *slog.Logger) error {
 		eng.Instagram = instagram.New(graph)
 	}
 	eng.ReportPhone = whatsapp.Digits(cfg.ReportPhone)
+	// Proteções do cliente: gasto e janela mínimos antes de julgar o custo por conversa (padrão R$ 30 e 24 h).
+	if v, err := strconv.ParseFloat(strings.Replace(os.Getenv("GUARDRAIL_MIN_SPEND_BRL"), ",", ".", 1), 64); err == nil && v > 0 {
+		eng.GuardrailMinSpendCents = int64(v * 100)
+	}
+	if v, err := strconv.ParseFloat(strings.Replace(os.Getenv("GUARDRAIL_MIN_WINDOW_HOURS"), ",", ".", 1), 64); err == nil && v > 0 {
+		eng.GuardrailMinWindow = time.Duration(v * float64(time.Hour))
+	}
 	// Canal da equipe: privado de cada número e, opcional, o grupo por uma instância Wame não
 	// oficial (QR) — o número oficial não manda para grupo. Ela só envia: não tem webhook aqui.
 	eng.TeamPhones = cfg.TeamPhones
@@ -168,8 +178,17 @@ func run(log *slog.Logger) error {
 	if err := eng.EnsureTokenCheck(ctx); err != nil {
 		return err
 	}
+	// Escudo anti-bloqueio: situação da conta de anúncios dos clientes conectados, de tempos em tempos.
+	if err := eng.EnsureShieldHealth(ctx); err != nil {
+		log.Error("falha ao agendar a saúde da conta de anúncios", "erro", err)
+	}
+	// Reprovação de anúncio: o texto sugerido vem do laboratório de copy.
+	eng.CopyFix = copylab.Fix
 	if err := eng.EnsureDailyResults(ctx); err != nil {
 		return err
+	}
+	if err := eng.EnsureGuardrailCheck(ctx); err != nil {
+		log.Error("falha ao agendar a conferência das proteções", "erro", err)
 	}
 	if err := eng.EnsureDailyReport(ctx); err != nil {
 		log.Error("falha ao agendar relatório diário", "erro", err)

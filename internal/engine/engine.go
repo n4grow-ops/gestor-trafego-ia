@@ -67,6 +67,8 @@ type SendJob struct {
 	After string `json:"after,omitempty"`
 	// MetaConnected: confirmação da conexão Meta; ao sair fecha o pedido de testador da conversa.
 	MetaConnected bool `json:"meta_connected,omitempty"`
+	// VoiceOnly: só voz (relatório falado, o texto já saiu); se a voz falhar, não repete em texto.
+	VoiceOnly bool `json:"voice_only,omitempty"`
 }
 
 // StaffSendJob é a mensagem que alguém da equipe escreveu no painel durante o atendimento humano.
@@ -138,6 +140,9 @@ type Engine struct {
 	MetaTokenKey *secretbox.Box
 	// Publications: nil = Store. Os testes trocam por um fake.
 	Publications PublicationStore
+	// CopyFix ajusta o texto de um anúncio reprovado (internal/copylab.Fix entra aqui). nil = a Mia explica o
+	// motivo da reprovação sem sugerir texto novo.
+	CopyFix func(headline, text, segment string) (string, string, bool)
 	// Canal da equipe: privado de cada número (painel, senão TeamPhones, senão OperatorPhone) e,
 	// opcional, o grupo pela instância não oficial. AdminURL vai no aviso de atendimento humano; vazio = sem link.
 	TeamPhones []string
@@ -162,6 +167,11 @@ type Engine struct {
 	// InstagramBudget: prazo total dos downloads de um post. 0 = InstagramBudget (3 min).
 	InstagramBudget time.Duration
 	igPermWarned    atomic.Bool // aviso de falta de instagram_basic sai uma vez só
+
+	// Proteções do cliente (limite por conversa): gasto e janela mínimos para julgar sem agir por ruído.
+	// Zero = padrão (R$ 30 e 24 h).
+	GuardrailMinSpendCents int64
+	GuardrailMinWindow     time.Duration
 }
 
 func (e *Engine) identityProvider() string {
@@ -302,6 +312,17 @@ func (e *Engine) dispatch(ctx context.Context, ident store.Identity, conv store.
 	// ATIVAR, PAUSAR e "tenta de novo" valem com campanha na Meta, em qualquer etapa.
 	if conv.State != store.StateNeedsHuman && len(msgs) > 0 {
 		if handled, err := e.campaignCommand(ctx, ident, conv, msgs[len(msgs)-1]); handled || err != nil {
+			return err
+		}
+		if handled, err := e.guardrailCommand(ctx, ident, conv, msgs[len(msgs)-1]); handled || err != nil {
+			return err
+		}
+		if handled, err := e.diagnosticCommand(ctx, ident, conv, msgs[len(msgs)-1]); handled || err != nil {
+			return err
+		}
+	}
+	if conv.State != store.StateNeedsHuman && len(msgs) > 0 {
+		if handled, err := e.reportPrefCommand(ctx, ident, conv, msgs[len(msgs)-1]); handled || err != nil {
 			return err
 		}
 	}

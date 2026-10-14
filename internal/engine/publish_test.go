@@ -315,7 +315,7 @@ func TestApprovalAsksForCopyReferences(t *testing.T) {
 	h, _, _ := newPublishHarness(t, "owner")
 	h.say("SIM " + h.reachApproval())
 	msg := h.wa.last().Text
-	for _, want := range []string{"imagens ou vídeos", "Pelo menos 1", "headlines", "referência", "PRONTO"} {
+	for _, want := range []string{"imagens ou vídeos", "até 5", "headlines", "referência", "PRONTO"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("pedido dos anúncios sem %q: %q", want, msg)
 		}

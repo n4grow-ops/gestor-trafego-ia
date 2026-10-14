@@ -15,6 +15,7 @@ const (
 	TplSignupReminder = "lembrete_cadastro"
 	TplDailyReport    = "relatorio_diario"
 	TplTeamAlert      = "aviso_equipe"
+	TplGuardrail      = "aviso_campanha_limite"
 
 	// Margem antes das 24 h: o job pode sair alguns minutos depois de decidido.
 	serviceWindow = 23 * time.Hour

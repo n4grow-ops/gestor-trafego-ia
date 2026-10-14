@@ -37,7 +37,8 @@ func (e *Engine) approve(ctx context.Context, ident store.Identity, conv store.C
 	switch {
 	case err == nil:
 		e.audit(ctx, ident.OrgID, member(ident), "approval_granted", map[string]any{"draft_id": d.ID, "proposal_hash": d.ProposalHash})
-		return e.send(ctx, conv, reply)
+		// Escudo: já na aprovação a Mia diz se a conta está pronta para publicar ("tudo certo" ou o que resolver).
+		return e.send(ctx, conv, join(reply, e.shieldApprovalNote(ctx, ident.OrgID, d.Proposal.DailyBudgetBRL)))
 	case errors.Is(err, store.ErrCodeInvalid):
 		e.audit(ctx, ident.OrgID, member(ident), "approval_refused", map[string]any{"draft_id": d.ID, "reason": "code"})
 		return e.send(ctx, conv, msgCodeInvalid)

@@ -240,3 +240,17 @@ func TestProposalClientChoicesAreAccepted(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCopyAngleIsOptionalInJSON(t *testing.T) {
+	b, err := json.Marshal(contract.Copy{Headline: "H", Text: "T", CTA: "LEARN_MORE"})
+	if err != nil || strings.Contains(string(b), "angle") {
+		t.Errorf("angle vazio não deve aparecer: %s %v", b, err)
+	}
+	var c contract.Copy
+	if err := json.Unmarshal([]byte(`{"headline":"H","text":"T","cta":"LEARN_MORE","angle":"preco"}`), &c); err != nil || c.Angle != "preco" {
+		t.Errorf("angle = %q err = %v", c.Angle, err)
+	}
+	if err := json.Unmarshal([]byte(`{"headline":"H","text":"T","cta":"LEARN_MORE"}`), &c); err != nil {
+		t.Errorf("JSON sem angle deve valer: %v", err)
+	}
+}

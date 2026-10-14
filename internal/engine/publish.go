@@ -17,6 +17,7 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/contract"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/llm"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/meta"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/shield"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp"
 )
@@ -124,6 +125,16 @@ func (e *Engine) publish(ctx context.Context, j PublishJob) error {
 		return e.send(ctx, conv, msgPublishTech)
 	}
 
+	// Escudo: o que a Meta recusaria de qualquer forma para aqui, com o passo a passo; o resto vira aviso na
+	// mensagem de publicação (o cliente decide). A moeda segue com a recusa abaixo.
+	shieldNotes := ""
+	if rep, ok := e.shieldCheck(ctx, data.OrgID, e.dailyBudget(ctx, data.DraftID)); ok {
+		if len(rep.Without(shield.KeyCurrency).Blockers()) > 0 {
+			return e.shieldBlocked(ctx, ident, conv, rep.Without(shield.KeyCurrency), data.DraftID)
+		}
+		shieldNotes = shieldPublishNotes(rep)
+	}
+
 	pub, err := e.pubs().StartPublication(ctx, data.OrgID, data.DraftID, data.ProjectID, connID)
 	if errors.Is(err, store.ErrAlreadyPublished) {
 		return nil // outro job já criou (ou está criando) a campanha deste rascunho
@@ -157,7 +168,7 @@ func (e *Engine) publish(ctx context.Context, j PublishJob) error {
 			}
 		}
 		if err == nil {
-			return e.published(ctx, ident, conv, pub, res, in, string(token))
+			return e.published(ctx, ident, conv, pub, res, in, string(token), shieldNotes)
 		}
 	}
 	// Sem cancelamento: a publicação precisa ficar failed para a nova tentativa reaproveitar a linha.
@@ -184,7 +195,7 @@ func (e *Engine) publish(ctx context.Context, j PublishJob) error {
 	return e.send(ctx, conv, fmt.Sprintf(msgPublishFailed, user))
 }
 
-func (e *Engine) published(ctx context.Context, ident store.Identity, conv store.Conversation, pub store.Publication, res meta.PublishResult, in meta.PublishInput, token string) error {
+func (e *Engine) published(ctx context.Context, ident store.Identity, conv store.Conversation, pub store.Publication, res meta.PublishResult, in meta.PublishInput, token, shieldNotes string) error {
 	// A campanha já existe na Meta: prazo do job ou worker parando não podem impedir gravar e avisar.
 	ctx = context.WithoutCancel(ctx)
 	if err := e.pubs().FinishPublication(ctx, pub.ID, store.PublicationResult{CampaignID: res.CampaignID, AdSetID: res.AdSetID,
@@ -209,6 +220,7 @@ func (e *Engine) published(ctx context.Context, ident store.Identity, conv store
 	}
 	// Saldo da conta: quanto tem e quantos dias cobre, ou o que falta para o anúncio rodar depois do ATIVAR.
 	text = join(text, e.fundingText(ctx, ident.OrgID, token, in.AdAccountID, float64(in.DailyBudgetCents)/100))
+	text = join(text, shieldNotes)
 	return e.send(ctx, conv, text)
 }
 
@@ -542,6 +554,7 @@ func (e *Engine) afterSendDone(ctx context.Context, s SendJob) error {
 	if s.After != afterMetaConnected {
 		return nil
 	}
+	e.scheduleDiagnostic(ctx, s.ConversationID) // isca: o diagnóstico grátis da conta recém-conectada
 	conv, err := e.Store.GetConversation(ctx, s.ConversationID)
 	if err != nil {
 		return err
@@ -724,7 +737,7 @@ func (e *Engine) campaignCommand(ctx context.Context, ident store.Identity, conv
 	if changed > 0 {
 		reply = append(reply, done)
 		if cmd != cmdPause {
-			reply = append(reply, e.activationFunding(ctx, ident.OrgID, string(token), targets))
+			reply = append(reply, e.activationFunding(ctx, ident.OrgID, string(token), targets), e.guardrailOffer(ctx, ident.OrgID))
 		}
 	}
 	if failMsg != "" {

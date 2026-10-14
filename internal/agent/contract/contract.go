@@ -221,6 +221,8 @@ type Copy struct {
 	Headline string `json:"headline"`
 	Text     string `json:"text"`
 	CTA      string `json:"cta"`
+	// Angle: ângulo da variação (preco, urgencia, prova_social, dor, autoridade, novidade). Opcional.
+	Angle string `json:"angle,omitempty"`
 }
 
 // CampaignProposal é a saída do Gestor.

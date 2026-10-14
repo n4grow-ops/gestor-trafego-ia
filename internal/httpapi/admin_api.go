@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/engine"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/shield"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 )
 
@@ -96,6 +98,11 @@ func (a *Admin) client(w http.ResponseWriter, r *http.Request, m store.TeamMembe
 	}
 	if d.Meta != nil {
 		d.Meta.FundingFlag = fundingFlag(d.Meta.Funding, 0)
+		if st := d.Meta.Shield; st != nil && shield.State(st.State).Bad() {
+			// Guia de recuperação do estado da conta (o painel mostra o passo a passo).
+			g := shield.GuideFor(shield.ScenarioFor(shield.State(st.State), st.DisableReason))
+			d.Meta.ShieldGuide, _ = json.Marshal(g)
+		}
 	}
 	writeJSON(w, http.StatusOK, d)
 }

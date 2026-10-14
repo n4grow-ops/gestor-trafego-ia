@@ -12,6 +12,7 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/contract"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/manager"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/campaign"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/copylab"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 )
 
@@ -70,6 +71,12 @@ func (e *Engine) HandleJob(ctx context.Context, job store.Job) error {
 		return e.adsReview(ctx, job.Payload)
 	case JobTokenCheck:
 		return e.tokenCheck(ctx)
+	case JobGuardrailCheck:
+		return e.guardrailCheck(ctx)
+	case JobAccountDiagnostic:
+		return e.accountDiagnostic(ctx, job.Payload)
+	case JobShieldHealth:
+		return e.shieldHealth(ctx)
 	case JobMediaArchive:
 		m, err := decodeMediaArchive(job.Payload)
 		if err != nil {
@@ -261,6 +268,14 @@ func (e *Engine) propose(ctx context.Context, p ProposeJob) error {
 		return err
 	}
 
+	// Laboratório de copy: troca só o que tem versão segura mecânica; o resto vira aviso no resumo.
+	copySegment := b.Constraints.Niche
+	if seg != nil {
+		copySegment += " " + seg.Name
+	}
+	lab := copylab.Apply(prop.Copies, copySegment)
+	prop.Copies = lab.Copies
+
 	// Onde o anúncio aparece é escolha do cliente, não do Gestor.
 	prop.Placements = b.Placements
 	hash, err := campaign.ProposalHash(prop)
@@ -275,7 +290,7 @@ func (e *Engine) propose(ctx context.Context, p ProposeJob) error {
 		OrgID: ident.OrgID, ConversationID: conv.ID,
 		Briefing: b, Proposal: prop, ProposalHash: hash,
 		CodeHash: campaign.HashCode(code), ExpiresAt: e.now().Add(codeTTL),
-		Send: sendJob(conv.ID, conv.ChatID, campaign.Summary(prop, code)),
+		Send: sendJob(conv.ID, conv.ChatID, campaign.SummaryWith(prop, code, campaign.SummaryOptions{Segment: copySegment, Adjusted: lab.Adjusted})),
 	})
 	if errors.Is(err, store.ErrStateChanged) {
 		return nil // a conversa seguiu enquanto o Gestor trabalhava

@@ -141,6 +141,9 @@ func (e *Engine) sendHuman(ctx context.Context, s SendJob) error {
 // Se a voz não puder ser gerada ou o WhatsApp recusar, o mesmo texto segue em balões, sem gerar de novo.
 func (e *Engine) sendVoice(ctx context.Context, s SendJob) error {
 	if e.Voice == nil {
+		if s.VoiceOnly {
+			return nil
+		}
 		return e.Store.Enqueue(ctx, textFallback(s))
 	}
 	e.presence(ctx, s.ChatID, whatsapp.PresenceRecording)
@@ -156,6 +159,9 @@ func (e *Engine) sendVoice(ctx context.Context, s SendJob) error {
 	e.presence(ctx, s.ChatID, whatsapp.PresencePaused)
 	if err != nil {
 		e.Log.Error("voz falhou, indo em texto", "conversation_id", s.ConversationID, "erro", err)
+		if s.VoiceOnly {
+			return nil // o texto já foi: não repete
+		}
 		return e.Store.Enqueue(ctx, textFallback(s))
 	}
 	return e.Store.AddMessage(ctx, s.ConversationID, "out", "voice", s.Text)

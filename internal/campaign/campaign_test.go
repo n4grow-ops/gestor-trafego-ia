@@ -117,3 +117,64 @@ func TestSummaryCityOnly(t *testing.T) {
 		t.Fatalf("resumo:\n%s", s)
 	}
 }
+
+func TestSummaryCopyNotesOnlyWhenNeeded(t *testing.T) {
+	if s := campaign.Summary(proposal(), "000000"); strings.Contains(s, "Atenção no texto") {
+		t.Errorf("texto limpo não deveria ter aviso:\n%s", s)
+	}
+	p := proposal()
+	p.Copies = []contract.Copy{{Headline: "Veja o antes e depois", Text: "Peça pelo WhatsApp", CTA: "WHATSAPP_MESSAGE"}}
+	s := campaign.Summary(p, "000000")
+	for _, want := range []string{"*Atenção no texto*", "Anúncio 1", "antes e depois", "Sugestão:", "A decisão é sua", "*SIM 000000*"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("resumo sem %q:\n%s", want, s)
+		}
+	}
+	if strings.Index(s, "Atenção no texto") > strings.Index(s, "Por quê") {
+		t.Error("aviso deve vir antes do 'Por quê'")
+	}
+}
+
+func TestSummaryCopyNotesSegmentAndAdjusted(t *testing.T) {
+	p := proposal()
+	p.Copies = []contract.Copy{{Headline: "Advogado trabalhista", Text: "Primeira consulta grátis", CTA: "LEARN_MORE"}}
+	if s := campaign.Summary(p, "000000"); strings.Contains(s, "Atenção no texto") {
+		t.Errorf("sem segmento conhecido, não aplica regra da OAB:\n%s", s)
+	}
+	o := campaign.SummaryOptions{Segment: "Advocacia", Adjusted: []int{0}}
+	s := campaign.SummaryWith(p, "000000", o)
+	if !strings.Contains(s, "OAB") || !strings.Contains(s, "troquei trechos") {
+		t.Errorf("resumo sem aviso do segmento/ajuste:\n%s", s)
+	}
+}
+
+func TestSummaryCopyNotesAreShort(t *testing.T) {
+	p := proposal()
+	p.Copies = []contract.Copy{
+		{Headline: "Antes e depois", Text: "Resultado garantido, renda extra, emagrecimento. Aproveite!!!", CTA: "LEARN_MORE"},
+		{Headline: "Perca 10 kg", Text: "Você está acima do peso? Dinheiro fácil.", CTA: "LEARN_MORE"},
+	}
+	s := campaign.Summary(p, "000000")
+	if n := strings.Count(s, "\n- "); n > 4 {
+		t.Errorf("seção longa demais (%d itens):\n%s", n, s)
+	}
+	if !strings.Contains(s, "Mais ") {
+		t.Errorf("deveria resumir o excedente:\n%s", s)
+	}
+}
+
+func TestSummaryShowsAngleOnlyWithManyCopies(t *testing.T) {
+	p := proposal()
+	p.Copies = []contract.Copy{
+		{Headline: "A", Text: "a", CTA: "LEARN_MORE", Angle: "preco"},
+		{Headline: "B", Text: "b", CTA: "LEARN_MORE", Angle: "urgencia"},
+	}
+	s := campaign.Summary(p, "000000")
+	if !strings.Contains(s, "Anúncio 1 (foco em preço)") || !strings.Contains(s, "Anúncio 2 (foco em urgência)") {
+		t.Errorf("sem rótulo de ângulo:\n%s", s)
+	}
+	p.Copies = p.Copies[:1]
+	if s := campaign.Summary(p, "000000"); strings.Contains(s, "foco em") {
+		t.Errorf("1 variação não deve mostrar ângulo:\n%s", s)
+	}
+}

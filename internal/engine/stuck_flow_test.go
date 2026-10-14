@@ -90,7 +90,8 @@ func TestEmptyProfileDoesNotBlockOnboarding(t *testing.T) {
 	if c = h.conv(); c.State != store.StateIdle {
 		t.Fatalf("ficha vazia não pode manter o onboarding; estado = %s", c.State)
 	}
-	h.att.Responses = []string{`{"intent":"create_campaign","fields":{"offer":"pizza","audience":"moradores","location":"Campinas","daily_budget_brl":20},"reply":"Anotado."}`}
+	// append: o fake devolve as respostas por índice de chamada; reatribuir a lista faria a 2ª chamada cair no padrão.
+	h.att.Responses = append(h.att.Responses, `{"intent":"create_campaign","fields":{"offer":"pizza","audience":"moradores","location":"Campinas","daily_budget_brl":20},"reply":"Anotado."}`)
 	h.say("pizza em Campinas, 20 por dia")
 	if c = h.conv(); c.State != store.StateAwaitingProposal {
 		t.Fatalf("campanha com os dados mínimos deve seguir sem ficha; estado = %s campos = %+v", c.State, c.Fields)

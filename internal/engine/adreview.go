@@ -136,7 +136,8 @@ func (e *Engine) rejectPublication(ctx context.Context, token string, p store.Pu
 	if !moved {
 		next = msgAdRejectedLater
 	}
-	return e.send(ctx, conv, join(fmt.Sprintf(msgAdRejected, name, why), next))
+	// O motivo da Meta traduzido para português simples, com o que mudar (e o texto sugerido, se o ajuste de copy estiver ligado).
+	return e.send(ctx, conv, join(fmt.Sprintf(msgAdRejected, name, why), e.explainRejection(ctx, ident, p.DraftID, reasons), next))
 }
 
 // partlyRejected: parte dos anúncios reprovada; a campanha segue com os outros. Avisa uma vez.
@@ -152,7 +153,7 @@ func (e *Engine) partlyRejected(ctx context.Context, p store.Publication, n int,
 	why := reasonText(reasons)
 	e.audit(ctx, p.OrgID, "system", "ad_partly_rejected", map[string]any{"publication_id": p.ID, "rejected": n, "reason": why})
 	e.alertTeam(ctx, ident, fmt.Sprintf("a Meta reprovou %d anúncio(s) da campanha %s: %s", n, p.CampaignID, why))
-	if err := e.send(ctx, conv, fmt.Sprintf(msgAdPartlyRejected, n, why)); err != nil {
+	if err := e.send(ctx, conv, join(fmt.Sprintf(msgAdPartlyRejected, n, why), e.explainRejection(ctx, ident, p.DraftID, reasons))); err != nil {
 		e.Log.Warn("aviso de reprovação parcial", "publication_id", p.ID, "erro", err)
 	}
 }

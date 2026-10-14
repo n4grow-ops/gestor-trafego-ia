@@ -484,6 +484,7 @@ function drawerTab(n) {
     return `<div><div class="metarow"><span class="ev-ico ok">${icon('meta')}</span><div><b>Conta de anúncios</b><small class="num">${esc(m.ad_account_name)} · ${esc(m.ad_account_id)} · ${esc(m.currency)} · ${esc(m.timezone)}</small></div><span class="chip ${m.account_status === 1 ? 'ok' : 'warn'}">${m.account_status === 1 ? 'ativa' : 'status ' + m.account_status}</span></div>
       <div class="metarow"><span class="ev-ico info">${icon('users')}</span><div><b>Página</b><small>${esc(m.page_name || '—')}${m.instagram_username ? ' · @' + esc(m.instagram_username) : ''}</small></div><span class="chip ${m.page_whatsapp ? 'ok' : 'warn'}">${m.page_whatsapp ? 'com WhatsApp' : 'sem WhatsApp'}</span></div>
       ${fundingRow(m, c)}
+      ${shieldRow(m)}
       <div class="metarow"><span class="ev-ico info">${icon('lock')}</span><div><b>Autorização</b><small>conectada em ${esc(dt(m.connected_at))}${m.token_expires_at ? ' · vence em ' + esc(dateOnly(m.token_expires_at)) : ''} · token guardado cifrado, nunca exibido</small></div>${m.token_expires_at && new Date(m.token_expires_at) - Date.now() < 7 * 864e5 ? '<span class="chip warn">vencendo</span>' : ''}</div></div>`;
   }
   if (n === 3) {
@@ -812,6 +813,24 @@ function fundingRow(m, c) {
   }
   return `<div class="metarow"><span class="ev-ico info">${icon('money')}</span><div><b>Pagamento</b><small>${esc(what)}${m.funding_checked_at ? ' · lido há ' + ago(m.funding_checked_at) : ''}</small></div>
     ${fundingChip(m.funding_flag)}<button class="btn sm ghost" type="button" data-funding-refresh="${c.org_id}" title="Ler de novo na Meta">${icon('refresh')}Atualizar</button></div>`;
+}
+
+/* ---------- escudo anti-bloqueio: situação da conta de anúncios ---------- */
+const SHIELD_STATE = { ok: ['conta em dia', 'ok'], restrita: ['conta restrita', 'warn'], desativada: ['conta desativada', 'err'],
+  encerrada: ['conta encerrada', 'err'], pagamento: ['pagamento recusado', 'err'], carencia: ['pagamento atrasado', 'warn'] };
+const SHIELD_LEVEL = { ok: 'ok', atencao: 'warn', bloqueia: 'err' };
+const agoText = iso => ago(iso) === 'agora' ? 'agora' : 'há ' + ago(iso);
+function shieldRow(m) {
+  const sh = m.shield;
+  if (!sh) return `<div class="metarow"><span class="ev-ico info">${icon('lock')}</span><div><b>Escudo da conta</b><small>ainda não conferido (a primeira leitura sai na próxima rodada do worker)</small></div></div>`;
+  const [label, cls] = SHIELD_STATE[sh.state] || [sh.state, 'info'];
+  const items = ((sh.report && sh.report.items) || []).filter(i => i.level !== 'ok');
+  const guide = m.shield_guide;
+  const notified = sh.notified_state && sh.notified_state !== 'ok' ? ' · cliente avisado ' + agoText(sh.notified_at) : '';
+  const detail = items.length || guide ? `<details class="shield-detail"><summary>ver o que fazer</summary>
+    ${items.map(i => `<p><span class="chip ${SHIELD_LEVEL[i.level] || 'info'}">${esc(i.title)}</span> ${esc(i.message)}</p>${(i.steps || []).length ? `<ol>${i.steps.map(x => `<li>${esc(x)}</li>`).join('')}</ol>` : ''}`).join('')}
+    ${guide ? `<p><b>${esc(guide.title)}</b>: ${esc(guide.what)}</p><ol>${(guide.steps || []).map(x => `<li>${esc(x)}</li>`).join('')}</ol><p class="faint small">${esc(guide.note)}</p>` : ''}</details>` : '';
+  return `<div class="metarow"><span class="ev-ico ${cls === 'ok' ? 'ok' : 'info'}">${icon('lock')}</span><div><b>Escudo da conta</b><small>conferida ${agoText(sh.checked_at)}${esc(notified)}</small>${detail}</div><span class="chip ${cls}">${label}</span></div>`;
 }
 
 /* ---------- campanhas na Meta ---------- */

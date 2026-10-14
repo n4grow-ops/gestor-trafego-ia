@@ -97,7 +97,7 @@ func TestEscalateAlertsTeamWithTemplate(t *testing.T) {
 }
 
 func TestTemplateDefinitionsMatchParams(t *testing.T) {
-	want := map[string]int{engine.TplSignupReminder: 1, engine.TplDailyReport: 8, engine.TplTeamAlert: 4, engine.TplMetaExpiring: 2, engine.TplDailyResults: 4}
+	want := map[string]int{engine.TplSignupReminder: 1, engine.TplDailyReport: 8, engine.TplTeamAlert: 4, engine.TplMetaExpiring: 2, engine.TplDailyResults: 4, engine.TplGuardrail: 1, engine.TplAccountAlert: 2}
 	for _, d := range engine.TemplateDefinitions {
 		n, ok := want[d.Name]
 		if !ok {

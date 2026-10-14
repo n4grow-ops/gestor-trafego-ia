@@ -63,17 +63,18 @@ func TestAutoSignupStartsOnboarding(t *testing.T) {
 		t.Errorf("memória = %+v", ident.Profile)
 	}
 	c, _ := h.st.GetOrCreateConversation(ctx, ident.ID, "")
-	if c.State != store.StateOnboarding {
-		t.Errorf("com só nome e cidade ainda conhece o negócio; estado = %s", c.State)
+	// A ficha do negócio é opcional: já na primeira mensagem o cliente sai do onboarding e nada o prende.
+	if c.State == store.StateOnboarding {
+		t.Errorf("a ficha é opcional e não pode manter o onboarding; estado = %s", c.State)
 	}
 	h.sayFrom(newPhone, "vendo açaí e sorvete, pra jovens e famílias, açaí puro, entrego em 4 km")
-	if !strings.Contains(h.att.Requests[2].Messages[1].Content, "Negócio faltando: o que a empresa faz") {
+	if !strings.Contains(h.att.Requests[2].Messages[1].Content, "Ficha do negócio (opcional, não pergunte)") {
 		t.Errorf("atendente não recebeu o que falta:\n%s", h.att.Requests[2].Messages[1].Content)
 	}
 	ident, _ = h.st.FindIdentity(ctx, "openwa", newPhone)
 	c, _ = h.st.GetOrCreateConversation(ctx, ident.ID, "")
-	if c.State != store.StateIdle || ident.Profile.ServiceArea == nil || *ident.Profile.Differentials != "açaí puro sem xarope" {
-		t.Errorf("negócio completo deveria liberar a conversa: estado = %s perfil = %+v", c.State, ident.Profile)
+	if c.State == store.StateOnboarding || ident.Profile.ServiceArea == nil || *ident.Profile.Differentials != "açaí puro sem xarope" {
+		t.Errorf("ficha completa deveria ser gravada sem prender a conversa: estado = %s perfil = %+v", c.State, ident.Profile)
 	}
 }
 

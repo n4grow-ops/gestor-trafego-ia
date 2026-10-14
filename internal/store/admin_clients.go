@@ -207,6 +207,9 @@ type ClientMeta struct {
 	FundingCheckedAt *time.Time      `json:"funding_checked_at"`
 	FundingFlag      string          `json:"funding_flag"` // preenchido pela api
 	TokenExpiresAt   *time.Time      `json:"token_expires_at"`
+	// Escudo anti-bloqueio: situação da conta e a última checagem (Guide é preenchido pela api).
+	Shield      *ShieldState    `json:"shield"`
+	ShieldGuide json.RawMessage `json:"shield_guide,omitempty"`
 }
 
 type ClientDraft struct {
@@ -340,6 +343,11 @@ func (s *Store) ClientDetail(ctx context.Context, orgID int64) (ClientDetail, er
 	if err == nil {
 		if accStatus != nil {
 			mc.AccountStatus = *accStatus
+		}
+		if st, ok, err := s.ShieldStateByOrg(ctx, orgID); err != nil {
+			return d, err
+		} else if ok {
+			mc.Shield = &st
 		}
 		d.Meta = &mc
 	} else if !errors.Is(err, pgx.ErrNoRows) {

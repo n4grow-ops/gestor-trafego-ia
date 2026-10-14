@@ -18,3 +18,12 @@ func TestSystemPromptKeepsClientInControl(t *testing.T) {
 		}
 	}
 }
+
+func TestSystemPromptAsksDifferentAnglesAndNoInvention(t *testing.T) {
+	p := systemPrompt("")
+	for _, want := range []string{`"angle"`, "prova_social", "ângulo diferente", "não invente preço", "antes e depois", "específica do negócio"} {
+		if !strings.Contains(p, want) {
+			t.Errorf("prompt sem %q", want)
+		}
+	}
+}

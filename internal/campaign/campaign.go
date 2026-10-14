@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/contract"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/copylab"
 )
 
 // ProposalHash identifica exatamente a versão da proposta que o cliente aprova.
@@ -62,7 +63,51 @@ var objectiveLabels = map[string]string{
 	"OUTCOME_SALES":      "vendas",
 }
 
+// SummaryOptions dá ao resumo o contexto do laboratório de copy.
+type SummaryOptions struct {
+	Segment  string // segmento/nicho do cliente (texto livre); ativa regras de conselhos profissionais
+	Adjusted []int  // variações (base 0) que o copylab trocou por versão segura
+}
+
 func Summary(p contract.CampaignProposal, code string) string {
+	return SummaryWith(p, code, SummaryOptions{})
+}
+
+// maxCopyNotes limita a seção "Atenção no texto" para o resumo continuar curto.
+const maxCopyNotes = 3
+
+// copyNotes monta a seção "Atenção no texto". Vazia quando não há nada a dizer. Só informa: quem
+// decide é o cliente, e nada aqui impede a aprovação ou a publicação.
+func copyNotes(p contract.CampaignProposal, o SummaryOptions) string {
+	var lines []string
+	for _, i := range o.Adjusted {
+		lines = append(lines, fmt.Sprintf("- Anúncio %d: troquei trechos que a Meta costuma reprovar (promessa de resultado). Se preferir o seu texto original, é só pedir.", i+1))
+	}
+	total := 0
+	for i, c := range p.Copies {
+		for _, f := range copylab.Check(c.Headline, c.Text, o.Segment) {
+			total++
+			if len(lines) >= maxCopyNotes {
+				continue
+			}
+			l := fmt.Sprintf("- Anúncio %d, \"%s\": %s", i+1, f.Excerpt, f.Reason)
+			if f.Alternative != "" {
+				l += " Sugestão: " + f.Alternative
+			}
+			lines = append(lines, l)
+		}
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	if extra := total + len(o.Adjusted) - len(lines); extra > 0 {
+		lines = append(lines, fmt.Sprintf("- Mais %d ponto(s) parecido(s) nos anúncios.", extra))
+	}
+	return "\n*Atenção no texto*\n" + strings.Join(lines, "\n") + "\nA decisão é sua: pode aprovar assim ou pedir o ajuste que quiser.\n"
+}
+
+// SummaryWith é o Summary com o aviso do laboratório de copy.
+func SummaryWith(p contract.CampaignProposal, code string, o SummaryOptions) string {
 	var b strings.Builder
 	b.WriteString("*Proposta da sua campanha*\n\n")
 	label := objectiveLabels[p.Objective]
@@ -82,8 +127,13 @@ func Summary(p contract.CampaignProposal, code string) string {
 	fmt.Fprintf(&b, "Investimento: %s por dia, por %d dias (total de até %s)\n",
 		BRL(p.DailyBudgetBRL), p.DurationDays, BRL(p.DailyBudgetBRL*float64(p.DurationDays)))
 	for i, c := range p.Copies {
-		fmt.Fprintf(&b, "\nAnúncio %d: *%s*\n%s\n", i+1, c.Headline, c.Text)
+		label := ""
+		if a := copylab.AngleLabel[c.Angle]; a != "" && len(p.Copies) > 1 {
+			label = " (foco em " + a + ")"
+		}
+		fmt.Fprintf(&b, "\nAnúncio %d%s: *%s*\n%s\n", i+1, label, c.Headline, c.Text)
 	}
+	b.WriteString(copyNotes(p, o))
 	fmt.Fprintf(&b, "\nPor quê: %s\n", p.Rationale)
 	fmt.Fprintf(&b, "\nPara aprovar, responda: *SIM %s*\n(código válido por 30 minutos)\nPara mudar algo, é só me dizer o quê.", code)
 	return b.String()

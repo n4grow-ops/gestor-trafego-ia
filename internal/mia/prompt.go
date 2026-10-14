@@ -40,6 +40,7 @@ reply: sua resposta ao cliente, com no máximo 3 frases curtas no total. Não pe
 	attStyle = `Estilo: seja simples e objetiva, com respostas curtas. Deixe o cliente conduzir: use o que ele disse e não empurre estratégia. NUNCA invente dados (preço, endereço, resultado, característica do produto): se não estiver na conversa ou na memória, não afirme. NÃO decida nem pergunte por conta própria objetivo da campanha, público ou posicionamento; só pergunte o que falta para montar a campanha (oferta, local, orçamento). Se o cliente pedir ajuda com a copy (título, texto, chamada), ajude, usando só o que ele contou. Se ele pedir N variações de texto (ex.: "3 versões do texto"), atenda: o sistema repassa esse número ao especialista (de 1 a 5); não pergunte quantas se ele não pediu.
 Pode fazer UMA recomendação opcional por conversa, sem insistir (ex.: "Quer que eu ative o Advantage+?"). O Advantage+ e qualquer automação da Meta ficam DESLIGADOS por padrão: só fale em ativar se o cliente aceitar, e nunca diga que está ativo se ele não aceitou.
 A ficha do negócio (profile) é opcional: não pergunte os itens dela; grave só o que o cliente contar espontaneamente. "Negócio faltando" é só informação, nunca motivo para adiar a campanha. Não mande lembretes nem perguntas extras além do necessário.`
+	attCopyHelp = `Ajuda com copy: se o cliente pedir mudança só no texto ("mais curto", "mais direto", "outro ângulo"), trate como ajuste de texto (provide_info) e mude apenas o texto; oferta, público, local, orçamento e objetivo ficam como estão. Depois da primeira proposta, você pode oferecer UMA vez, em uma frase, mostrar outro ângulo de texto (ex.: preço, urgência, prova social); se ele ignorar ou recusar, não insista. Nenhuma mudança de estratégia.`
 	attProjects = `Para list_projects e project_status, o sistema monta a resposta com os dados reais; seu reply pode ser curto.
 
 Conta Meta: se aparecer "Conta Meta: não conectada" e o assunto for publicar, anunciar, quando a campanha vai ao ar ou o status de um projeto pronto, avise em uma frase que falta conectar a conta de anúncios do Facebook/Instagram e ofereça mandar o link. Não repita a oferta se você já ofereceu nas últimas 6 mensagens do histórico. Se o cliente aceitar ou pedir, use intent connect_meta e diga só que o link vai em seguida: nunca escreva link. Se aparecer "Conta Meta: conectada", pode dizer qual conta está conectada quando perguntarem. Se não aparecer "Conta Meta", não fale de conexão.`
@@ -80,6 +81,7 @@ func (c Config) AttendantSystem(state string, f contract.Fields, seg *Segment) s
 	}
 	b.WriteString(attLimits + "\n\n")
 	b.WriteString(attStyle + "\n\n")
+	b.WriteString(attCopyHelp + "\n\n")
 	b.WriteString("Dados de uma campanha (fields):\n" + fieldLines(c.ordered(GroupCampaign), true) + "\n\n")
 	b.WriteString("Memória do negócio (profile), vale para todos os projetos:\n" + fieldLines(c.ordered(GroupProfile), false) + "\n\n")
 	b.WriteString(attFormat + "\n")
@@ -105,7 +107,7 @@ func (c Config) AttendantSystem(state string, f contract.Fields, seg *Segment) s
 	}
 	b.WriteString(attProjects + "\n\n")
 	if seg != nil && strings.TrimSpace(seg.Strategy) != "" {
-		fmt.Fprintf(&b, "Conhecimento do segmento %s (use só para este cliente; não aplique a outros ramos):\n%s\n\n", seg.Name, strings.TrimSpace(seg.Strategy))
+		fmt.Fprintf(&b, "Conhecimento do segmento %s (use só para este cliente; não aplique a outros ramos; é sugestão de partida, o que o cliente disser vale mais e nada daqui é imposto):\n%s\n\n", seg.Name, strings.TrimSpace(seg.Strategy))
 	}
 	b.WriteString(attSafety)
 	return b.String()
@@ -119,7 +121,7 @@ func (c Config) ManagerContext(seg *Segment) string {
 		b.WriteString("Limites da persona do Meu Anúncio (valem também para você):\n" + never + "\n")
 	}
 	if seg != nil && strings.TrimSpace(seg.Strategy) != "" {
-		fmt.Fprintf(&b, "Conhecimento do segmento %s (use só para este cliente):\n%s\n", seg.Name, strings.TrimSpace(seg.Strategy))
+		fmt.Fprintf(&b, "Conhecimento do segmento %s (use só para este cliente; é sugestão de partida, o que o cliente definiu vale mais):\n%s\n", seg.Name, strings.TrimSpace(seg.Strategy))
 	}
 	return strings.TrimSpace(b.String())
 }

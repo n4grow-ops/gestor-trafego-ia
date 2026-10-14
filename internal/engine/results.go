@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/campaign"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/meta"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/report"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp"
 )
@@ -34,13 +34,17 @@ func (e *Engine) EnsureDailyResults(ctx context.Context) error {
 // orgResult junta o resultado do dia das campanhas de uma organização.
 type orgResult struct {
 	orgID        int64
-	lines        []string
+	campaigns    []report.Campaign
 	spend, convs int64
 	dailyCents   int64
 }
 
 // dailyResults lê os insights de ontem das campanhas ligadas, grava e manda o resumo ao dono.
 func (e *Engine) dailyResults(ctx context.Context) error {
+	if report.Quiet(e.now()) {
+		// Entre 21h e 8h (BRT) ninguém recebe relatório: reagenda para as 8h.
+		return e.enqueueDaily(ctx, JobDailyResults, resultsHour)
+	}
 	defer func() {
 		if err := e.enqueueDaily(ctx, JobDailyResults, resultsHour); err != nil {
 			e.Log.Error("próximo resultado diário não agendado", "erro", err)
@@ -102,14 +106,14 @@ func (e *Engine) dailyResults(ctx context.Context) error {
 		}
 		r.spend += in.SpendCents
 		r.convs += in.Conversations
-		r.lines = append(r.lines, fmt.Sprintf("• *%s*: %s", name, resultLine(in.SpendCents, in.Conversations)))
+		r.campaigns = append(r.campaigns, report.Campaign{Name: name, SpendCents: in.SpendCents, Conversations: in.Conversations})
 	}
 	for _, orgID := range order {
 		r := byOrg[orgID]
 		if r.spend == 0 {
 			continue // dia sem gasto: nada a contar
 		}
-		if err := e.sendResults(ctx, r, tokens[orgID], day.Format("02/01")); err != nil {
+		if err := e.sendResults(ctx, r, tokens[orgID], day); err != nil {
 			e.Log.Error("resultado diário não enviado", "org_id", orgID, "erro", err)
 		}
 	}
@@ -128,16 +132,32 @@ func resultLine(spend, convs int64) string {
 	return fmt.Sprintf("%s investidos · %d conversas · %s por conversa", brlCents(spend), convs, brlCents(spend/convs))
 }
 
-// sendResults manda o resumo do dia ao dono, com o saldo da conta (pré-paga) ou o problema de pagamento.
-func (e *Engine) sendResults(ctx context.Context, r *orgResult, token, date string) error {
+// sendResults manda ao dono o relatório do dia em linguagem simples, com o saldo da conta (pré-paga)
+// ou o problema de pagamento. O áudio só vai junto se o cliente aceitou e a janela de 24 h estiver aberta.
+func (e *Engine) sendResults(ctx context.Context, r *orgResult, token string, day time.Time) error {
+	date := day.Format("02/01")
 	conv, err := e.Store.OwnerConversation(ctx, r.orgID)
 	if err != nil {
 		return err
 	}
-	parts := []string{fmt.Sprintf(msgResultsHead, date) + "\n" + strings.Join(r.lines, "\n")}
-	if len(r.lines) > 1 {
-		parts = append(parts, "Total: "+resultLine(r.spend, r.convs))
+	in := report.Input{Campaigns: r.campaigns}
+	if sp, cv, ok, err := e.Store.DayTotals(ctx, r.orgID, day.AddDate(0, 0, -1)); err == nil && ok && sp > 0 {
+		in.Prev = &report.Totals{SpendCents: sp, Conversations: cv}
 	}
+	base := report.OwnerText(in)
+	d := e.reportDelivery(ctx, r.orgID, conv.ID)
+	pref, err := e.Store.GetReportPref(ctx, r.orgID)
+	if err != nil {
+		e.Log.Warn("preferência do relatório não lida", "org_id", r.orgID, "erro", err)
+	}
+	d.AudioPref = pref.Audio
+	text := base
+	if d.OfferAudio(pref.Offered) {
+		if first, err := e.Store.MarkReportOffered(ctx, r.orgID); err == nil && first {
+			text += "\n\n" + report.Offer
+		}
+	}
+	parts := []string{text}
 	if conn, ok, err := e.Store.ActiveMeta(ctx, r.orgID); err == nil && ok {
 		if fr, ok := e.Publisher.(meta.FundingReader); ok {
 			if f, err := fr.Funding(ctx, token, conn.AdAccountID); err == nil {
@@ -156,7 +176,62 @@ func (e *Engine) sendResults(ctx context.Context, r *orgResult, token, date stri
 	tpl := &whatsapp.Template{Name: TplDailyResults, Params: []string{templateParam(date), templateParam(brlCents(r.spend)),
 		templateParam(fmt.Sprint(r.convs)), templateParam(cost)}}
 	e.audit(ctx, r.orgID, "system", "results_sent", map[string]any{"spend_cents": r.spend, "conversations": r.convs})
-	return e.Store.Enqueue(ctx, systemSendJob(conv.ID, conv.ChatID, join(parts...), tpl))
+	if err := e.Store.Enqueue(ctx, systemSendJob(conv.ID, conv.ChatID, join(parts...), tpl)); err != nil {
+		return err
+	}
+	if d.Audio() {
+		voice := SendJob{OrgID: r.orgID, ConversationID: conv.ID, ChatID: conv.ChatID, Text: report.Spoken(base),
+			Human: true, Voice: true, VoiceOnly: true}
+		if err := e.Store.Enqueue(ctx, store.JobSpec{Kind: JobSend, Payload: voice, MaxAttempts: sendAttempts, Delay: reportVoiceDelay}); err != nil {
+			e.Log.Error("áudio do relatório não agendado", "org_id", r.orgID, "erro", err)
+		}
+	}
+	return nil
+}
+
+// reportVoiceDelay deixa o texto sair antes do áudio.
+const reportVoiceDelay = 4 * time.Second
+
+// reportDelivery reúne o que decide o áudio do relatório: voz disponível, silêncio e janela de 24 h.
+func (e *Engine) reportDelivery(ctx context.Context, orgID, convID int64) report.Delivery {
+	d := report.Delivery{VoiceAvailable: e.voiceOn(e.miaConfig(ctx)), Quiet: report.Quiet(e.now())}
+	if _, needs := e.templateSender(); needs {
+		d.NeedsTemplates = true
+		out, err := e.outsideWindow(ctx, convID)
+		d.OutsideWindow = out || err != nil
+	}
+	return d
+}
+
+// reportPrefCommand trata "áudio" / "só texto" depois que a Mia ofereceu o resumo em áudio.
+func (e *Engine) reportPrefCommand(ctx context.Context, ident store.Identity, conv store.Conversation, text string) (bool, error) {
+	cmd := report.ParsePref(text)
+	if cmd == report.PrefNone {
+		return false, nil
+	}
+	pref, err := e.Store.GetReportPref(ctx, ident.OrgID)
+	if err != nil {
+		return true, err
+	}
+	if !pref.Offered && !pref.Audio {
+		return false, nil // ninguém ofereceu: a palavra segue o fluxo normal da conversa
+	}
+	if cmd == report.PrefText {
+		noteAction(ctx, "relatório só em texto (sem IA)")
+		if err := e.Store.SetReportAudio(ctx, ident.OrgID, false); err != nil {
+			return true, err
+		}
+		return true, e.send(ctx, conv, msgReportTextOnly)
+	}
+	if !e.voiceOn(e.miaConfig(ctx)) {
+		noteAction(ctx, "relatório em áudio pedido, voz desligada (sem IA)")
+		return true, e.send(ctx, conv, msgReportNoVoice)
+	}
+	noteAction(ctx, "relatório em áudio ligado (sem IA)")
+	if err := e.Store.SetReportAudio(ctx, ident.OrgID, true); err != nil {
+		return true, err
+	}
+	return true, e.send(ctx, conv, msgReportAudioOn)
 }
 
 // FundingUpdateJob relê o pagamento de uma organização (pedido pelo painel).
