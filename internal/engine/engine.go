@@ -298,6 +298,9 @@ func (e *Engine) dispatch(ctx context.Context, ident store.Identity, conv store.
 	if e.MetaConnectBaseURL != "" && isMetaConnectCommand(conv.State, text) {
 		return e.sendMetaLink(ctx, ident, conv, "")
 	}
+	if isBillingCommand(conv.State, text) {
+		return e.sendBillingLink(ctx, ident, conv, "")
+	}
 	if done, err := e.profileLinkTurn(ctx, ident, conv, text, msgs); done || err != nil {
 		return err
 	}
@@ -424,6 +427,8 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 			return e.speak(ctx, ident, conv, turn.Reply)
 		}
 		return e.sendMetaLink(ctx, ident, conv, turn.Reply)
+	case contract.IntentBilling:
+		return e.sendBillingLink(ctx, ident, conv, turn.Reply)
 	case contract.IntentNewProject:
 		return e.startProject(ctx, ident, conv, turn, projects)
 	case contract.IntentSwitchProject:

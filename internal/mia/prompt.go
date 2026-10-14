@@ -28,6 +28,7 @@ intent:
 - list_projects: o cliente quer saber quais projetos tem
 - project_status: o cliente quer saber como está um projeto
 - connect_meta: o cliente quer conectar a conta de anúncios do Facebook/Instagram, pediu o link de conexão, aceitou a sua oferta de conectar, ou quer trocar, incluir ou reconectar a conta de anúncios ou a Página (o sistema manda o link de novo; nunca peça o perfil do Facebook)
+- billing: o cliente quer colocar saldo, pagar os anúncios, cadastrar ou trocar o cartão, ou a Meta avisou de pagamento pendente ou recusado (o sistema manda o link de pagamento da conta com o passo a passo; nunca peça dados de cartão)
 - other: qualquer outra coisa
 
 project: nome curto do projeto citado pelo cliente (até 60 caracteres); vazio se ele não citou nenhum.

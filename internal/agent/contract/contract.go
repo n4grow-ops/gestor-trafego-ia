@@ -25,12 +25,13 @@ const (
 	IntentListProjects   Intent = "list_projects"
 	IntentProjectStatus  Intent = "project_status"
 	IntentConnectMeta    Intent = "connect_meta"
+	IntentBilling        Intent = "billing"
 )
 
 func (i Intent) Valid() bool {
 	switch i {
 	case IntentCreateCampaign, IntentProvideInfo, IntentApprove, IntentReject, IntentQuestion, IntentHuman, IntentOther,
-		IntentNewProject, IntentSwitchProject, IntentListProjects, IntentProjectStatus, IntentConnectMeta:
+		IntentNewProject, IntentSwitchProject, IntentListProjects, IntentProjectStatus, IntentConnectMeta, IntentBilling:
 		return true
 	}
 	return false
@@ -244,7 +245,7 @@ func (p *CampaignProposal) Normalize() {
 	}
 }
 
-var allowedCTAs =[]string{"WHATSAPP_MESSAGE", "LEARN_MORE", "CONTACT_US"}
+var allowedCTAs = []string{"WHATSAPP_MESSAGE", "LEARN_MORE", "CONTACT_US"}
 
 // Validate confere estrutura e regras de negócio contra o briefing. Devolve todos os erros juntos,
 // para o Gestor corrigir tudo numa tentativa.

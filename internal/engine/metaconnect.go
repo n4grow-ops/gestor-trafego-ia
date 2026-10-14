@@ -90,6 +90,7 @@ func (e *Engine) metaStatus(ctx context.Context, orgID int64) (string, error) {
 
 // MetaSummary é o que a confirmação da conexão mostra.
 type MetaSummary struct {
+	AccountID     string // act_…: monta o link de pagamento quando a conta está com pagamento pendente
 	AccountName   string
 	Currency      string
 	Timezone      string
@@ -109,6 +110,9 @@ func MetaConnectedJob(convID int64, chatID string, s MetaSummary) store.JobSpec 
 	parts := []string{fmt.Sprintf(msgMetaConnected, s.AccountName, s.Currency, s.PageName, ig)}
 	if s.AccountStatus != 1 {
 		parts = append(parts, fmt.Sprintf(msgMetaWarnStatus, accountStatusText(s.AccountStatus)))
+		if paymentPending(s.AccountStatus) && s.AccountID != "" {
+			parts = append(parts, billingText(s.AccountID, s.AccountName))
+		}
 	}
 	if s.Currency != "BRL" || (s.Timezone != "" && s.Timezone != "America/Sao_Paulo") {
 		parts = append(parts, fmt.Sprintf(msgMetaWarnLocale, s.Currency, s.Timezone))
@@ -129,6 +133,9 @@ func MetaConnectedJob(convID int64, chatID string, s MetaSummary) store.JobSpec 
 func MetaRevokedJob(convID int64, chatID string) store.JobSpec {
 	return humanJob(0, store.Conversation{ID: convID, ChatID: chatID}, msgMetaRevoked, false)
 }
+
+// paymentPending: a conta parou por pagamento (pendente, aguardando acerto ou em carência).
+func paymentPending(status int) bool { return status == 3 || status == 8 || status == 9 }
 
 // accountStatusText traduz o account_status da Marketing API.
 func accountStatusText(status int) string {
