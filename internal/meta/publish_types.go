@@ -42,6 +42,7 @@ type PublishInput struct {
 	AgeMin, AgeMax   int
 	Genders          []string // "male" | "female"; vazio = todos
 	Interests        []string // nomes; os não encontrados são ignorados
+	Placements       []string // "feed" | "stories" | "reels"; vazio = posicionamento automático
 	Creatives        []PublishCreative
 	Copies           []PublishCopy
 }

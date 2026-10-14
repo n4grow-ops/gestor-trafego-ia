@@ -260,6 +260,7 @@ func (e *Engine) publishInput(ctx context.Context, ident store.Identity, conn st
 		AgeMax:           prop.Audience.AgeMax,
 		Genders:          prop.Audience.Genders,
 		Interests:        prop.Audience.Interests,
+		Placements:       contract.NormalizePlacements(prop.Placements),
 		Copies:           e.publishCopies(ctx, ident.OrgID, prop, fields.Offer, data.ClientCopy),
 	}
 	// Só o número da própria Página (opcional na Meta). O telefone de quem conversa com a Mia não serve:

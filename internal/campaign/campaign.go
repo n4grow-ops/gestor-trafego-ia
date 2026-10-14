@@ -74,6 +74,7 @@ func Summary(p contract.CampaignProposal, code string) string {
 	if len(p.Audience.Interests) > 0 {
 		fmt.Fprintf(&b, "Interesses: %s\n", strings.Join(p.Audience.Interests, ", "))
 	}
+	fmt.Fprintf(&b, "Onde aparece: %s\n", PlacementsText(p.Placements))
 	fmt.Fprintf(&b, "Investimento: %s por dia, por %d dias (total de até %s)\n",
 		BRL(p.DailyBudgetBRL), p.DurationDays, BRL(p.DailyBudgetBRL*float64(p.DurationDays)))
 	for i, c := range p.Copies {
@@ -82,6 +83,24 @@ func Summary(p contract.CampaignProposal, code string) string {
 	fmt.Fprintf(&b, "\nPor quê: %s\n", p.Rationale)
 	fmt.Fprintf(&b, "\nPara aprovar, responda: *SIM %s*\n(código válido por 30 minutos)\nPara mudar algo, é só me dizer o quê.", code)
 	return b.String()
+}
+
+// PlacementsText diz em português onde o anúncio aparece. Vazio = automático.
+func PlacementsText(pl []string) string {
+	pl = contract.NormalizePlacements(pl)
+	if len(pl) == 0 {
+		return "automático (a Meta distribui entre Feed, Stories, Reels e outros lugares)"
+	}
+	names := map[string]string{contract.PlacementFeed: "no Feed", contract.PlacementStories: "nos Stories", contract.PlacementReels: "nos Reels"}
+	parts := make([]string, len(pl))
+	for i, p := range pl {
+		parts[i] = names[p]
+	}
+	list := parts[0]
+	if n := len(parts); n > 1 {
+		list = strings.Join(parts[:n-1], ", ") + " e " + parts[n-1]
+	}
+	return "só " + list + " (Facebook e Instagram)"
 }
 
 func genders(g []string) string {

@@ -31,7 +31,7 @@ func (e *Engine) approve(ctx context.Context, ident store.Identity, conv store.C
 		ProjectID: conv.ActiveProjectID, ProjectStage: store.StageApproved}
 	reply := msgApproved
 	if e.Storage != nil {
-		adv.ConversationState, adv.ProjectStage, reply = store.StateAwaitingCreatives, store.StageAwaitingCreatives, msgApprovedAskCreatives
+		adv.ConversationState, adv.ProjectStage, reply = store.StateAwaitingCreatives, store.StageAwaitingCreatives, askCreatives(d.Proposal.Placements)
 	}
 	err = e.Store.ApproveDraftAdvance(ctx, d.ID, ident.MemberID, campaign.HashCode(code), e.now(), adv)
 	switch {

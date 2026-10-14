@@ -91,7 +91,7 @@ func (e *Engine) fetchInstagram(ctx context.Context, j InstagramJob) error {
 		if err != nil {
 			return err
 		}
-		return e.send(ctx, conv, join(msgInstagramFull, creativesStatus(list)))
+		return e.send(ctx, conv, join(msgInstagramFull, creativesStatus(list, d.Placements)))
 	}
 	f := &igFetch{e: e, ctx: ctx, job: j, link: link}
 	budget, cancel := context.WithTimeout(ctx, e.instagramBudget())
@@ -131,7 +131,7 @@ func (e *Engine) fetchInstagram(ctx context.Context, j InstagramJob) error {
 		parts = append(parts, msgCreativeFailed)
 	}
 	if f.saved == 0 {
-		return e.notifyInstagram(wctx, conv, join(append(parts, creativesStatus(list))...))
+		return e.notifyInstagram(wctx, conv, join(append(parts, creativesStatus(list, d.Placements))...))
 	}
 	pending := origin == store.OriginInstagramPublic
 	ack := msgInstagramOwnSaved
@@ -146,7 +146,7 @@ func (e *Engine) fetchInstagram(ctx context.Context, j InstagramJob) error {
 		parts = append(parts, fmt.Sprintf(msgInstagramPartial, post.Total, f.saved, maxCreatives))
 	}
 	if !pending {
-		parts = append(parts, creativesStatus(list))
+		parts = append(parts, creativesStatus(list, d.Placements))
 	}
 	return e.notifyInstagram(wctx, conv, join(parts...))
 }

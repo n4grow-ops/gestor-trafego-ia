@@ -239,6 +239,8 @@ func (e *Engine) propose(ctx context.Context, p ProposeJob) error {
 		return err
 	}
 
+	// Onde o anúncio aparece é escolha do cliente, não do Gestor.
+	prop.Placements = b.Placements
 	hash, err := campaign.ProposalHash(prop)
 	if err != nil {
 		return err

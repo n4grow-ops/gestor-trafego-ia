@@ -92,3 +92,18 @@ func TestSummaryGenders(t *testing.T) {
 		t.Error("esperava 'mulheres'")
 	}
 }
+
+func TestSummaryPlacements(t *testing.T) {
+	p := proposal()
+	if s := campaign.Summary(p, "000000"); !strings.Contains(s, "Onde aparece: automático") {
+		t.Errorf("sem posicionamento escolhido devia dizer automático:\n%s", s)
+	}
+	p.Placements = []string{"feed"}
+	if s := campaign.Summary(p, "000000"); !strings.Contains(s, "Onde aparece: só no Feed (Facebook e Instagram)") {
+		t.Errorf("só feed:\n%s", s)
+	}
+	p.Placements = []string{"feed", "stories"}
+	if s := campaign.Summary(p, "000000"); !strings.Contains(s, "Onde aparece: só no Feed e nos Stories (Facebook e Instagram)") {
+		t.Errorf("feed e stories:\n%s", s)
+	}
+}

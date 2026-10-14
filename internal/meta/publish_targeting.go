@@ -153,8 +153,29 @@ func (c *Client) geo(ctx context.Context, token, query string, radiusKM int) (ma
 		UserMessage: fmt.Sprintf(cityNotFound, query)}
 }
 
+// placements restringe o conjunto aos lugares que o cliente pediu, no Facebook e no Instagram.
+// Nada pedido = automático (sem publisher_platforms).
+func placements(t map[string]any, pl []string) {
+	var fb, ig []string
+	for _, p := range pl {
+		switch strings.ToLower(strings.TrimSpace(p)) {
+		case "feed":
+			fb, ig = append(fb, "feed"), append(ig, "stream")
+		case "stories":
+			fb, ig = append(fb, "story"), append(ig, "story")
+		case "reels":
+			fb, ig = append(fb, "facebook_reels"), append(ig, "reels")
+		}
+	}
+	if len(fb) == 0 {
+		return
+	}
+	t["publisher_platforms"] = []string{"facebook", "instagram"}
+	t["facebook_positions"], t["instagram_positions"] = fb, ig
+}
+
 // targeting monta o público: local, idade, gênero e interesses. O Advantage+ de público fica desligado
-// (respeita o público dado); posicionamentos ficam automáticos (sem publisher_platforms).
+// (respeita o público dado). Posicionamentos ficam automáticos, a não ser que o cliente tenha escolhido.
 func (c *Client) targeting(ctx context.Context, token string, in PublishInput) (map[string]any, []string, error) {
 	geo, warnings, err := c.geo(ctx, token, in.LocationQuery, in.RadiusKM)
 	if err != nil {
@@ -175,6 +196,7 @@ func (c *Client) targeting(ctx context.Context, token string, in PublishInput) (
 	}
 	t := map[string]any{"geo_locations": geo, "age_min": ageMin, "age_max": ageMax,
 		"targeting_automation": map[string]any{"advantage_audience": 0}}
+	placements(t, in.Placements)
 
 	var genders []int
 	seen := map[int]bool{}

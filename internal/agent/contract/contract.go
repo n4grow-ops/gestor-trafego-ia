@@ -44,6 +44,41 @@ type Fields struct {
 	DailyBudgetBRL *float64 `json:"daily_budget_brl,omitempty"`
 	ObjectiveHint  *string  `json:"objective_hint,omitempty"`
 	Media          []string `json:"media,omitempty"`
+	// Placements: onde o anúncio aparece, só quando o cliente pediu ("feed", "stories", "reels").
+	// Vazio = automático (a Meta distribui).
+	Placements []string `json:"placements,omitempty"`
+}
+
+// Posicionamentos que o cliente pode escolher.
+const (
+	PlacementFeed    = "feed"
+	PlacementStories = "stories"
+	PlacementReels   = "reels"
+)
+
+var placementOrder = []string{PlacementFeed, PlacementStories, PlacementReels}
+
+// NormalizePlacements deixa só os posicionamentos conhecidos, sem repetição e em ordem fixa.
+// Aceita singular e caixa diferente ("Story", "reel"). Nenhum conhecido = nil (automático).
+func NormalizePlacements(in []string) []string {
+	seen := map[string]bool{}
+	for _, p := range in {
+		switch strings.ToLower(strings.TrimSpace(p)) {
+		case "feed":
+			seen[PlacementFeed] = true
+		case "stories", "story":
+			seen[PlacementStories] = true
+		case "reels", "reel":
+			seen[PlacementReels] = true
+		}
+	}
+	var out []string
+	for _, p := range placementOrder {
+		if seen[p] {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func Str(s string) *string   { return &s }
@@ -75,13 +110,16 @@ func (f Fields) Merge(o Fields) Fields {
 	if len(o.Media) > 0 {
 		out.Media = append(slices.Clone(f.Media), o.Media...)
 	}
+	if pl := NormalizePlacements(o.Placements); len(pl) > 0 {
+		out.Placements = pl
+	}
 	return out
 }
 
 // HasData diz se algum campo foi de fato informado.
 func (f Fields) HasData() bool {
 	return !blank(f.Offer) || !blank(f.Audience) || !blank(f.Location) || !blank(f.ObjectiveHint) ||
-		positive(f.DailyBudgetBRL) || len(f.Media) > 0
+		positive(f.DailyBudgetBRL) || len(f.Media) > 0 || len(NormalizePlacements(f.Placements)) > 0
 }
 
 // Missing lista os campos obrigatórios que faltam, em ordem fixa.
@@ -142,6 +180,7 @@ type Briefing struct {
 	DailyBudgetBRL float64     `json:"daily_budget_brl"`
 	ObjectiveHint  string      `json:"objective_hint,omitempty"`
 	Media          []string    `json:"media,omitempty"`
+	Placements     []string    `json:"placements,omitempty"` // pedido do cliente; vazio = automático
 	Constraints    Constraints `json:"constraints"`
 	Adjustment     string      `json:"adjustment,omitempty"`
 	Business       Profile     `json:"business,omitempty"` // memória do negócio
@@ -158,6 +197,7 @@ func NewBriefing(orgID int64, f Fields, c Constraints) (Briefing, error) {
 		Location:       *f.Location,
 		DailyBudgetBRL: *f.DailyBudgetBRL,
 		Media:          f.Media,
+		Placements:     NormalizePlacements(f.Placements),
 		Constraints:    c,
 	}
 	if f.ObjectiveHint != nil {
@@ -189,6 +229,8 @@ type CampaignProposal struct {
 	Copies         []Copy   `json:"copies"`
 	Rationale      string   `json:"rationale"`
 	Risks          []string `json:"risks"`
+	// Placements vem do pedido do cliente (o sistema copia do briefing; o Gestor não escolhe). Vazio = automático.
+	Placements []string `json:"placements,omitempty"`
 }
 
 var allowedCTAs = []string{"WHATSAPP_MESSAGE", "LEARN_MORE", "CONTACT_US"}

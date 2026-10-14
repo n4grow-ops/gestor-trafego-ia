@@ -21,12 +21,14 @@ type ApprovedDraft struct {
 	ID        int64
 	ProjectID *int64
 	Nudged    bool // já avisou do posicionamento faltando
+	// Placements: onde o cliente pediu que o anúncio apareça (da proposta aprovada); vazio = automático.
+	Placements []string
 }
 
 func (s *Store) LatestApprovedDraft(ctx context.Context, convID int64) (ApprovedDraft, error) {
 	var d ApprovedDraft
-	err := s.pool.QueryRow(ctx, `SELECT id, project_id, creatives_nudged FROM campaign_drafts
-		WHERE conversation_id = $1 AND status = 'approved' ORDER BY id DESC LIMIT 1`, convID).Scan(&d.ID, &d.ProjectID, &d.Nudged)
+	err := s.pool.QueryRow(ctx, `SELECT id, project_id, creatives_nudged, coalesce(proposal->'placements', '[]'::jsonb) FROM campaign_drafts
+		WHERE conversation_id = $1 AND status = 'approved' ORDER BY id DESC LIMIT 1`, convID).Scan(&d.ID, &d.ProjectID, &d.Nudged, &d.Placements)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ApprovedDraft{}, ErrNotFound
 	}

@@ -149,3 +149,41 @@ func TestConnectMetaIntentIsValid(t *testing.T) {
 		t.Fatal("connect_meta precisa ser intent válida")
 	}
 }
+
+func TestNormalizePlacements(t *testing.T) {
+	cases := map[string][]string{
+		"feed":                      {"feed"},
+		"Stories,feed":              {"feed", "stories"},
+		"story,reel,Feed,feed,xpto": {"feed", "stories", "reels"},
+		"":                          nil,
+		"instagram,explorar":        nil,
+	}
+	for in, want := range cases {
+		var raw []string
+		if in != "" {
+			raw = strings.Split(in, ",")
+		}
+		if got := contract.NormalizePlacements(raw); !slices.Equal(got, want) {
+			t.Errorf("%q = %v, quer %v", in, got, want)
+		}
+	}
+}
+
+// Placements novos substituem os antigos (o cliente mudou de ideia); vazio não apaga.
+func TestMergePlacements(t *testing.T) {
+	f := contract.Fields{Placements: []string{"feed", "stories"}}
+	if got := f.Merge(contract.Fields{}).Placements; !slices.Equal(got, []string{"feed", "stories"}) {
+		t.Fatalf("vazio apagou: %v", got)
+	}
+	if got := f.Merge(contract.Fields{Placements: []string{"feed"}}).Placements; !slices.Equal(got, []string{"feed"}) {
+		t.Fatalf("não substituiu: %v", got)
+	}
+	if !(contract.Fields{Placements: []string{"feed"}}).HasData() {
+		t.Error("placements conta como dado informado")
+	}
+	b, err := contract.NewBriefing(1, contract.Fields{Offer: contract.Str("a"), Audience: contract.Str("b"), Location: contract.Str("c"),
+		DailyBudgetBRL: contract.Num(10), Placements: []string{"stories"}}, contract.Constraints{})
+	if err != nil || !slices.Equal(b.Placements, []string{"stories"}) {
+		t.Fatalf("briefing sem placements: %v %v", b.Placements, err)
+	}
+}

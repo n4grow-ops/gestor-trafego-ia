@@ -664,3 +664,29 @@ func TestInterestLimitIgnoresEmptyNames(t *testing.T) {
 		t.Fatalf("buscas = %d avisos = %v", n, res.Warnings)
 	}
 }
+
+// Cliente pediu só feed: o conjunto vai com publisher_platforms e só as posições de feed.
+func TestPublishPlacements(t *testing.T) {
+	cases := []struct {
+		pl     []string
+		fb, ig string
+	}{
+		{[]string{"feed"}, "[feed]", "[stream]"},
+		{[]string{"stories"}, "[story]", "[story]"},
+		{[]string{"feed", "reels"}, "[feed facebook_reels]", "[stream reels]"},
+	}
+	for _, tc := range cases {
+		f, c := newFake(t)
+		f.basics()
+		in := baseInput()
+		in.Placements = tc.pl
+		if _, err := c.Publish(context.Background(), tok, in); err != nil {
+			t.Fatal(err)
+		}
+		tg := decode(t, f.one("POST /act_9/adsets").Form.Get("targeting"))
+		if fmt.Sprint(tg["publisher_platforms"]) != "[facebook instagram]" || fmt.Sprint(tg["facebook_positions"]) != tc.fb ||
+			fmt.Sprint(tg["instagram_positions"]) != tc.ig {
+			t.Errorf("%v: platforms=%v fb=%v ig=%v", tc.pl, tg["publisher_platforms"], tg["facebook_positions"], tg["instagram_positions"])
+		}
+	}
+}
