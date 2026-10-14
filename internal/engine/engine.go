@@ -324,6 +324,10 @@ func (e *Engine) dispatch(ctx context.Context, ident store.Identity, conv store.
 				return e.approve(ctx, ident, conv, code)
 			}
 		}
+		// "ok", "sim" sem código: não aprova; lembra como aprovar sem gastar IA.
+		if len(msgs) > 0 && approvalAck.MatchString(strings.TrimSpace(msgs[len(msgs)-1])) {
+			return e.send(ctx, conv, msgApprovalHowTo)
+		}
 	}
 	return e.converse(ctx, ident, conv, text, batch)
 }
@@ -479,6 +483,11 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 	}
 
 	if conv.State == store.StateAwaitingApproval {
+		// Pedido de ajuste com a proposta na mesa vira proposta nova mesmo que a IA não tenha separado
+		// dados (ex.: idade, que não é campo próprio): o pedido vai inteiro para o especialista.
+		if !campaignTalk && looksLikeAdjustment(text) {
+			campaignTalk = true
+		}
 		if !campaignTalk {
 			return e.speak(ctx, ident, conv, turn.Reply)
 		}
@@ -685,4 +694,18 @@ func scrubReply(reply string, claims bool) string {
 		return "Certo!"
 	}
 	return out
+}
+
+var (
+	// approvalAck: concordância sem o código (não aprova).
+	approvalAck = regexp.MustCompile(`(?i)^(ok(ay|ey)?|okk*|beleza|blz|show|perfeito|fechado|combinado|pode ser|pode|sim|s|isso|top|certo|aprovad[oa]|aprovo|t[aá] bom|ta bom|massa|bora|vamos)[\s!.👍✅]*$`)
+	// adjustTermRe e adjustVerbRe: pedido de mudança na proposta (o quê + verbo de mudança).
+	adjustTermRe = regexp.MustCompile(`(?i)\b(idade|faixa|anos|raio|km|or[cç]amento|reais|r\$|p[uú]blico|homens?|mulheres?|masculino|feminino|feed|stories|reels|cidade|regi[aã]o|bairro|texto|t[ií]tulo|headline|objetivo|dias|dura[cç][aã]o|interesses?|valor|investimento)\b`)
+	adjustVerbRe = regexp.MustCompile(`(?i)\b(alter\w*|mud\w*|troc\w*|ajust\w*|coloc\w*|bot\w*|aument\w*|diminu\w*|reduz\w*|tir\w*|remov\w*|quero|prefiro|deix\w*|fa[cç]a|faz|s[oó]|somente|apenas|sem|em vez|corrig\w*|inclu\w*|adicion\w*)\b`)
+	adjustAgeRe  = regexp.MustCompile(`(?i)\b\d{2}\s*(a|até|ate|-)\s*\d{2}\s*anos\b`)
+)
+
+// looksLikeAdjustment diz se a mensagem pede mudança na proposta ("altere a idade para 40 a 56").
+func looksLikeAdjustment(text string) bool {
+	return adjustAgeRe.MatchString(text) || (adjustTermRe.MatchString(text) && adjustVerbRe.MatchString(text))
 }
