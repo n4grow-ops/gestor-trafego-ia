@@ -118,6 +118,7 @@ type ThreadMessage struct {
 	Kind      string    `json:"kind"`
 	Body      string    `json:"body"`
 	Author    string    `json:"author"`
+	HasMedia  bool      `json:"has_media"` // foto ou vídeo que o painel pode mostrar
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -166,7 +167,7 @@ func (s *Store) Thread(ctx context.Context, convID, after int64) (Thread, error)
 	if err != nil {
 		return Thread{}, notFound(err)
 	}
-	rows, err := s.pool.Query(ctx, `SELECT id, direction, kind, body, coalesce(author, ''), created_at FROM (
+	rows, err := s.pool.Query(ctx, `SELECT id, direction, kind, body, coalesce(author, ''), media_ref IS NOT NULL, created_at FROM (
 			SELECT * FROM messages WHERE conversation_id = $1 AND id > $2 ORDER BY id DESC LIMIT 300
 		) t ORDER BY id`, convID, after)
 	if err != nil {
@@ -174,7 +175,7 @@ func (s *Store) Thread(ctx context.Context, convID, after int64) (Thread, error)
 	}
 	t.Messages, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (ThreadMessage, error) {
 		var m ThreadMessage
-		err := r.Scan(&m.ID, &m.Direction, &m.Kind, &m.Body, &m.Author, &m.CreatedAt)
+		err := r.Scan(&m.ID, &m.Direction, &m.Kind, &m.Body, &m.Author, &m.HasMedia, &m.CreatedAt)
 		return m, err
 	})
 	if err != nil {

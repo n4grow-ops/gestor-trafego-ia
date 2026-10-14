@@ -560,8 +560,24 @@ function bubble(m, isNew) {
   const who = m.direction === 'out' ? `<span class="who-ai">${m.kind === 'staff' ? esc(m.author || 'Equipe') + ' · equipe' : 'Atendente · IA'}</span>` : '';
   const skipped = m.kind === 'skipped' ? ' skipped' : '';
   const kind = m.kind === 'audio' ? '🎤 ' : m.kind === 'image' ? '🖼️ ' : m.kind === 'video' ? '🎬 ' : '';
-  return `<div class="b ${cls}${skipped}${isNew ? ' new' : ''}" data-id="${m.id}">${who}${kind}${esc(m.body)}<span class="t">${hm(m.created_at)}${m.kind === 'skipped' ? ' · sem resposta da IA' : ''}</span></div>`;
+  return `<div class="b ${cls}${skipped}${isNew ? ' new' : ''}" data-id="${m.id}">${who}${mediaHTML(m)}${kind}${esc(m.body)}<span class="t">${hm(m.created_at)}${m.kind === 'skipped' ? ' · sem resposta da IA' : ''}</span></div>`;
 }
+// Foto ou vídeo do cliente: o servidor baixa do WhatsApp na hora (a mídia antiga pode ter expirado).
+function mediaHTML(m) {
+  if (!m.has_media) return '';
+  const src = `${BASE}/api/messages/${m.id}/media`;
+  return m.kind === 'video'
+    ? `<video class="b-media" controls preload="metadata" src="${src}"></video>`
+    : `<a class="b-media-link" href="${src}" target="_blank" rel="noopener" title="Abrir em tamanho real"><img class="b-media" loading="lazy" alt="Foto enviada pelo cliente" src="${src}"></a>`;
+}
+document.addEventListener('error', e => {
+  const el = e.target;
+  if (!el.classList || !el.classList.contains('b-media')) return;
+  const box = document.createElement('span');
+  box.className = 'b-media-off';
+  box.textContent = 'Mídia indisponível (o WhatsApp não guarda por muito tempo)';
+  (el.closest('.b-media-link') || el).replaceWith(box);
+}, true);
 function pendingBubbles(p) {
   return p.map(x => `<div class="b out staff ${x.status === 'failed' ? 'failed' : 'pending'}"><span class="who-ai">${esc(x.author)} · equipe</span>${esc(x.text)}<span class="t">${x.status === 'failed' ? 'não entregue' : 'enviando…'}</span>${x.error ? `<span class="err-txt">${esc(x.error)}</span>` : ''}</div>`).join('');
 }

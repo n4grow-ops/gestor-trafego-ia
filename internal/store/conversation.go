@@ -117,6 +117,21 @@ func (s *Store) AddInbound(ctx context.Context, convID int64, kind, body string)
 	return id, err
 }
 
+// AddInboundMedia grava a foto ou o vídeo do cliente com a referência da mídia no provedor (o painel
+// baixa por ela). Devolve o id, como AddInbound.
+func (s *Store) AddInboundMedia(ctx context.Context, convID int64, kind, body, ref string) (int64, error) {
+	var id int64
+	err := s.pool.QueryRow(ctx, `INSERT INTO messages (conversation_id, direction, kind, body, media_ref)
+		VALUES ($1, 'in', $2, $3, nullif($4, '')) RETURNING id`, convID, kind, body, ref).Scan(&id)
+	return id, err
+}
+
+// MessageMedia devolve o tipo e a referência da mídia da mensagem; ErrNotFound se ela não tem mídia.
+func (s *Store) MessageMedia(ctx context.Context, msgID int64) (kind, ref string, err error) {
+	err = s.pool.QueryRow(ctx, `SELECT kind, media_ref FROM messages WHERE id = $1 AND media_ref IS NOT NULL`, msgID).Scan(&kind, &ref)
+	return kind, ref, notFound(err)
+}
+
 // KindSkipped marca entradas gravadas sem resposta da IA (acima do limite diário, mídia que falhou):
 // contam no limite, mas não entram no lote nem mudam qual mensagem é a mais nova.
 const KindSkipped = "skipped"

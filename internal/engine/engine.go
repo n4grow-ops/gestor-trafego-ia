@@ -256,7 +256,7 @@ func (e *Engine) HandleInbound(ctx context.Context, in whatsapp.Inbound) error {
 		return err
 	}
 	if e.Humanize {
-		id, err := e.Store.AddInbound(ctx, conv.ID, string(in.Kind), text)
+		id, err := e.addInbound(ctx, conv.ID, in, text)
 		if err != nil {
 			return err
 		}
@@ -267,7 +267,7 @@ func (e *Engine) HandleInbound(ctx context.Context, in whatsapp.Inbound) error {
 		return e.Store.Enqueue(ctx, store.JobSpec{Kind: JobReply, Payload: ReplyJob{ConversationID: conv.ID, MessageID: id}, Delay: e.debounce()})
 	}
 	// Sem modo humano responde na hora; a marca de respondido acompanha para o modo poder ser ligado depois.
-	id, err := e.Store.AddInbound(ctx, conv.ID, string(in.Kind), text)
+	id, err := e.addInbound(ctx, conv.ID, in, text)
 	if err != nil {
 		return err
 	}
@@ -275,6 +275,14 @@ func (e *Engine) HandleInbound(ctx context.Context, in whatsapp.Inbound) error {
 		return err
 	}
 	return e.dispatch(ctx, ident, conv, text, []string{text}, nil)
+}
+
+// addInbound grava a mensagem do cliente; foto e vídeo levam a referência da mídia para o painel mostrar.
+func (e *Engine) addInbound(ctx context.Context, convID int64, in whatsapp.Inbound, text string) (int64, error) {
+	if in.Kind == whatsapp.KindImage || in.Kind == whatsapp.KindVideo {
+		return e.Store.AddInboundMedia(ctx, convID, string(in.Kind), text, in.ExternalID)
+	}
+	return e.Store.AddInbound(ctx, convID, string(in.Kind), text)
 }
 
 // dispatch decide a resposta pelo estado da conversa. msgs são as mensagens do lote, em ordem

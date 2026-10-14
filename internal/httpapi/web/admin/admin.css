@@ -414,6 +414,10 @@ textarea.field { resize: vertical; min-height: 5rem; line-height: 1.45; }
 .b.failed { background: var(--err-soft); border: 1px solid oklch(0.7 0.19 22 / 0.4); }
 .b .who-ai { display: block; font-size: 0.6875rem; font-weight: 700; color: oklch(0.86 0.09 260); margin-bottom: 0.1rem; white-space: normal; }
 .b.staff .who-ai { color: oklch(0.9 0.08 230); }
+.b-media-link { display: block; }
+.b-media { display: block; width: 100%; max-width: 18rem; max-height: 22rem; object-fit: cover; border-radius: 10px; margin-bottom: 0.35rem; background: oklch(0 0 0 / 0.2); }
+video.b-media { object-fit: contain; }
+.b-media-off { display: block; font-size: 0.75rem; opacity: .7; margin-bottom: 0.25rem; }
 .b .t { display: block; text-align: right; font-size: 0.6875rem; color: oklch(0.88 0.02 255 / 0.75); margin-top: 0.15rem; white-space: normal; }
 .b .err-txt { display: block; font-size: 0.75rem; color: var(--err); white-space: normal; margin-top: 0.2rem; }
 @keyframes pop { from { opacity: 0; transform: translateY(6px) scale(0.98); } to { opacity: 1; transform: none; } }

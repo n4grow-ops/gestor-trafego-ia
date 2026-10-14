@@ -264,3 +264,20 @@ func TestCreativesDeleteReplaceAndList(t *testing.T) {
 		t.Fatalf("estado = %s", h.conv().State)
 	}
 }
+
+// O painel mostra a foto do cliente: a mensagem guarda a referência da mídia no provedor.
+func TestInboundImageKeepsMediaRef(t *testing.T) {
+	h := newHarness(t, "owner")
+	h.att.Responses = []string{`{"intent":"other","reply":"Que foto bonita!"}`}
+	h.sendFile(func() ([]byte, string) { return []byte("IMG"), "image/jpeg" })
+	var kind, ref string
+	h.must(h.pool.QueryRow(ctx, `SELECT kind, coalesce(media_ref, '') FROM messages WHERE direction = 'in' ORDER BY id DESC LIMIT 1`).Scan(&kind, &ref))
+	if kind != "image" || ref != fmt.Sprintf("m%d", h.seq) {
+		t.Fatalf("kind=%q ref=%q", kind, ref)
+	}
+	h.say("oi")
+	h.must(h.pool.QueryRow(ctx, `SELECT coalesce(media_ref, '') FROM messages WHERE direction = 'in' ORDER BY id DESC LIMIT 1`).Scan(&ref))
+	if ref != "" {
+		t.Fatalf("texto ganhou referência de mídia: %q", ref)
+	}
+}

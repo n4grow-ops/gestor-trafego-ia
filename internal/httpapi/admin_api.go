@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 	"strconv"
@@ -215,6 +216,42 @@ func (a *Admin) thread(w http.ResponseWriter, r *http.Request, m store.TeamMembe
 	// Cloud API: passada a janela de 24 h, texto livre é recusado pelo WhatsApp.
 	windowOpen := !a.WindowLimited || (t.LastInboundAt != nil && a.now().Sub(*t.LastInboundAt) < 23*time.Hour)
 	writeJSON(w, http.StatusOK, map[string]any{"thread": t, "window_open": windowOpen, "me": displayName(m)})
+}
+
+// messageMedia mostra a foto ou o vídeo que o cliente mandou, baixado do provedor do WhatsApp na hora.
+func (a *Admin) messageMedia(w http.ResponseWriter, r *http.Request, _ store.TeamMember, _ adminSession) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	if a.Media == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "midia_desligada"})
+		return
+	}
+	kind, ref, err := a.Store.MessageMedia(r.Context(), id)
+	if a.storeError(w, err) {
+		return
+	}
+	data, mime, err := a.Media(r.Context(), ref)
+	if err != nil {
+		a.Log.Warn("mídia da conversa indisponível", "message_id", id, "erro", err)
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "midia_indisponivel"})
+		return
+	}
+	// Só imagem ou vídeo vai como tal; qualquer outra coisa desce como arquivo, sem o navegador interpretar.
+	mime = strings.TrimSpace(strings.Split(mime, ";")[0])
+	if !strings.HasPrefix(mime, kind+"/") {
+		mime = http.DetectContentType(data)
+		if !strings.HasPrefix(mime, kind+"/") {
+			mime = "application/octet-stream"
+			w.Header().Set("Content-Disposition", "attachment")
+		}
+	}
+	w.Header().Set("Content-Type", mime)
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(data)) // Range: o vídeo avança no player
 }
 
 func (a *Admin) convLabel(ctx context.Context, id int64) string {

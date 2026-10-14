@@ -39,6 +39,8 @@ type Admin struct {
 	Provider       string // provedor do WhatsApp (estado da conexão)
 	WindowLimited  bool   // Cloud API: texto livre só até 24 h depois da última mensagem do cliente
 	USDBRL         float64
+	// Media baixa a foto ou o vídeo do cliente pela referência no provedor; nil = o painel não mostra mídia.
+	Media func(ctx context.Context, ref string) ([]byte, string, error)
 
 	// Mia: configuração em vigor (cache) e o que a aba Mia usa para testar e ouvir amostra.
 	Mia      *mia.Cache
@@ -95,6 +97,7 @@ func (a *Admin) Register(mux *http.ServeMux) {
 
 	mux.HandleFunc("GET /admin/api/conversations", a.only(false, a.inbox))
 	mux.HandleFunc("GET /admin/api/conversations/{id}", a.only(false, a.thread))
+	mux.HandleFunc("GET /admin/api/messages/{id}/media", a.only(false, a.messageMedia))
 	mux.HandleFunc("POST /admin/api/conversations/{id}/takeover", a.only(false, a.takeover))
 	mux.HandleFunc("POST /admin/api/conversations/{id}/send", a.only(false, a.send))
 	mux.HandleFunc("POST /admin/api/conversations/{id}/release", a.only(false, a.release))

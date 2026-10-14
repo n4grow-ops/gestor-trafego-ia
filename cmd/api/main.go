@@ -152,6 +152,12 @@ func newAdmin(ctx context.Context, cfg config.Config, st *store.Store, pool http
 		WindowLimited: cfg.WhatsAppProvider == "wame" && cfg.WameOfficial, USDBRL: cfg.USDBRL,
 		Limiter: httpapi.NewLimiter(), Log: log, Mia: miaCache, MetaAppID: cfg.MetaAppID,
 	}
+	// Fotos e vídeos dos clientes no painel: a Wame baixa pelo id da mensagem (o WAHA precisaria do payload).
+	if wa.Name() == "wame" {
+		a.Media = func(ctx context.Context, ref string) ([]byte, string, error) {
+			return wa.DownloadMedia(ctx, whatsapp.Inbound{ExternalID: ref})
+		}
+	}
 	// "Testar a Mia" e "ouvir amostra" usam a mesma IA e o mesmo TTS do worker, se a api tiver as chaves.
 	if cfg.OpenRouterAPIKey != "" {
 		router := llm.NewOpenRouter(cfg.OpenRouterBaseURL, cfg.OpenRouterAPIKey)
