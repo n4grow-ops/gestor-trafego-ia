@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -248,6 +249,12 @@ func (e *Engine) propose(ctx context.Context, p ProposeJob) error {
 	if err != nil {
 		return e.escalate(ctx, ident, conv, err.Error(), msgProposalFailed)
 	}
+	// Campanha de formulário é pedido do cliente: o objetivo de leads vale mesmo que a organização
+	// tenha só mensagens na lista.
+	leadForm := contract.WantsLeadForm(b.ObjectiveHint)
+	if leadForm && !slices.Contains(b.Constraints.AllowedObjectives, "OUTCOME_LEADS") {
+		b.Constraints.AllowedObjectives = append(slices.Clone(b.Constraints.AllowedObjectives), "OUTCOME_LEADS")
+	}
 	b.Adjustment = p.Adjustment
 	b.CopyVariations = e.copyVariations(ctx, conv.ID, p.Adjustment)
 	b.Business = campaignBusiness(ident.Profile, b.Offer)
@@ -278,6 +285,9 @@ func (e *Engine) propose(ctx context.Context, p ProposeJob) error {
 
 	// Onde o anúncio aparece é escolha do cliente, não do Gestor.
 	prop.Placements = b.Placements
+	if leadForm {
+		prop.Objective, prop.LeadForm = "OUTCOME_LEADS", true
+	}
 	hash, err := campaign.ProposalHash(prop)
 	if err != nil {
 		return err

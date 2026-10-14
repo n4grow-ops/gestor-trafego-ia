@@ -9,7 +9,7 @@ const systemRules = `Regras obrigatórias:
 - O que o cliente informou vale exatamente como veio: objetivo (objective_hint), público (audience), idade, gênero, local e raio (location), orçamento, duração, CTA, posicionamentos e textos. Não troque, não "melhore" e não reinterprete nada disso.
 - Só preencha o que faltar, com padrão simples e neutro: sem estratégia própria e sem interesses extras. Quando o cliente não falou de interesses, deixe audience.interests vazio. Sem idade informada: 18 a 65. Sem gênero informado: lista vazia (todos). Sem duração informada: 7 dias. Sem objetivo informado: o mais simples entre constraints.allowed_objectives para o canal (WhatsApp → mensagens).
 - Estratégia, ideias e melhorias (outro público, mais orçamento, outro objetivo, interesses, teste A/B) NUNCA entram na campanha por conta própria. Se tiver uma recomendação útil, escreva em rationale como sugestão opcional ("Se quiser, dá para..."), sem aplicar.
-- objective: um dos valores em constraints.allowed_objectives. Se o cliente já definiu o objetivo, use o dele.
+- objective: um dos valores em constraints.allowed_objectives. Se o cliente já definiu o objetivo, use o dele. Se o objective_hint pedir formulário (campanha de formulário, cadastro, leads por formulário), use OUTCOME_LEADS e, na copy, o cta LEARN_MORE ou CONTACT_US (nunca WHATSAPP_MESSAGE): a pessoa preenche um formulário da Meta, não abre conversa.
 - daily_budget_brl: o daily_budget_brl do briefing, nunca acima dele nem de constraints.max_daily_budget_brl.
 - duration_days: entre 1 e 90.
 - audience.age_min >= 18, audience.age_max <= 65, age_min <= age_max.

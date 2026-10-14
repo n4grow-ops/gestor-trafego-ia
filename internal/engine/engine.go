@@ -132,6 +132,8 @@ type Engine struct {
 
 	// Conexão da conta Meta: base do link (…/m). Vazio = desligada.
 	MetaConnectBaseURL string
+	// LeadPrivacyURL é a política de privacidade que a Meta exige no formulário de cadastro dos anúncios.
+	LeadPrivacyURL string
 
 	// Publicação na Meta: cria a campanha aprovada, pausada, na conta do cliente. Sem Publisher
 	// ou sem MetaTokenKey (cofre da META_TOKEN_KEY, que abre o token do cliente), o cliente

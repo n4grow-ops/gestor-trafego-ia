@@ -18,7 +18,7 @@ func Defaults() Config {
 			{Key: "audience", Group: GroupCampaign, Label: "para quem (perfil do cliente ideal)", Active: true, Required: true, Order: 2, Core: true},
 			{Key: "location", Group: GroupCampaign, Label: "cidade ou região onde anunciar", Active: true, Required: true, Order: 3, Core: true},
 			{Key: "daily_budget_brl", Group: GroupCampaign, Label: "quanto o cliente quer investir por dia, em reais (número)", Active: true, Required: true, Order: 4, Core: true},
-			{Key: "objective_hint", Group: GroupCampaign, Label: "o que o cliente espera (mensagens no WhatsApp, visitas etc.)", Active: true, Required: false, Order: 5},
+			{Key: "objective_hint", Group: GroupCampaign, Label: "o que o cliente espera (mensagens no WhatsApp, formulário de cadastro, visitas etc.)", Active: true, Required: false, Order: 5},
 
 			{Key: "business_name", Group: GroupProfile, Label: "nome da empresa", Active: true, Required: false, Order: 1},
 			{Key: "city", Group: GroupProfile, Label: "cidade", Active: true, Required: false, Order: 2},

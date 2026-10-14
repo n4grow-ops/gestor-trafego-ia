@@ -114,6 +114,9 @@ func SummaryWith(p contract.CampaignProposal, code string, o SummaryOptions) str
 	if label == "" {
 		label = p.Objective
 	}
+	if p.LeadForm {
+		label = "contatos por formulário (a pessoa preenche nome, telefone e e-mail na própria Meta)"
+	}
 	fmt.Fprintf(&b, "Objetivo: %s\n", label)
 	area := fmt.Sprintf("raio de %d km", p.Audience.RadiusKM)
 	if p.Audience.RadiusKM == 0 {

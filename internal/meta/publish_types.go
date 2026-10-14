@@ -34,6 +34,8 @@ type PublishInput struct {
 	LinkURL          string // opcional; vazio = página do Facebook
 	Name             string // terminando em "#p<id>", a campanha de tentativa anterior é procurada e apagada antes
 	Objective        string // OUTCOME_ENGAGEMENT | OUTCOME_LEADS | OUTCOME_TRAFFIC
+	LeadForm         bool   // com OUTCOME_LEADS: formulário instantâneo em vez de WhatsApp
+	FormPrivacyURL   string // política de privacidade do formulário (a Meta exige)
 	DailyBudgetCents int64  // na moeda da conta
 	StartTime        time.Time
 	EndTime          time.Time // zero = sem fim

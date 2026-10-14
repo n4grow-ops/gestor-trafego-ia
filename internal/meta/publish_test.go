@@ -16,7 +16,10 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/meta"
 )
 
-const tok = "TOKEN1"
+const (
+	tok     = "TOKEN1"
+	pageTok = "PAGETOKEN"
+)
 
 type rec struct {
 	Method, Path string
@@ -54,7 +57,12 @@ func (f *fakeGraph) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r.ParseForm()
 		x.Form = r.Form
 	}
-	if x.Form.Get("access_token") != tok || x.Form.Get("appsecret_proof") != proof(tok) {
+	// as chamadas de formulário usam o token da Página, trocado pelo do usuário em GET /P1
+	use := tok
+	if strings.HasPrefix(x.Path, "/P1/leadgen_forms") {
+		use = pageTok
+	}
+	if x.Form.Get("access_token") != use || x.Form.Get("appsecret_proof") != proof(use) {
 		f.t.Errorf("%s %s sem token/proof", x.Method, x.Path)
 	}
 	f.mu.Lock()

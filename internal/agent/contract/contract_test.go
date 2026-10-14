@@ -254,3 +254,14 @@ func TestCopyAngleIsOptionalInJSON(t *testing.T) {
 		t.Errorf("JSON sem angle deve valer: %v", err)
 	}
 }
+
+func TestWantsLeadForm(t *testing.T) {
+	for hint, want := range map[string]bool{
+		"formulário": true, "campanha de formulario": true, "leads por Formulário da Meta": true, "cadastro": true,
+		"mensagens": false, "visitas": false, "": false,
+	} {
+		if got := contract.WantsLeadForm(hint); got != want {
+			t.Errorf("WantsLeadForm(%q) = %v", hint, got)
+		}
+	}
+}

@@ -59,6 +59,17 @@ const (
 
 var placementOrder = []string{PlacementFeed, PlacementStories, PlacementReels}
 
+// WantsLeadForm diz se o cliente pediu campanha de formulário (formulário instantâneo da Meta).
+func WantsLeadForm(hint string) bool {
+	h := strings.ToLower(hint)
+	for _, w := range []string{"formul", "lead form", "leadform", "cadastro"} {
+		if strings.Contains(h, w) {
+			return true
+		}
+	}
+	return false
+}
+
 // NormalizePlacements deixa só os posicionamentos conhecidos, sem repetição e em ordem fixa.
 // Aceita singular e caixa diferente ("Story", "reel"). Nenhum conhecido = nil (automático).
 func NormalizePlacements(in []string) []string {
@@ -236,6 +247,8 @@ type CampaignProposal struct {
 	Risks          []string `json:"risks"`
 	// Placements vem do pedido do cliente (o sistema copia do briefing; o Gestor não escolhe). Vazio = automático.
 	Placements []string `json:"placements,omitempty"`
+	// LeadForm: o cliente pediu formulário (o sistema copia do briefing; objetivo vira OUTCOME_LEADS).
+	LeadForm bool `json:"lead_form,omitempty"`
 }
 
 // MinRadiusKM é o menor raio que a Meta aceita em volta de cidade. Raio 0 = só a cidade.

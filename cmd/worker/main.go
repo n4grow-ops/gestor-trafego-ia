@@ -96,6 +96,9 @@ func run(log *slog.Logger) error {
 		eng.SignupFlowDraft = cfg.SignupFlowDraft
 		eng.TermsVersion = signup.TermsVersion
 	}
+	if cfg.PublicBaseURL != "" {
+		eng.LeadPrivacyURL = cfg.PublicBaseURL + "/privacidade"
+	}
 	if cfg.MetaConnectEnabled() {
 		eng.MetaConnectBaseURL = cfg.PublicBaseURL + "/m"
 		// Testador automático: lê os testadores do app (token APP_ID|SECRET) a cada 5 min.

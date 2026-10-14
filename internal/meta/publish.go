@@ -141,6 +141,8 @@ type plan struct {
 	destination  string
 	whatsapp     bool
 	link         string // destino do clique (site ou página) quando não é WhatsApp
+	leadForm     bool   // formulário instantâneo da Meta (o anúncio leva o lead_gen_form_id)
+	formID       string // preenchido na publicação, depois de criar o formulário
 }
 
 func planFor(in PublishInput) (plan, []string, error) {
@@ -163,7 +165,11 @@ func planFor(in PublishInput) (plan, []string, error) {
 		wa.objective = in.Objective
 		return wa, nil, nil
 	case "OUTCOME_LEADS":
-		// Leads por conversa no WhatsApp. Formulário de cadastro (LEAD_GENERATION) fica fora: sem WhatsApp vira tráfego.
+		// O cliente pediu formulário: formulário instantâneo da Meta (leads sem sair do Facebook/Instagram).
+		if in.LeadForm {
+			return plan{objective: in.Objective, optimization: "LEAD_GENERATION", destination: "ON_AD", leadForm: true, link: link}, nil, nil
+		}
+		// Sem pedido de formulário: leads por conversa no WhatsApp; sem WhatsApp vira tráfego.
 		if wantsWhatsApp {
 			wa.objective = in.Objective
 			return wa, nil, nil
@@ -204,6 +210,13 @@ func (c *Client) Publish(ctx context.Context, token string, in PublishInput) (Pu
 	// Tentativa anterior desta publicação que deixou campanha na conta: apaga antes de criar outra.
 	if err := c.removeLeftover(ctx, token, act, in.Name); err != nil {
 		return res, err
+	}
+
+	// Formulário instantâneo: criado na Página antes da campanha (se falhar, nada fica na conta de anúncios).
+	if p.leadForm {
+		if p.formID, err = c.ensureLeadForm(ctx, token, in); err != nil {
+			return res, publishError("leadform", err)
+		}
 	}
 
 	// Daqui em diante, falha apaga a campanha.
@@ -550,6 +563,13 @@ func callToAction(p plan, cp PublishCopy, video bool) map[string]any {
 		}
 		return map[string]any{"type": "WHATSAPP_MESSAGE", "value": value}
 	}
+	if p.leadForm {
+		t := cp.CTA
+		if t != "LEARN_MORE" && t != "CONTACT_US" {
+			t = "SIGN_UP" // WHATSAPP_MESSAGE não vale para formulário
+		}
+		return map[string]any{"type": t, "value": map[string]any{"lead_gen_form_id": p.formID, "link": p.link}}
+	}
 	t := cp.CTA
 	if t != "LEARN_MORE" && t != "CONTACT_US" {
 		t = "LEARN_MORE" // WHATSAPP_MESSAGE não vale para clique no site
@@ -697,6 +717,8 @@ func userMessage(step string, err error, ae *apiError) string {
 		return false
 	}
 	switch {
+	case step == "leadform" && has("terms", "termos", "tos", "lead ads"):
+		return "Sua Página ainda não aceitou os Termos de Anúncios de Cadastro da Meta. Abre facebook.com/ads/leadgen/tos com a conta administradora da Página, aceita os termos e me avisa aqui que eu publico."
 	case ae.Code == 190 || ae.Code == 102:
 		return "A conexão com a sua conta da Meta expirou. Conecta de novo pelo link que eu te mandar e eu publico na sequência."
 	case ae.Code == 10 || ae.Code == 3 || (ae.Code >= 200 && ae.Code <= 299) || has("ads_management", "permission"):

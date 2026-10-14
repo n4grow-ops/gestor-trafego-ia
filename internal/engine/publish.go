@@ -271,6 +271,8 @@ func (e *Engine) publishInput(ctx context.Context, ident store.Identity, conn st
 		InstagramActorID: conn.InstagramID,
 		Name:             campaignName(data, e.now(), pubID),
 		Objective:        prop.Objective,
+		LeadForm:         prop.LeadForm,
+		FormPrivacyURL:   e.LeadPrivacyURL,
 		DailyBudgetCents: int64(math.Round(prop.DailyBudgetBRL * 100)),
 		LocationQuery:    strings.TrimSpace(fields.Location),
 		RadiusKM:         prop.Audience.RadiusKM,
