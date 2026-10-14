@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/engine"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/media"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/media/mediatest"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp"
@@ -301,5 +302,23 @@ func TestDocumentPhotoKeepsOriginal(t *testing.T) {
 	}
 	if got := fs.data["creatives/"+path]; !bytes.Equal(got, orig) || fs.files["creatives/"+path] != "image/jpeg" {
 		t.Fatal("arquivo guardado não é o original")
+	}
+}
+
+// Caso real (conversa 51): foto do celular 4608x3456 com tag de giro (Orientation 6) virou anúncio deitado.
+// O anúncio guardado já sai de pé, com o formato certo.
+func TestRotatedPhotoIsStraightened(t *testing.T) {
+	h, fs := newCreativeHarness(t)
+	code := h.reachApproval()
+	h.say("SIM " + code)
+	h.sendFile(func() ([]byte, string) { return mediatest.WithOrientation(mediatest.JPEG(1350, 1080), 6), "image/jpeg" })
+	var path, format string
+	var w, hgt int
+	h.must(h.pool.QueryRow(ctx, `SELECT storage_path, width, height, format FROM creatives`).Scan(&path, &w, &hgt, &format))
+	if w != 1080 || hgt != 1350 || format != "portrait" {
+		t.Fatalf("anúncio gravado %dx%d %s; devia ficar em pé 1080x1350 portrait", w, hgt, format)
+	}
+	if media.Orientation(fs.data["creatives/"+path]) != 1 {
+		t.Fatal("arquivo guardado ainda manda girar")
 	}
 }

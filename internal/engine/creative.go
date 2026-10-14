@@ -91,6 +91,14 @@ type creativeFile struct {
 // (creativeSaved, creativeWarned..., creativeRejected... ou creativeFailed).
 func (e *Engine) keepCreative(ctx context.Context, ident store.Identity, convID int64, d store.ApprovedDraft, f creativeFile) string {
 	mime, kind, data := f.mime, f.kind, f.data
+	if kind == "image" {
+		// Foto do celular gravada deitada com a tag de giro: endireita antes de medir, guardar e publicar.
+		if up, changed, err := media.Upright(data); err != nil {
+			e.Log.Warn("foto sem endireitar", "conversation_id", convID, "erro", err)
+		} else if changed {
+			data, mime = up, "image/jpeg"
+		}
+	}
 	c := store.Creative{OrgID: ident.OrgID, DraftID: d.ID, ProjectID: d.ProjectID, Kind: kind, Mime: mime,
 		Size: int64(len(data)), Format: string(media.Other), Placement: string(media.Feed),
 		Origin: f.origin, IGMediaID: f.igMediaID, RightsPending: f.rightsPending, SourceURL: f.sourceURL, SourceCaption: f.caption,

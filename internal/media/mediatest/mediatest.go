@@ -61,3 +61,14 @@ func box(kind string, payload ...[]byte) []byte {
 }
 
 func u32(v uint32) []byte { b := make([]byte, 4); binary.BigEndian.PutUint32(b, v); return b }
+
+// WithOrientation põe no JPEG o bloco EXIF com a tag Orientation (1 a 8), como a câmera do celular grava
+// a foto "deitada" e manda girar na exibição.
+func WithOrientation(jpg []byte, o uint16) []byte {
+	tiff := []byte{'M', 'M', 0, 42, 0, 0, 0, 8, 0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1, byte(o >> 8), byte(o), 0, 0, 0, 0, 0, 0}
+	app1 := append([]byte("Exif\x00\x00"), tiff...)
+	seg := append([]byte{0xFF, 0xE1, byte((len(app1) + 2) >> 8), byte(len(app1) + 2)}, app1...)
+	out := append([]byte{}, jpg[:2]...) // SOI
+	out = append(out, seg...)
+	return append(out, jpg[2:]...)
+}
