@@ -55,6 +55,12 @@ func (e *Engine) HandleJob(ctx context.Context, job store.Job) error {
 		return e.dailyReport(ctx)
 	case JobCleanup:
 		return e.cleanup(ctx)
+	case JobTeamPause:
+		return e.teamPause(ctx, job.Payload)
+	case JobDailyResults:
+		return e.dailyResults(ctx)
+	case JobFundingUpdate:
+		return e.fundingUpdate(ctx, job.Payload)
 	case JobAdsReview:
 		return e.adsReview(ctx, job.Payload)
 	case JobTokenCheck:

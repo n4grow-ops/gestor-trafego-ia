@@ -16,7 +16,7 @@ import (
 
 // fundingText lê na Meta como a conta paga e diz ao cliente se o anúncio tem saldo para rodar.
 // Vazio quando a Meta não responde (sem permissão de pagamento, fora do ar): a mensagem não inventa saldo.
-func (e *Engine) fundingText(ctx context.Context, token, adAccountID string, dailyBRL float64) string {
+func (e *Engine) fundingText(ctx context.Context, orgID int64, token, adAccountID string, dailyBRL float64) string {
 	fr, ok := e.Publisher.(meta.FundingReader)
 	if !ok || adAccountID == "" {
 		return ""
@@ -26,6 +26,7 @@ func (e *Engine) fundingText(ctx context.Context, token, adAccountID string, dai
 		e.Log.Warn("pagamento da conta de anúncios não lido", "ad_account", adAccountID, "erro", err)
 		return ""
 	}
+	e.cacheFunding(ctx, orgID, f)
 	text, _ := describeFunding(f, dailyBRL, adAccountID)
 	return text
 }
@@ -97,7 +98,7 @@ func (e *Engine) activationFunding(ctx context.Context, orgID int64, token strin
 	for _, p := range targets {
 		daily += e.dailyBudget(ctx, p.DraftID)
 	}
-	return e.fundingText(ctx, token, conn.AdAccountID, daily)
+	return e.fundingText(ctx, orgID, token, conn.AdAccountID, daily)
 }
 
 // paidAsk: o cliente avisa que pagou ou colocou saldo.
@@ -131,6 +132,7 @@ func (e *Engine) paidCheck(ctx context.Context, ident store.Identity, conv store
 		e.Log.Warn("pagamento não conferido", "org_id", ident.OrgID, "erro", err)
 		return e.send(ctx, conv, msgPaidUnknown)
 	}
+	e.cacheFunding(ctx, ident.OrgID, f)
 	paused, _ := e.pubs().ListPublications(ctx, ident.OrgID, "paused")
 	var daily float64
 	for _, p := range paused {
@@ -146,4 +148,32 @@ func (e *Engine) paidCheck(ctx context.Context, ident store.Identity, conv store
 		reply = append(reply, msgPaidActivate)
 	}
 	return e.send(ctx, conv, join(reply...))
+}
+
+// FundingView é a leitura do pagamento guardada para o painel, com o resumo pronto.
+type FundingView struct {
+	meta.Funding
+	Flag string `json:"flag"` // ok, sem_pagamento, pendente, saldo_baixo, limite_baixo
+}
+
+// FundingFlag resume o pagamento contra o orçamento por dia das campanhas.
+func FundingFlag(f meta.Funding, dailyCents int64) string {
+	switch {
+	case paymentPending(f.Status):
+		return "pendente"
+	case !f.HasSource:
+		return "sem_pagamento"
+	case f.Prepaid && f.AvailableCents >= 0 && dailyCents > 0 && f.AvailableCents < dailyCents:
+		return "saldo_baixo"
+	case f.SpendCapCents > 0 && dailyCents > 0 && f.SpendCapCents-f.SpentCents < dailyCents:
+		return "limite_baixo"
+	}
+	return "ok"
+}
+
+// cacheFunding guarda a leitura para o painel (falha só vai pro log).
+func (e *Engine) cacheFunding(ctx context.Context, orgID int64, f meta.Funding) {
+	if err := e.Store.SaveFunding(ctx, orgID, f, e.now()); err != nil {
+		e.Log.Warn("pagamento não guardado para o painel", "org_id", orgID, "erro", err)
+	}
 }

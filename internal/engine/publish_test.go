@@ -90,6 +90,18 @@ func (f *fakePubs) FailPublication(_ context.Context, id int64, msg string) erro
 	return nil
 }
 
+func (f *fakePubs) ActivePublications(context.Context) ([]store.Publication, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []store.Publication
+	for _, p := range f.pubs {
+		if p.Status == "active" {
+			out = append(out, p)
+		}
+	}
+	return out, nil
+}
+
 func (f *fakePubs) GetPublication(_ context.Context, id int64) (store.Publication, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -192,6 +204,13 @@ type fakePublisher struct {
 	funding  *meta.Funding // nil = a Meta não respondeu (sem permissão, fora do ar)
 	expiry   time.Time     // validade do token (debug_token)
 	reviews  []meta.AdReview
+	insights meta.Insights
+}
+
+func (p *fakePublisher) CampaignInsights(context.Context, string, string, time.Time) (meta.Insights, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.insights, nil
 }
 
 func (p *fakePublisher) AdsReview(context.Context, string, []string) ([]meta.AdReview, error) {

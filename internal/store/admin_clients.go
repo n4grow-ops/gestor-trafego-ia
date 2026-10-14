@@ -202,6 +202,11 @@ type ClientMeta struct {
 	InstagramUsername string     `json:"instagram_username"`
 	PageWhatsApp      bool       `json:"page_whatsapp"`
 	ConnectedAt       *time.Time `json:"connected_at"`
+	// Pagamento da conta (última leitura do worker) e validade do acesso.
+	Funding          json.RawMessage `json:"funding"`
+	FundingCheckedAt *time.Time      `json:"funding_checked_at"`
+	FundingFlag      string          `json:"funding_flag"` // preenchido pela api
+	TokenExpiresAt   *time.Time      `json:"token_expires_at"`
 }
 
 type ClientDraft struct {
@@ -327,9 +332,11 @@ func (s *Store) ClientDetail(ctx context.Context, orgID int64) (ClientDetail, er
 	var mc ClientMeta
 	var accStatus *int
 	err = s.pool.QueryRow(ctx, `SELECT coalesce(ad_account_id, ''), coalesce(ad_account_name, ''), coalesce(currency, ''),
-			coalesce(timezone_name, ''), account_status, coalesce(page_name, ''), coalesce(instagram_username, ''), page_whatsapp, connected_at
+			coalesce(timezone_name, ''), account_status, coalesce(page_name, ''), coalesce(instagram_username, ''), page_whatsapp, connected_at,
+			funding, funding_checked_at, token_expires_at
 		FROM meta_connections WHERE organization_id = $1 AND status = 'active'`, orgID).
-		Scan(&mc.AdAccountID, &mc.AdAccountName, &mc.Currency, &mc.Timezone, &accStatus, &mc.PageName, &mc.InstagramUsername, &mc.PageWhatsApp, &mc.ConnectedAt)
+		Scan(&mc.AdAccountID, &mc.AdAccountName, &mc.Currency, &mc.Timezone, &accStatus, &mc.PageName, &mc.InstagramUsername, &mc.PageWhatsApp, &mc.ConnectedAt,
+			&mc.Funding, &mc.FundingCheckedAt, &mc.TokenExpiresAt)
 	if err == nil {
 		if accStatus != nil {
 			mc.AccountStatus = *accStatus

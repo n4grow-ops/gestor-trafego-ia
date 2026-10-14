@@ -43,6 +43,8 @@ const (
 	msgAdRejectedRedo       = "Pra refazer, me manda outra imagem ou vídeo (e, se quiser, o que mudar no texto). Quando terminar, escreve PRONTO que eu subo de novo."
 	msgAdRejectedLater      = "Quando terminarmos o que estamos vendo agora, me manda outra imagem ou vídeo que eu refaço o anúncio."
 	msgAdPartlyRejected     = "⚠️ A Meta reprovou %d dos seus anúncios (motivo: %s). Os outros seguem normalmente. Se quiser trocar o reprovado, é só me mandar outra imagem."
+	msgTeamPaused           = "⏸️ A equipe do meu anúncio pausou %s. Se quiser colocar no ar de novo, é só me responder *ATIVAR*."
+	msgResultsHead          = "📊 Resultado de ontem (%s):"
 	msgPaidOK               = "Confirmado ✅ A Meta já mostra a conta com pagamento em dia."
 	msgPaidPending          = "Conferi aqui e ainda aparece pendente na Meta. Às vezes leva alguns minutos pra atualizar; se já faz tempo, confere o pagamento no link."
 	msgPaidActivate         = "Sua campanha está pausada esperando: responde *ATIVAR* pra colocar no ar."

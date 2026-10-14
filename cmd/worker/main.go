@@ -168,6 +168,9 @@ func run(log *slog.Logger) error {
 	if err := eng.EnsureTokenCheck(ctx); err != nil {
 		return err
 	}
+	if err := eng.EnsureDailyResults(ctx); err != nil {
+		return err
+	}
 	if err := eng.EnsureDailyReport(ctx); err != nil {
 		log.Error("falha ao agendar relatório diário", "erro", err)
 	}

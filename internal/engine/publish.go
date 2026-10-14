@@ -55,6 +55,7 @@ type PublicationStore interface {
 	PublishData(ctx context.Context, draftID int64) (store.PublishData, error)
 	GetPublication(ctx context.Context, id int64) (store.Publication, error)
 	RejectPublication(ctx context.Context, id int64, reason string) error
+	ActivePublications(ctx context.Context) ([]store.Publication, error)
 }
 
 func (e *Engine) pubs() PublicationStore {
@@ -207,7 +208,7 @@ func (e *Engine) published(ctx context.Context, ident store.Identity, conv store
 		text = join(text, fmt.Sprintf(msgPublishedWarnings, "• "+strings.Join(res.Warnings, "\n• ")))
 	}
 	// Saldo da conta: quanto tem e quantos dias cobre, ou o que falta para o anúncio rodar depois do ATIVAR.
-	text = join(text, e.fundingText(ctx, token, in.AdAccountID, float64(in.DailyBudgetCents)/100))
+	text = join(text, e.fundingText(ctx, ident.OrgID, token, in.AdAccountID, float64(in.DailyBudgetCents)/100))
 	return e.send(ctx, conv, text)
 }
 

@@ -133,6 +133,8 @@ const ACTIONS = {
   job_retried: ['Mandou tarefa de novo para a fila', 'info', 'refresh'], job_discarded: ['Descartou tarefa que falhou', 'warn', 'x'],
   project_archived: ['Projeto arquivado', 'info', 'tag'], billing_link_sent: ['Link de pagamento da Meta enviado', 'info', 'money'],
   preview_failed: ['Prévia do anúncio não enviada', 'warn', 'alert'], meta_published: ['Campanha criada na Meta', 'ok', 'meta'],
+  campaign_pause_requested: ['Pediu pausa de campanha', 'warn', 'x'], campaign_paused_by_team: ['Equipe pausou a campanha', 'warn', 'x'],
+  results_sent: ['Resultado do dia enviado', 'info', 'money'],
   ad_rejected: ['Meta reprovou os anúncios', 'err', 'alert'], ad_partly_rejected: ['Meta reprovou parte dos anúncios', 'warn', 'alert'],
   meta_token_expiring: ['Conexão com a Meta vencendo', 'warn', 'clock'], payment_checked: ['Pagamento da conta conferido', 'info', 'money'],
 };
@@ -477,7 +479,8 @@ function drawerTab(n) {
     if (!m) return `<div class="empty"><b>Conta Meta não conectada</b>${c.stage >= 4 ? 'A campanha já foi aprovada: o cliente precisa conectar a conta para publicar. Ele pede o link mandando “conectar meta” no WhatsApp.' : 'O cliente ainda não chegou nessa etapa.'}</div>`;
     return `<div><div class="metarow"><span class="ev-ico ok">${icon('meta')}</span><div><b>Conta de anúncios</b><small class="num">${esc(m.ad_account_name)} · ${esc(m.ad_account_id)} · ${esc(m.currency)} · ${esc(m.timezone)}</small></div><span class="chip ${m.account_status === 1 ? 'ok' : 'warn'}">${m.account_status === 1 ? 'ativa' : 'status ' + m.account_status}</span></div>
       <div class="metarow"><span class="ev-ico info">${icon('users')}</span><div><b>Página</b><small>${esc(m.page_name || '—')}${m.instagram_username ? ' · @' + esc(m.instagram_username) : ''}</small></div><span class="chip ${m.page_whatsapp ? 'ok' : 'warn'}">${m.page_whatsapp ? 'com WhatsApp' : 'sem WhatsApp'}</span></div>
-      <div class="metarow"><span class="ev-ico info">${icon('lock')}</span><div><b>Autorização</b><small>conectada em ${esc(dt(m.connected_at))} · token guardado cifrado, nunca exibido</small></div></div></div>`;
+      ${fundingRow(m, c)}
+      <div class="metarow"><span class="ev-ico info">${icon('lock')}</span><div><b>Autorização</b><small>conectada em ${esc(dt(m.connected_at))}${m.token_expires_at ? ' · vence em ' + esc(dateOnly(m.token_expires_at)) : ''} · token guardado cifrado, nunca exibido</small></div>${m.token_expires_at && new Date(m.token_expires_at) - Date.now() < 7 * 864e5 ? '<span class="chip warn">vencendo</span>' : ''}</div></div>`;
   }
   if (n === 3) {
     if (!c.projects.length) return `<div class="empty"><b>Nenhum projeto ainda</b>A IA abre um projeto quando o cliente conta o que quer anunciar.</div>`;
@@ -734,6 +737,43 @@ views.whatsapp = async view => {
   every(20000, async () => { if (state.route === 'whatsapp') { try { const n = await api('GET', '/whatsapp'); if (JSON.stringify(n) !== JSON.stringify(d)) rerender(true); } catch { /* próximo ciclo */ } } });
 };
 
+/* ---------- pagamento da conta de anúncios ---------- */
+const FUNDING_FLAG = { ok: ['pagamento em dia', 'ok'], sem_pagamento: ['sem saldo nem cartão', 'err'], pendente: ['pagamento pendente', 'err'],
+  saldo_baixo: ['saldo baixo', 'warn'], limite_baixo: ['limite de gastos baixo', 'warn'] };
+const fundingChip = flag => flag && FUNDING_FLAG[flag] ? `<span class="chip ${FUNDING_FLAG[flag][1]}">${FUNDING_FLAG[flag][0]}</span>` : '';
+function fundingRow(m, c) {
+  const f = m.funding;
+  let what = 'ainda não lido pelo sistema';
+  if (f) {
+    if (!f.HasSource) what = 'sem forma de pagamento';
+    else if (f.Prepaid) what = f.AvailableCents >= 0 ? 'saldo pré-pago: ' + brl(f.AvailableCents) : 'saldo pré-pago (valor não informado pela Meta)';
+    else what = f.Source || 'cartão';
+    if (f.SpendCapCents > 0) what += ' · limite de gastos: resta ' + brl(Math.max(f.SpendCapCents - f.SpentCents, 0));
+  }
+  return `<div class="metarow"><span class="ev-ico info">${icon('money')}</span><div><b>Pagamento</b><small>${esc(what)}${m.funding_checked_at ? ' · lido há ' + ago(m.funding_checked_at) : ''}</small></div>
+    ${fundingChip(m.funding_flag)}<button class="btn sm ghost" type="button" data-funding-refresh="${c.org_id}" title="Ler de novo na Meta">${icon('refresh')}Atualizar</button></div>`;
+}
+
+/* ---------- campanhas na Meta ---------- */
+const CAMPAIGN_STATUS = { publishing: ['publicando', 'info'], paused: ['pausada', 'warn'], active: ['no ar', 'ok'], failed: ['com erro', 'err'], rejected: ['reprovada', 'err'] };
+views.campanhas = async view => {
+  const st = state.campaignFilter || '';
+  const d = await api('GET', '/campaigns' + (st ? '?status=' + st : ''));
+  const filters = [['', 'Todas'], ['active', 'No ar'], ['paused', 'Pausadas'], ['rejected', 'Reprovadas'], ['failed', 'Com erro']];
+  view.innerHTML = `<div class="page">
+    <div class="page-head"><div><h1>Campanhas</h1><p>Campanhas criadas na Meta pelos clientes. Ativar fica com o cliente, pelo WhatsApp.</p></div></div>
+    <div class="filter-row" role="group" aria-label="Filtrar por situação">${filters.map(([k, l]) => `<button class="btn sm ${k === st ? '' : 'ghost'}" type="button" aria-pressed="${k === st}" data-campaign-filter="${k}">${l}</button>`).join('')}</div>
+    <section class="panel"><div class="panel-body table-wrap">${d.campaigns.length ? `<table class="table"><thead><tr><th>Cliente e projeto</th><th>Situação</th><th class="r">Por dia</th><th class="r hide-sm">Últimos 7 dias</th><th class="hide-sm">Pagamento</th><th class="r">Ação</th></tr></thead><tbody>
+      ${d.campaigns.map(c => { const [sl, sc] = CAMPAIGN_STATUS[c.status] || [c.status, 'info'];
+        return `<tr><td><b>${esc(c.org_name)}</b><br><span class="faint small">${esc(c.project_name || 'sem projeto')} · criada ${esc(dateOnly(c.created_at))}${c.activated_at ? ' · ativada ' + esc(dateOnly(c.activated_at)) : ''}</span>${c.error ? `<br><code class="err-code">${esc(c.error)}</code>` : ''}</td>
+          <td><span class="chip ${sc}">${sl}</span></td>
+          <td class="r num">${brl(Math.round(c.daily_budget_brl * 100))}</td>
+          <td class="r num hide-sm">${c.spend_7d_cents ? brl(c.spend_7d_cents) + '<br><span class="faint small">' + c.conversations_7d + ' conversa(s)</span>' : '<span class="faint">—</span>'}</td>
+          <td class="hide-sm">${fundingChip(c.funding_flag) || '<span class="faint small">não lido</span>'}</td>
+          <td class="r"><div class="row-actions">${c.ads_manager_url ? `<a class="btn sm ghost" href="${esc(c.ads_manager_url)}" target="_blank" rel="noopener">${icon('ext')}Gerenciador</a>` : ''}${c.status === 'active' ? `<button class="btn sm" type="button" data-campaign-pause="${c.id}">${icon('x')}Pausar</button>` : ''}</div></td></tr>`; }).join('')}
+      </tbody></table>` : '<div class="empty"><b>Nenhuma campanha aqui</b>Quando um cliente aprova e sobe um anúncio, a campanha aparece nesta lista.</div>'}</div></section></div>`;
+};
+
 /* ---------- mídia do projeto (anúncios e prévia guardados pelo worker) ---------- */
 const MEDIA_LABEL = { feed: 'feed', stories: 'stories', square: 'quadrada', portrait: 'em pé', vertical: 'vertical', landscape: 'deitada' };
 function projectMedia(m) {
@@ -918,6 +958,18 @@ document.addEventListener('click', async e => {
     const id = state.conv.sel;
     const ok = await act(t, () => api('POST', '/conversations/' + id + '/takeover'));
     if (ok) { toast('Você assumiu a conversa. A IA está pausada para este cliente.', 'warn', 'hand'); await openThread(id, true); loadInbox(); }
+    return;
+  }
+  if (ds.campaignFilter !== undefined) { state.campaignFilter = ds.campaignFilter; rerender(true); return; }
+  if (ds.campaignPause) {
+    if (t.dataset.armed !== '1') { t.dataset.armed = '1'; t.innerHTML = icon('x') + 'Confirmar pausa'; setTimeout(() => { if (t.isConnected) { t.dataset.armed = ''; t.innerHTML = icon('x') + 'Pausar'; } }, 4000); return; }
+    const r = await act(t, () => api('POST', '/campaigns/' + ds.campaignPause + '/pause'));
+    if (r) { toast('Pausa enviada. O cliente recebe um aviso no WhatsApp.', 'ok', 'check'); t.remove(); }
+    return;
+  }
+  if (ds.fundingRefresh) {
+    const r = await act(t, () => api('POST', '/clients/' + ds.fundingRefresh + '/funding/refresh'));
+    if (r) toast('Lendo o pagamento na Meta. Abra a ficha de novo em alguns segundos.', 'ok', 'refresh');
     return;
   }
   if (ds.jobRetry) {

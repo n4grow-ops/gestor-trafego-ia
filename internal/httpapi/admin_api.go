@@ -94,6 +94,9 @@ func (a *Admin) client(w http.ResponseWriter, r *http.Request, m store.TeamMembe
 	if a.storeError(w, err) {
 		return
 	}
+	if d.Meta != nil {
+		d.Meta.FundingFlag = fundingFlag(d.Meta.Funding, 0)
+	}
 	writeJSON(w, http.StatusOK, d)
 }
 

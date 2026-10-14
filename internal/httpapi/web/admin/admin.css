@@ -744,3 +744,6 @@ video.b-media { object-fit: contain; }
 /* fila de tarefas */
 .err-code { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.75rem; }
 .row-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; justify-content: flex-end; }
+
+/* campanhas */
+.filter-row { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-block: 0 0.75rem; }
