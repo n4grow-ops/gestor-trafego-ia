@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/contract"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/manager"
@@ -239,6 +242,7 @@ func (e *Engine) propose(ctx context.Context, p ProposeJob) error {
 		return e.escalate(ctx, ident, conv, err.Error(), msgProposalFailed)
 	}
 	b.Adjustment = p.Adjustment
+	b.CopyVariations = e.copyVariations(ctx, conv.ID, p.Adjustment)
 	b.Business = campaignBusiness(ident.Profile, b.Offer)
 
 	cfg := e.miaConfig(ctx)
@@ -281,4 +285,44 @@ func (e *Engine) propose(ctx context.Context, p ProposeJob) error {
 	}
 	e.audit(ctx, ident.OrgID, "manager", "proposal_created", map[string]any{"draft_id": draftID, "proposal_hash": hash})
 	return nil
+}
+
+var copyCountRe = regexp.MustCompile(`(?i)(?:^|[^\p{L}\d])(\d+|um|uma|dois|duas|tr[eê]s|quatro|cinco)\s+(?:varia[cç][õo]es|vers[õo]es|op[cç][õo]es|textos|copys?|headlines?|t[ií]tulos|modelos)(?:$|[^\p{L}])`)
+
+var copyCountWords = map[string]int{"um": 1, "uma": 1, "dois": 2, "duas": 2, "tres": 3, "três": 3, "quatro": 4, "cinco": 5}
+
+// parseCopyVariations lê quantas variações de texto o cliente pediu ("3 variações", "quero duas opções").
+// 0 = não pediu. Acima do teto vira MaxCopies.
+func parseCopyVariations(text string) int {
+	m := copyCountRe.FindStringSubmatch(text)
+	if m == nil {
+		return 0
+	}
+	n, err := strconv.Atoi(m[1])
+	if err != nil {
+		n = copyCountWords[strings.ToLower(m[1])]
+	}
+	if n < 1 {
+		return 0
+	}
+	return min(n, contract.MaxCopies)
+}
+
+// copyVariations acha o pedido de variações no ajuste ou nas últimas mensagens do cliente (a mais nova vale).
+func (e *Engine) copyVariations(ctx context.Context, convID int64, adjustment string) int {
+	if n := parseCopyVariations(adjustment); n > 0 {
+		return n
+	}
+	msgs, err := e.Store.RecentMessages(ctx, convID, 12)
+	if err != nil {
+		return 0
+	}
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Direction == "in" {
+			if n := parseCopyVariations(msgs[i].Body); n > 0 {
+				return n
+			}
+		}
+	}
+	return 0
 }

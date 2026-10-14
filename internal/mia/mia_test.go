@@ -27,11 +27,23 @@ func TestDefaultsMatchTodaysBehavior(t *testing.T) {
 		t.Fatalf("campanha parcial = %v, contrato = %v", got, f.Missing())
 	}
 	p := contract.Profile{BusinessName: contract.Str("Pizzaria"), City: contract.Str(" ")}
+	// A ficha do negócio é opcional por padrão: nunca falta nada nem bloqueia o fluxo.
+	if got := d.ProfileMissing(p); len(got) != 0 {
+		t.Fatalf("ficha deveria ser opcional, faltando = %v", got)
+	}
+	if !d.ProfileComplete(contract.Profile{}) {
+		t.Fatal("ficha vazia não pode bloquear")
+	}
+	for i := range d.Fields {
+		if d.Fields[i].Group == mia.GroupProfile {
+			d.Fields[i].Required = true
+		}
+	}
 	if got := d.ProfileMissing(p); !slices.Equal(got, p.Missing()) {
 		t.Fatalf("ficha = %v, contrato = %v", got, p.Missing())
 	}
 	if d.ProfileComplete(p) {
-		t.Fatal("ficha incompleta")
+		t.Fatal("ficha incompleta quando marcada como obrigatória")
 	}
 	if got := d.Text(mia.TextSignupLink, map[string]string{"link": "https://x/c/abc"}); !strings.Contains(got, "https://x/c/abc") || strings.Contains(got, "{link}") {
 		t.Fatalf("texto = %q", got)
@@ -48,7 +60,12 @@ func TestConfiguredFieldsDriveMissing(t *testing.T) {
 		case f.Group == mia.GroupCampaign && f.Key == "offer":
 			f.Required, f.Active = false, false // core: o Normalize religa
 		case f.Group == mia.GroupProfile && f.Key == "average_ticket":
-			f.Required = false
+			f.Required = false // os demais da ficha viram obrigatórios no fim do loop
+		}
+		if f.Group == mia.GroupProfile && f.Key != "average_ticket" {
+			f.Required = true
+		}
+		switch {
 		case f.Group == mia.GroupProfile && f.Key == "differentials":
 			f.Active = false
 		case f.Group == mia.GroupProfile && f.Key == "city":
@@ -128,7 +145,7 @@ func TestAttendantPromptUsesPersonaStageAndSegment(t *testing.T) {
 	if sys := c.AttendantSystem("collecting", full, nil); !strings.Contains(sys, "Definir a verba") || !strings.Contains(sys, "R$ 20") {
 		t.Error("etapa extra de coleta não entrou")
 	}
-	if sys := c.AttendantSystem("onboarding", contract.Fields{}, nil); !strings.Contains(sys, "PRIMEIRA REGRA") {
+	if sys := c.AttendantSystem("onboarding", contract.Fields{}, nil); !strings.Contains(sys, "A ficha do negócio é OPCIONAL") {
 		t.Error("instruções do onboarding")
 	}
 	// As regras técnicas ficam por último, depois de qualquer texto editável.

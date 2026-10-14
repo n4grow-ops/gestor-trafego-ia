@@ -103,15 +103,15 @@ func TestApprovalAsksForCreatives(t *testing.T) {
 	h.say("SIM " + code)
 	msg := h.wa.last().Text
 	if h.conv().State != store.StateAwaitingCreatives || !strings.Contains(msg, "imagens ou vídeos") ||
-		!strings.Contains(msg, "pro feed") || !strings.Contains(msg, "Stories e Reels") {
+		!strings.Contains(msg, "que quiser usar (até 5)") || strings.Contains(msg, "9:16") || strings.Contains(msg, "4:5") {
 		t.Fatalf("estado = %s msg = %q", h.conv().State, msg)
 	}
 	h.sendFile(square)
-	if msg := h.wa.last().Text; !strings.Contains(msg, "1 de 5") || !strings.Contains(msg, "Feed: ✅") || !strings.Contains(msg, "Stories e Reels: ⏳") {
+	if msg := h.wa.last().Text; !strings.Contains(msg, "1 de 5") || strings.Contains(msg, "falta") || strings.Contains(msg, "⏳") {
 		t.Fatalf("status depois da quadrada = %q", msg)
 	}
 	h.sendFile(vertical)
-	if msg := h.wa.last().Text; !strings.Contains(msg, "2 de 5") || !strings.Contains(msg, "Stories e Reels: ✅") {
+	if msg := h.wa.last().Text; !strings.Contains(msg, "2 de 5") {
 		t.Fatalf("status depois do vertical = %q", msg)
 	}
 	if h.creatives() != 2 || fs.count() != 2 {
@@ -207,21 +207,30 @@ func TestCreativeQualityCheck(t *testing.T) {
 	}
 }
 
-func TestCreativesNudgeMissingPlacementOnce(t *testing.T) {
+// Qualquer formato fecha na hora: PRONTO com só uma imagem quadrada não cobra vertical nem pede de novo.
+func TestCreativesNoFormatNudge(t *testing.T) {
 	h, _ := newCreativeHarness(t)
 	h.say("SIM " + h.reachApproval())
 	h.sendFile(square)
 	h.say("pronto")
-	if msg := h.wa.last().Text; h.conv().State != store.StateAwaitingCreatives || !strings.Contains(msg, "vertical de tela cheia") || !strings.Contains(msg, "PRONTO de novo") {
-		t.Fatalf("aviso: estado = %s msg = %q", h.conv().State, msg)
-	}
-	h.say("pronto")
-	if h.conv().State != store.StateIdle || !strings.Contains(h.wa.last().Text, "recebi 1") {
-		t.Fatalf("segundo pronto: estado = %s msg = %q", h.conv().State, h.wa.last().Text)
+	if msg := h.wa.last().Text; h.conv().State != store.StateIdle || !strings.Contains(msg, "recebi 1") ||
+		strings.Contains(msg, "vertical") || strings.Contains(msg, "PRONTO de novo") {
+		t.Fatalf("PRONTO devia fechar direto: estado = %s msg = %q", h.conv().State, msg)
 	}
 	h.runKind(engine.JobCreativesPreview)
 	if imgs := h.wa.sentImages(); len(imgs) != 1 || !strings.Contains(imgs[0].Caption, "feed") {
 		t.Fatalf("prévia só do feed: %+v", imgs)
+	}
+}
+
+// Só vertical, sem nenhuma quadrada, também fecha direto.
+func TestCreativesOnlyVerticalCloses(t *testing.T) {
+	h, _ := newCreativeHarness(t)
+	h.say("SIM " + h.reachApproval())
+	h.sendFile(vertical)
+	h.say("pronto")
+	if h.conv().State != store.StateIdle || !strings.Contains(h.wa.last().Text, "recebi 1") {
+		t.Fatalf("estado = %s msg = %q", h.conv().State, h.wa.last().Text)
 	}
 }
 
@@ -233,8 +242,8 @@ func TestCreativesDeleteReplaceAndList(t *testing.T) {
 	h.sendFile(vertical)
 
 	h.say("quais eu mandei?")
-	if msg := h.wa.last().Text; !strings.Contains(msg, "1. Imagem quadrada — Feed") || !strings.Contains(msg, "2. Imagem em pé (4:5) — Feed") ||
-		!strings.Contains(msg, "3. Vídeo vertical (tela cheia), 15 s — Stories e Reels") {
+	if msg := h.wa.last().Text; !strings.Contains(msg, "1. Imagem quadrada") || !strings.Contains(msg, "2. Imagem em pé (4:5)") ||
+		!strings.Contains(msg, "3. Vídeo vertical (tela cheia), 15 s") {
 		t.Fatalf("lista = %q", msg)
 	}
 
@@ -247,7 +256,7 @@ func TestCreativesDeleteReplaceAndList(t *testing.T) {
 	}
 
 	h.say("troca a última")
-	if msg := h.wa.last().Text; h.creatives() != 1 || !strings.Contains(msg, "Tirei a 2") || !strings.Contains(msg, "Stories e Reels: ⏳") {
+	if msg := h.wa.last().Text; h.creatives() != 1 || !strings.Contains(msg, "Tirei a 2") {
 		t.Fatalf("trocar: criativos = %d msg = %q", h.creatives(), msg)
 	}
 

@@ -9,6 +9,7 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/attendant"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/contract"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/llm"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/mia"
 )
 
 var ctx = context.Background()
@@ -156,8 +157,8 @@ func TestReplyGivesBusinessMemoryAndProjects(t *testing.T) {
 			t.Errorf("prompt de sistema sem %q", want)
 		}
 	}
-	// A regra do onboarding é instrução da etapa: só entra quando a conversa está nesse estado.
-	if strings.Contains(system, "PRIMEIRA REGRA") {
+	// A instrução do onboarding é da etapa: só entra quando a conversa está nesse estado.
+	if strings.Contains(system, "A ficha do negócio é OPCIONAL: não pergunte") {
 		t.Error("regra do onboarding fora do onboarding")
 	}
 	fake = &llm.Fake{Responses: []string{validTurn}}
@@ -165,8 +166,18 @@ func TestReplyGivesBusinessMemoryAndProjects(t *testing.T) {
 	if _, _, err := a.Reply(ctx, attendant.Input{State: "onboarding", Message: "oi"}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(fake.Requests[0].Messages[0].Content, "PRIMEIRA REGRA") {
-		t.Error("regra do onboarding ausente no onboarding")
+	sys := fake.Requests[0].Messages[0].Content
+	if !strings.Contains(sys, "A ficha do negócio é OPCIONAL: não pergunte") {
+		t.Error("instrução do onboarding ausente no onboarding")
+	}
+	if strings.Contains(sys, "PRIMEIRA REGRA") {
+		t.Error("ficha não pode mais ser a primeira regra obrigatória")
+	}
+	// Estilo simples: sem inventar, sem decidir estratégia, Advantage+ só se o cliente aceitar.
+	for _, want := range []string{"NUNCA invente dados", "NÃO decida nem pergunte", "DESLIGADOS por padrão", "copy"} {
+		if !strings.Contains(sys, want) {
+			t.Errorf("prompt sem %q", want)
+		}
 	}
 }
 
@@ -189,11 +200,24 @@ func TestPromptSaysResponseFormat(t *testing.T) {
 	}
 }
 
-func TestPromptListsMissingBusinessData(t *testing.T) {
-	p := promptFor(t, attendant.Input{Message: "oi", State: "onboarding",
-		Profile: contract.Profile{BusinessName: contract.Str("Pizzaria"), City: contract.Str("Campinas")}})
-	if !strings.Contains(p, "Negócio faltando: o que a empresa faz") || !strings.Contains(p, "região que atende") {
-		t.Fatalf("prompt sem o que falta do negócio:\n%s", p)
+func TestPromptBusinessProfileIsOptional(t *testing.T) {
+	in := attendant.Input{Message: "oi", State: "onboarding",
+		Profile: contract.Profile{BusinessName: contract.Str("Pizzaria"), City: contract.Str("Campinas")}}
+	p := promptFor(t, in)
+	if !strings.Contains(p, "Ficha do negócio (opcional, não pergunte): nenhum") {
+		t.Fatalf("ficha opcional não deve listar pendências por padrão: %s", p)
+	}
+	// Se o painel marcar itens como obrigatórios, eles aparecem só como informação.
+	cfg := mia.Defaults()
+	for i := range cfg.Fields {
+		if cfg.Fields[i].Group == mia.GroupProfile {
+			cfg.Fields[i].Required = true
+		}
+	}
+	in.Config = &cfg
+	p = promptFor(t, in)
+	if !strings.Contains(p, "Ficha do negócio (opcional, não pergunte): o que a empresa faz") || !strings.Contains(p, "região que atende") {
+		t.Fatalf("prompt sem o que falta do negócio: %s", p)
 	}
 }
 

@@ -433,16 +433,12 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 		}
 	}
 	if conv.State == store.StateOnboarding {
-		// Quem já pede anúncio sai do onboarding mesmo com a ficha incompleta: se a IA deixou de gravar um
-		// item, o cliente não pode ficar preso numa conversa que nunca chega na campanha.
-		wantsCampaign := turn.Intent == contract.IntentCreateCampaign || turn.Intent == contract.IntentNewProject || turn.Fields.HasData()
-		if !cfg.ProfileComplete(ident.Profile) && !wantsCampaign {
-			return e.speakNoPromise(ctx, ident, conv, turn.Reply, current, cfg)
-		}
+		// A ficha do negócio é opcional: qualquer mensagem tira o cliente do onboarding e ela nunca bloqueia.
 		conv.State = store.StateIdle
 		if err := e.Store.UpdateConversation(ctx, conv.ID, conv.State, conv.Fields); err != nil {
 			return err
 		}
+		wantsCampaign := turn.Intent == contract.IntentCreateCampaign || turn.Intent == contract.IntentNewProject || turn.Fields.HasData()
 		if !wantsCampaign {
 			return e.speakNoPromise(ctx, ident, conv, turn.Reply, current, cfg)
 		}

@@ -168,7 +168,7 @@ func TestInstagramOwnPostBecomesCreatives(t *testing.T) {
 		t.Fatalf("vídeo = %+v", list[1])
 	}
 	msg := h.lastClient()
-	if !strings.Contains(msg, "Peguei seu post ✅") || !strings.Contains(msg, "2 de 5") || !strings.Contains(msg, "Stories e Reels: ✅") {
+	if !strings.Contains(msg, "Peguei seu post ✅") || !strings.Contains(msg, "2 de 5") {
 		t.Fatalf("resposta do job = %q", msg)
 	}
 	if ig.pubCalls != 0 || len(ig.tokens) != 1 || ig.tokens[0] != "token-do-cliente|IG1" {

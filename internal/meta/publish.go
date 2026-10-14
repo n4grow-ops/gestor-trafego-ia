@@ -275,7 +275,16 @@ func (c *Client) Publish(ctx context.Context, token string, in PublishInput) (Pu
 				"source_instagram_media_id": {m.igMediaID}, "call_to_action": {jsonParam(callToAction(p, cp, false))}}
 		}
 		created.ID = ""
-		if err := c.call(ctx, http.MethodPost, act+"/adcreatives", token, params, &created); err != nil {
+		// Advantage+ criativo vem desligado: o anúncio sai como o cliente mandou. Se a Meta recusar o
+		// campo (nomes de recursos mudam por versão), publica sem ele em vez de travar a campanha.
+		withSpec := cloneValues(params)
+		withSpec.Set("degrees_of_freedom_spec", jsonParam(creativeOptOut(m.videoID != "")))
+		err := c.call(ctx, http.MethodPost, act+"/adcreatives", token, withSpec, &created)
+		if err != nil {
+			created.ID = ""
+			err = c.call(ctx, http.MethodPost, act+"/adcreatives", token, params, &created)
+		}
+		if err != nil {
 			return fail("creative", err)
 		}
 		creativeID := created.ID
@@ -509,6 +518,27 @@ func storySpec(in PublishInput, p plan, m uploaded, cp PublishCopy) map[string]a
 	spec["link_data"] = map[string]any{"image_hash": m.imageHash, "message": cp.Text, "name": cp.Headline,
 		"link": link, "call_to_action": cta}
 	return spec
+}
+
+// creativeOptOut desliga as melhorias automáticas do Advantage+ criativo (recursos por tipo de mídia).
+func creativeOptOut(video bool) map[string]any {
+	features := []string{"image_template", "image_touchups", "text_optimizations", "inline_comment"}
+	if video {
+		features = []string{"video_auto_crop", "text_optimizations", "inline_comment"}
+	}
+	spec := map[string]any{}
+	for _, f := range features {
+		spec[f] = map[string]string{"enroll_status": "OPT_OUT"}
+	}
+	return map[string]any{"creative_features_spec": spec}
+}
+
+func cloneValues(v url.Values) url.Values {
+	out := make(url.Values, len(v)+1)
+	for k, vs := range v {
+		out[k] = append([]string(nil), vs...)
+	}
+	return out
 }
 
 // callToAction é o botão do anúncio. No vídeo de WhatsApp o link vai dentro do botão (video_data não tem campo link).

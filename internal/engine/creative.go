@@ -12,7 +12,6 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/contract"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/humanize"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/instagram"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/media"
@@ -240,12 +239,6 @@ func (e *Engine) creativesTurn(ctx context.Context, conv store.Conversation, msg
 		return e.send(ctx, conv, join(append(parts, msgInstagramRightsReminder)...))
 	}
 	if n >= maxCreatives || (done && n > 0) {
-		if miss := missingPlacement(list, d.Placements); done && n < maxCreatives && miss != "" && !d.Nudged {
-			if err := e.Store.MarkCreativesNudged(ctx, d.ID); err != nil {
-				return err
-			}
-			return e.send(ctx, conv, join(append(parts, fmt.Sprintf(msgCreativesNudge, miss))...))
-		}
 		return e.finishCreatives(ctx, conv, d, n, parts)
 	}
 	for _, r := range rejected {
@@ -271,7 +264,7 @@ func (e *Engine) creativesTurn(ctx context.Context, conv store.Conversation, msg
 	case done: // pronto sem nenhum anúncio
 		parts = append(parts, msgCreativesNeedOne)
 	case received || changed || len(rejected) > 0:
-		parts = append(parts, creativesStatus(list, d.Placements))
+		parts = append(parts, creativesStatus(list))
 	case fetching: // o job responde quando o post chegar
 	case noted && n == 0:
 		parts = append(parts, msgCopyNotedNeedMedia)
@@ -305,79 +298,20 @@ func (e *Engine) finishCreatives(ctx context.Context, conv store.Conversation, d
 		Payload: PreviewJob{ConversationID: conv.ID, DraftID: d.ID}})
 }
 
-// creativesStatus mostra quantos anúncios chegaram e quais posicionamentos já estão cobertos.
-func creativesStatus(list []store.Creative, placements []string) string {
-	var feed, stories bool
-	for _, c := range list {
-		if c.Placement == string(media.Stories) {
-			stories = true
-		} else {
-			feed = true
-		}
-	}
-	mark := func(ok bool, missing string) string {
-		if ok {
-			return "✅"
-		}
-		return "⏳ falta " + missing
-	}
-	wantFeed, wantVertical := wantsFormats(placements)
+// creativesStatus mostra só quantos anúncios chegaram. Não cobra formato: o cliente manda o que quiser.
+func creativesStatus(list []store.Creative) string {
 	s := fmt.Sprintf("Até agora: %d de %d anúncios.", len(list), maxCreatives)
-	if wantFeed {
-		s += "\n• Feed: " + mark(feed, "uma quadrada ou em pé (4:5)")
-	}
-	if wantVertical {
-		s += "\n• Stories e Reels: " + mark(stories, "uma vertical de tela cheia (9:16)")
-	}
 	if len(list) < maxCreatives {
 		s += "\n\nPode mandar mais ou escrever PRONTO."
 	}
 	return s
 }
 
-// wantsFormats diz quais formatos a campanha usa: feed (quadrado ou em pé) e/ou vertical (Stories e Reels).
-// Sem escolha do cliente (automático), os dois.
-func wantsFormats(placements []string) (feed, vertical bool) {
-	pl := contract.NormalizePlacements(placements)
-	if len(pl) == 0 {
-		return true, true
-	}
-	return slices.Contains(pl, contract.PlacementFeed),
-		slices.Contains(pl, contract.PlacementStories) || slices.Contains(pl, contract.PlacementReels)
-}
+// msgAskCreatives é o pedido dos anúncios depois da aprovação: qualquer imagem ou vídeo, em qualquer proporção.
+const msgAskCreatives = "Campanha aprovada! ✅\n\nPróxima etapa: os anúncios. Manda as imagens ou vídeos que quiser usar (até 5), do jeito que tiver: feed, stories, reels, na proporção que for. Eu subo na Meta como você mandar.\n\nPra não perder qualidade, manda a foto como *documento* (📎 → Documento) em vez de foto; o WhatsApp comprime as fotos normais.\n\nSe tiver headlines, textos ou anúncios que você gosta, manda aqui também (é opcional): eu uso como referência pros textos. Quando terminar, é só escrever PRONTO."
 
-// askCreatives é o pedido dos anúncios depois da aprovação, só com os formatos dos lugares escolhidos.
-func askCreatives(placements []string) string {
-	wantFeed, wantVertical := wantsFormats(placements)
-	var lines []string
-	if wantFeed {
-		lines = append(lines, "• 1 quadrada ou em pé (4:5), pro feed")
-	}
-	if wantVertical {
-		lines = append(lines, "• 1 vertical de tela cheia (9:16), pros Stories e Reels")
-	}
-	return fmt.Sprintf(msgApprovedAskCreatives, strings.Join(lines, "\n"))
-}
-
-// missingPlacement descreve o formato que falta para cobrir os lugares da campanha ("" = nada falta).
-func missingPlacement(list []store.Creative, placements []string) string {
-	wantFeed, wantVertical := wantsFormats(placements)
-	var feed, stories bool
-	for _, c := range list {
-		if c.Placement == string(media.Stories) {
-			stories = true
-		} else {
-			feed = true
-		}
-	}
-	switch {
-	case wantVertical && !stories:
-		return "nenhum vertical de tela cheia (9:16), que é o formato dos Stories e Reels"
-	case wantFeed && !feed:
-		return "nenhum quadrado ou em pé (4:5), que é o formato do feed"
-	}
-	return ""
-}
+// askCreatives é o pedido dos anúncios depois da aprovação. Não depende dos lugares escolhidos nem pede formato.
+func askCreatives(_ []string) string { return msgAskCreatives }
 
 func describeCreative(c store.Creative) string {
 	kind := "Imagem"
@@ -392,11 +326,7 @@ func describeCreative(c store.Creative) string {
 	if c.Kind == "video" && c.DurationMS > 0 {
 		s += fmt.Sprintf(", %d s", (c.DurationMS+500)/1000)
 	}
-	where := "Feed"
-	if c.Placement == string(media.Stories) {
-		where = "Stories e Reels"
-	}
-	return s + " — " + where
+	return s
 }
 
 func listCreatives(list []store.Creative) string {

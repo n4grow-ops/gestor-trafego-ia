@@ -29,8 +29,8 @@ func TestFeedOnlyPlacement(t *testing.T) {
 	}
 	h.say("SIM " + m[1])
 	ask := h.wa.last().Text
-	if strings.Contains(ask, "9:16") || !strings.Contains(ask, "4:5") {
-		t.Errorf("só feed não pode pedir vertical de Stories: %q", ask)
+	if strings.Contains(ask, "9:16") || strings.Contains(ask, "4:5") || !strings.Contains(ask, "que quiser usar") {
+		t.Errorf("o pedido não pode exigir formato: %q", ask)
 	}
 	h.sendFile(square)
 	if st := h.wa.last().Text; strings.Contains(st, "Stories") {

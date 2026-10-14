@@ -112,6 +112,8 @@ const (
 	extremeRatioMax = 2.1
 )
 
+// Check só barra o que a Meta não aceita (arquivo curto/longo demais, pequeno demais, proporção absurda).
+// Qualquer outra proporção passa sem aviso; o Warning é só uma nota curta de qualidade, nunca bloqueio.
 func Check(i Info) Verdict {
 	short := min(i.Width, i.Height)
 	r := float64(i.Width) / float64(max(i.Height, 1))
@@ -120,11 +122,11 @@ func Check(i Info) Verdict {
 		case i.Duration < minVideo:
 			return Verdict{Reason: "o vídeo é curto demais (menos de 1 segundo)"}
 		case i.Duration > maxVideo:
-			return Verdict{Reason: "o vídeo passa de 4 minutos; pra anúncio o ideal é até 60 segundos"}
+			return Verdict{Reason: "o vídeo passa de 4 minutos, que é o limite da Meta pra anúncio"}
 		case r < extremeRatioMin || r > extremeRatioMax:
-			return Verdict{Reason: "o formato do vídeo é muito comprido; o ideal é quadrado ou vertical (tela cheia)"}
+			return Verdict{Reason: "a proporção do vídeo é extrema demais pra Meta aceitar"}
 		case i.Duration > idealVideo:
-			return Verdict{OK: true, Warning: "o vídeo tem mais de 60 segundos: no feed funciona, mas nos Stories e Reels o ideal é até 60 segundos"}
+			return Verdict{OK: true, Warning: "vídeo com mais de 60 segundos"}
 		}
 		return Verdict{OK: true}
 	}
@@ -132,11 +134,9 @@ func Check(i Info) Verdict {
 	case short < minSide:
 		return Verdict{Reason: fmt.Sprintf("a imagem é pequena demais (%dx%d); a Meta pede pelo menos 600 pixels no menor lado", i.Width, i.Height)}
 	case r < extremeRatioMin || r > extremeRatioMax:
-		return Verdict{Reason: "a imagem é comprida demais; o ideal é quadrada, em pé (4:5) ou vertical (tela cheia)"}
+		return Verdict{Reason: "a proporção da imagem é extrema demais pra Meta aceitar"}
 	case short < sharpSide:
-		return Verdict{OK: true, Warning: "a imagem é um pouco pequena e pode sair menos nítida; se tiver uma maior (1080 pixels ou mais), manda também; como *documento* (📎 → Documento) ela chega sem a compressão do WhatsApp"}
-	case i.Format() == Other:
-		return Verdict{OK: true, Warning: "o formato foge do padrão; a Meta vai cortar um pouco as bordas"}
+		return Verdict{OK: true, Warning: "imagem com menos de 1080 pixels pode sair menos nítida; mandada como *documento* ela chega sem compressão"}
 	}
 	return Verdict{OK: true}
 }

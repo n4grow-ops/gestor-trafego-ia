@@ -114,7 +114,7 @@ func userPrompt(in Input) string {
 	if m := in.config().ProfileMissing(in.Profile); len(m) > 0 {
 		business = strings.Join(m, "; ")
 	}
-	fmt.Fprintf(&b, "Empresa: %s (nicho: %s)\nMemória do negócio: %s\nNegócio faltando: %s\nProjeto ativo: %s\nProjetos do cliente: %s\n",
+	fmt.Fprintf(&b, "Empresa: %s (nicho: %s)\nMemória do negócio: %s\nFicha do negócio (opcional, não pergunte): %s\nProjeto ativo: %s\nProjetos do cliente: %s\n",
 		quote(in.OrgName), quote(in.Niche), quote(string(profile)), business, active, projects)
 	fmt.Fprintf(&b, "Estado da conversa: %s\nDados já coletados: %s\nDados faltando: %s\n", in.State, fields, missing)
 	if in.Meta != "" {

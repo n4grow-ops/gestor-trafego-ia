@@ -78,3 +78,21 @@ func TestNoFalsePromiseEspecialistaVai(t *testing.T) {
 		t.Fatalf("prometeu proposta sem pedir: %q", got)
 	}
 }
+
+// A ficha do negócio é opcional: com a ficha vazia, qualquer mensagem tira o cliente do onboarding e a
+// campanha segue só com oferta, local e orçamento.
+func TestEmptyProfileDoesNotBlockOnboarding(t *testing.T) {
+	h := newHarness(t, "owner")
+	c := h.conv()
+	h.must(h.st.UpdateConversation(ctx, c.ID, store.StateOnboarding, c.Fields))
+	h.att.Responses = []string{`{"intent":"question","reply":"Oi! Me conta o que quer anunciar."}`}
+	h.say("oi")
+	if c = h.conv(); c.State != store.StateIdle {
+		t.Fatalf("ficha vazia não pode manter o onboarding; estado = %s", c.State)
+	}
+	h.att.Responses = []string{`{"intent":"create_campaign","fields":{"offer":"pizza","audience":"moradores","location":"Campinas","daily_budget_brl":20},"reply":"Anotado."}`}
+	h.say("pizza em Campinas, 20 por dia")
+	if c = h.conv(); c.State != store.StateAwaitingProposal {
+		t.Fatalf("campanha com os dados mínimos deve seguir sem ficha; estado = %s campos = %+v", c.State, c.Fields)
+	}
+}

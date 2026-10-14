@@ -184,6 +184,8 @@ type Briefing struct {
 	Placements     []string    `json:"placements,omitempty"` // pedido do cliente; vazio = automático
 	Constraints    Constraints `json:"constraints"`
 	Adjustment     string      `json:"adjustment,omitempty"`
+	// CopyVariations: quantas variações de texto o cliente pediu. 0 = não pediu (o Gestor gera 1).
+	CopyVariations int `json:"copy_variations,omitempty"`
 	Business       Profile     `json:"business,omitempty"` // memória do negócio
 }
 
@@ -245,6 +247,9 @@ func (p *CampaignProposal) Normalize() {
 	}
 }
 
+// MaxCopies é o teto de variações de texto numa proposta (o cliente escolhe quantas, de 1 até aqui).
+const MaxCopies = 5
+
 var allowedCTAs = []string{"WHATSAPP_MESSAGE", "LEARN_MORE", "CONTACT_US"}
 
 // Validate confere estrutura e regras de negócio contra o briefing. Devolve todos os erros juntos,
@@ -255,6 +260,9 @@ func (p CampaignProposal) Validate(b Briefing) error {
 
 	if !slices.Contains(b.Constraints.AllowedObjectives, p.Objective) {
 		add("objective %q não permitido (use um de: %s)", p.Objective, strings.Join(b.Constraints.AllowedObjectives, ", "))
+	} else if h := strings.TrimSpace(b.ObjectiveHint); slices.Contains(b.Constraints.AllowedObjectives, h) && p.Objective != h {
+		// O cliente já definiu o objetivo (valor exato da Meta): ele prevalece.
+		add("objective deve ser %q, o objetivo que o cliente definiu", h)
 	}
 	switch {
 	case p.DailyBudgetBRL <= 0:
@@ -279,8 +287,10 @@ func (p CampaignProposal) Validate(b Briefing) error {
 	if a.RadiusKM != 0 && (a.RadiusKM < MinRadiusKM || a.RadiusKM > 80) {
 		add("radius_km deve ser 0 (só a cidade) ou entre %d e 80", MinRadiusKM)
 	}
-	if len(p.Copies) < 1 || len(p.Copies) > 3 {
-		add("copies deve ter de 1 a 3 itens")
+	if len(p.Copies) < 1 || len(p.Copies) > MaxCopies {
+		add("copies deve ter de 1 a %d itens", MaxCopies)
+	} else if n := b.CopyVariations; n > 0 && n <= MaxCopies && len(p.Copies) != n {
+		add("copies deve ter exatamente %d itens, como o cliente pediu", n)
 	}
 	for i, c := range p.Copies {
 		if n := utf8.RuneCountInString(strings.TrimSpace(c.Headline)); n < 1 || n > 40 {
@@ -292,9 +302,6 @@ func (p CampaignProposal) Validate(b Briefing) error {
 		if !slices.Contains(allowedCTAs, c.CTA) {
 			add("copies[%d].cta %q inválido (use um de: %s)", i, c.CTA, strings.Join(allowedCTAs, ", "))
 		}
-	}
-	if strings.TrimSpace(p.Rationale) == "" {
-		add("rationale vazio")
 	}
 	if len(errs) > 0 {
 		return errors.New(strings.Join(errs, "; "))

@@ -132,7 +132,16 @@ func TestProposalValidateRejects(t *testing.T) {
 		}, "headline"},
 		{"texto vazio", func(p *contract.CampaignProposal, _ *contract.Briefing) { p.Copies[0].Text = "" }, "text"},
 		{"cta", func(p *contract.CampaignProposal, _ *contract.Briefing) { p.Copies[0].CTA = "BUY_NOW" }, "cta"},
-		{"rationale", func(p *contract.CampaignProposal, _ *contract.Briefing) { p.Rationale = " " }, "rationale"},
+		{"objetivo do cliente prevalece", func(p *contract.CampaignProposal, b *contract.Briefing) {
+			b.Constraints.AllowedObjectives = []string{"OUTCOME_ENGAGEMENT", "OUTCOME_TRAFFIC"}
+			b.ObjectiveHint = "OUTCOME_TRAFFIC"
+		}, "objetivo que o cliente definiu"},
+		{"mais copies que o teto", func(p *contract.CampaignProposal, _ *contract.Briefing) {
+			for len(p.Copies) <= contract.MaxCopies {
+				p.Copies = append(p.Copies, p.Copies[0])
+			}
+		}, "copies"},
+		{"copies diferente do pedido", func(p *contract.CampaignProposal, b *contract.Briefing) { b.CopyVariations = 2 }, "exatamente 2"},
 	}
 	for _, c := range cases {
 		p, b := validProposal(t), briefing()
@@ -205,5 +214,29 @@ func TestProposalRadius(t *testing.T) {
 	p.Normalize()
 	if p.Audience.RadiusKM != 0 {
 		t.Errorf("raio pequeno devia virar só a cidade: %d", p.Audience.RadiusKM)
+	}
+}
+
+func TestProposalClientChoicesAreAccepted(t *testing.T) {
+	p, b := validProposal(t), briefing()
+	// rationale é opcional (recomendação), dica de objetivo em texto livre não força nada
+	p.Rationale = ""
+	b.ObjectiveHint = "mensagens"
+	if err := p.Validate(b); err != nil {
+		t.Fatal(err)
+	}
+	// o cliente pediu 3 variações: 3 copies valem; sem pedido, 1 ou mais (até o teto) valem
+	p.Copies = append(p.Copies, p.Copies[0], p.Copies[0])
+	if err := p.Validate(b); err != nil {
+		t.Fatal(err)
+	}
+	b.CopyVariations = 3
+	if err := p.Validate(b); err != nil {
+		t.Fatal(err)
+	}
+	// objetivo igual ao definido pelo cliente passa
+	b.ObjectiveHint = p.Objective
+	if err := p.Validate(b); err != nil {
+		t.Fatal(err)
 	}
 }
