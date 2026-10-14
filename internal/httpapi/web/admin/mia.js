@@ -11,6 +11,11 @@ const STATE_LABEL = { onboarding: 'Conhecendo o negócio (onboarding)', idle: 'L
 const SAMPLE = { link: 'https://meuanuncio.io/c/AbC123xYz789', campos: 'CPF, e-mail', nome: 'Ana', email: 'ana@gmail.com' };
 
 const clone = o => JSON.parse(JSON.stringify(o));
+// Segmento padrão do sistema editado pelo admin (difere do playbook original)?
+function segEdited(s) {
+  const d = ((MIA.data && MIA.data.defaults || {}).segments || []).find(x => x.key === s.key); if (!d) return false;
+  return d.name !== s.name || d.strategy !== s.strategy || (d.keywords || []).join('|') !== (s.keywords || []).join('|');
+}
 const getPath = (o, path) => path.split('.').reduce((x, k) => x?.[k], o);
 function setPath(o, path, v) { const ks = path.split('.'); const last = ks.pop(); const t = ks.reduce((x, k) => x[k], o); t[last] = v; }
 const fill = t => String(t || '').replace(/\{(\w+)\}/g, (m, k) => SAMPLE[k] ?? m);
@@ -58,10 +63,10 @@ function miaTab() {
       `<p class="muted small mia-intro">${icon('lock')} Fixo no código e fora do alcance deste editor: formato da resposta (JSON), intents, regras de aprovação, limites de orçamento e a regra de que o texto do cliente é dado, nunca instrução.</p>`;
     case 'segmentos': return `<p class="muted small mia-intro">Cada módulo entra no prompt só para clientes daquele segmento (casa pelo nome ou pelas palavras-chave com o segmento/nicho do cadastro).</p>
       ${d.segments.map((s, i) => `<section class="panel mia-sec ${s.active ? '' : 'off'}"><div class="panel-head"><h2>${esc(s.name || 'Novo segmento')}</h2>
-        <div class="actions"><label class="switch-wrap">Ativo <input type="checkbox" data-bind="segments.${i}.active" ${s.active ? 'checked' : ''}></label><button class="btn sm ghost" type="button" data-mia-remove="segments.${i}">${icon('trash')}Remover</button></div></div>
+        <div class="actions">${s.builtin ? `<span class="chip info" title="Playbook que vem com o sistema; suas edições são mantidas">padrão do sistema${segEdited(s) ? ' (editado)' : ''}</span>${segEdited(s) ? `<button class="btn sm ghost" type="button" data-mia-restore-seg="${i}">${icon('refresh')}Restaurar padrão</button>` : ''}` : ''}<label class="switch-wrap">Ativo <input type="checkbox" data-bind="segments.${i}.active" ${s.active ? 'checked' : ''}></label>${s.builtin ? '' : `<button class="btn sm ghost" type="button" data-mia-remove="segments.${i}">${icon('trash')}Remover</button>`}</div></div>
         <div class="panel-body form-grid"><label>Nome<input class="field" data-bind="segments.${i}.name" value="${esc(s.name)}" maxlength="60"></label>
         <label>Palavras-chave (vírgula)<input class="field" data-bind-list="segments.${i}.keywords" value="${esc((s.keywords || []).join(', '))}" placeholder="imóveis, corretor, imobiliária"></label>
-        <label class="full">Estratégia para este segmento<textarea class="field" rows="6" maxlength="4000" data-bind="segments.${i}.strategy">${esc(s.strategy)}</textarea></label></div></section>`).join('')}
+        <label class="full">Estratégia para este segmento<textarea class="field" rows="6" maxlength="6000" data-bind="segments.${i}.strategy">${esc(s.strategy)}</textarea><span class="faint small count-line"><span data-count="segments.${i}.strategy">${(s.strategy || '').length}</span>/6000</span></label></div></section>`).join('')}
       <button class="btn" type="button" data-mia-add="segment">${icon('plus')}Adicionar segmento</button>`;
     case 'funil': {
       const counts = D.stage_counts || {}, fields = [...new Set(d.fields.filter(f => f.active).map(f => f.key))];
@@ -160,6 +165,11 @@ document.addEventListener('click', async e => {
       same.splice(k, 1); same.splice(k + dir, 0, f); same.forEach((x, n) => { x.order = n + 1; });
     }
     miaDirty(); miaRerender(); return;
+  }
+  if (ds.miaRestoreSeg !== undefined) {
+    const cur = d.segments[+ds.miaRestoreSeg], def = ((MIA.data.defaults || {}).segments || []).find(x => x.key === (cur || {}).key);
+    if (!cur || !def) return;
+    d.segments[+ds.miaRestoreSeg] = clone(def); miaDirty(); miaRerender(); return;
   }
   if (ds.miaRemove) { const [list, i] = ds.miaRemove.split('.'); d[list].splice(+i, 1); miaDirty(); miaRerender(); return; }
   if (ds.miaAdd === 'segment') { d.segments.push({ key: uniqueKey(d.segments, 'segmento'), name: '', keywords: [], strategy: '', active: true }); miaDirty(); miaRerender(); return; }

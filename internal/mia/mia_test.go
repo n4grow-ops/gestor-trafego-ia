@@ -118,15 +118,16 @@ func TestAttendantPromptUsesPersonaStageAndSegment(t *testing.T) {
 	c.Stages[2].Order = 1 // coleta padrão vem antes da etapa da verba e deixa a verba para ela
 	c.Stages[2].Fields = []string{"offer", "audience", "location", "objective_hint"}
 	c = c.Normalize()
+	c.Segments = c.Segments[:2] // isola dos playbooks embutidos: aqui só valem os dois módulos do teste
 
 	seg := c.SegmentFor("Corretor de imóveis", "")
 	if seg == nil || seg.Key != "imob" {
 		t.Fatalf("segmento = %+v", seg)
 	}
-	if s := c.SegmentFor("CLINICA odontológica", ""); s == nil || s.Key != "clinica" {
+	if s := c.SegmentFor("CLINICA geral", ""); s == nil || s.Key != "clinica" {
 		t.Fatalf("sem acento/maiúsculas = %+v", s)
 	}
-	if c.SegmentFor("Restaurante", "pizzaria") != nil || c.SegmentFor("", "") != nil {
+	if c.SegmentFor("Outro", "xyzzy") != nil || c.SegmentFor("", "") != nil {
 		t.Fatal("segmento sem módulo não deve casar")
 	}
 
@@ -190,5 +191,14 @@ func TestCacheFallbackAndTTL(t *testing.T) {
 	c.Invalidate()
 	if c.Get(ctx).Texts[mia.TextFirstMessage] != mia.Defaults().Texts[mia.TextFirstMessage] {
 		t.Fatal("sem nada guardado e banco fora = padrão")
+	}
+}
+
+func TestAttendantPromptHasCopyHelpBlock(t *testing.T) {
+	p := mia.Defaults().AttendantSystem("", contract.Fields{}, nil)
+	for _, want := range []string{"Ajuda com copy", "mais curto", "outro ângulo", "UMA vez", "não insista", "Nenhuma mudança de estratégia"} {
+		if !strings.Contains(p, want) {
+			t.Errorf("prompt da Mia sem %q", want)
+		}
 	}
 }

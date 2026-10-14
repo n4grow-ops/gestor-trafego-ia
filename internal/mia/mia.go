@@ -68,6 +68,9 @@ type Segment struct {
 	Keywords []string `json:"keywords"`
 	Strategy string   `json:"strategy"`
 	Active   bool     `json:"active"`
+	// Builtin marca segmento com a chave de um playbook padrão do sistema (derivado no Normalize; o
+	// painel mostra "padrão do sistema" e permite restaurar o texto original).
+	Builtin bool `json:"builtin,omitempty"`
 }
 
 // Voice: voz das respostas em áudio. Name vazio = TTS_VOICE do ambiente.
@@ -237,24 +240,86 @@ func (c Config) StageFor(state string, f contract.Fields) *Stage {
 	return &cands[0]
 }
 
+// formSegmentHints liga o segmento do formulário de cadastro (signup.Segments) aos termos que um
+// módulo precisa ter (chave, nome ou palavra-chave exatos) para valer como correspondência fraca.
+var formSegmentHints = map[string][]string{
+	"restaurante": {"restaurante", "alimentacao"},
+	"varejo":      {"varejo", "loja"},
+	"servicos":    {"servicos"},
+	"saude":       {"saude", "clinica"},
+	"beleza":      {"beleza", "estetica"},
+	"educacao":    {"educacao", "cursos"},
+	"imobiliario": {"imobiliario", "imoveis", "imobiliaria"},
+	"automotivo":  {"automotivo"},
+}
+
+// formSegmentLabels: rótulos (normalizados) que o cadastro grava em Identity.Segment (signup.Segments).
+var formSegmentLabels = map[string]string{
+	"restaurante e alimentacao": "restaurante", "loja e varejo": "varejo", "servicos": "servicos", "saude": "saude",
+	"beleza e estetica": "beleza", "educacao e cursos": "educacao", "imoveis": "imobiliario", "automotivo": "automotivo",
+}
+
 // SegmentFor acha o módulo do segmento do cliente: nome ou palavra-chave contida no segmento/nicho.
+// Se mais de um módulo casar, vale a correspondência mais específica (termo mais longo; empate: o
+// primeiro da lista). Quando nada casa, o segmento do formulário de cadastro (restaurante, varejo...)
+// vale como correspondência fraca, só contra chave, nome ou palavra-chave exatos do módulo.
 func (c Config) SegmentFor(segment, niche string) *Segment {
 	hay := strings.ToLower(normalize(segment + " | " + niche))
 	if strings.TrimSpace(strings.Trim(hay, "| ")) == "" {
 		return nil
 	}
-	for _, s := range c.Segments {
+	best, bestLen := -1, 0
+	for i, s := range c.Segments {
 		if !s.Active {
 			continue
 		}
 		for _, k := range append([]string{s.Name}, s.Keywords...) {
-			if k = strings.ToLower(normalize(strings.TrimSpace(k))); k != "" && strings.Contains(hay, k) {
-				s := s
-				return &s
+			k = strings.ToLower(normalize(strings.TrimSpace(k)))
+			if k != "" && strings.Contains(hay, k) && len(k) > bestLen {
+				best, bestLen = i, len(k)
 			}
 		}
 	}
-	return nil
+	if best < 0 {
+		best = c.weakSegment(segment)
+	}
+	if best < 0 {
+		return nil
+	}
+	s := c.Segments[best]
+	return &s
+}
+
+// weakSegment é o fallback pelo segmento do formulário de cadastro (código ou rótulo). -1 = nada.
+func (c Config) weakSegment(segment string) int {
+	seg := strings.ToLower(strings.TrimSpace(normalize(segment)))
+	code := ""
+	if _, ok := formSegmentHints[seg]; ok {
+		code = seg
+	} else if v, ok := formSegmentLabels[seg]; ok {
+		code = v
+	}
+	if code == "" {
+		return -1
+	}
+	hints := formSegmentHints[code]
+	for i, s := range c.Segments {
+		if !s.Active {
+			continue
+		}
+		if s.Key == code {
+			return i
+		}
+		for _, k := range append([]string{s.Name}, s.Keywords...) {
+			k = strings.ToLower(normalize(strings.TrimSpace(k)))
+			for _, h := range hints {
+				if k == h {
+					return i
+				}
+			}
+		}
+	}
+	return -1
 }
 
 // normalize tira acentos comuns para casar "clínica" com "clinica".
@@ -320,9 +385,7 @@ func (c Config) Normalize() Config {
 		out.Stages = d.Stages
 	}
 	sort.SliceStable(out.Stages, func(i, j int) bool { return out.Stages[i].Order < out.Stages[j].Order })
-	if out.Segments == nil {
-		out.Segments = []Segment{}
-	}
+	out.Segments = mergePlaybooks(out.Segments)
 	return out
 }
 
@@ -402,7 +465,7 @@ func (c Config) Validate() error {
 		if strings.TrimSpace(s.Name) == "" || long(s.Name, 60) {
 			add("segmento %q: nome vazio ou longo", s.Key)
 		}
-		if long(s.Strategy, 4000) || len(s.Keywords) > 20 {
+		if long(s.Strategy, MaxStrategyRunes) || len(s.Keywords) > maxKeywords {
 			add("segmento %q: estratégia ou palavras-chave demais", s.Key)
 		}
 	}

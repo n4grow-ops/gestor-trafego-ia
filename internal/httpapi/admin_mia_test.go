@@ -57,6 +57,18 @@ func TestMiaOnlyAdmins(t *testing.T) {
 	}
 }
 
+// customSegments conta os segmentos do cliente; os playbooks padrão do sistema (Builtin) entram sempre na
+// configuração (Normalize), então "restaurar o padrão" os mantém e só zera os personalizados.
+func customSegments(c mia.Config) int {
+	n := 0
+	for _, s := range c.Segments {
+		if !s.Builtin {
+			n++
+		}
+	}
+	return n
+}
+
 func TestMiaSaveVersionsRestoreAndRevert(t *testing.T) {
 	e := newAdminEnv(t, "otp")
 	admin := e.login("dono@meuanuncio.io")
@@ -103,11 +115,11 @@ func TestMiaSaveVersionsRestoreAndRevert(t *testing.T) {
 	}
 
 	r = e.do("POST", "/api/mia/restore", admin, map[string]any{"base_version": 1})
-	if c, v := cfgFrom(t, r); r.code != 200 || v != 2 || c.Texts[mia.TextFirstMessage] != mia.Defaults().Texts[mia.TextFirstMessage] || len(c.Segments) != 0 {
+	if c, v := cfgFrom(t, r); r.code != 200 || v != 2 || c.Texts[mia.TextFirstMessage] != mia.Defaults().Texts[mia.TextFirstMessage] || customSegments(c) != 0 || len(c.Segments) != len(mia.Defaults().Segments) {
 		t.Fatalf("restaurar = %d v%d", r.code, v)
 	}
 	r = e.do("POST", "/api/mia/revert", admin, map[string]any{"version": 1, "base_version": 2})
-	if c, v := cfgFrom(t, r); r.code != 200 || v != 3 || c.Texts[mia.TextFirstMessage] != "Oi! Sou a Mia, com texto novo." || len(c.Segments) != 1 {
+	if c, v := cfgFrom(t, r); r.code != 200 || v != 3 || c.Texts[mia.TextFirstMessage] != "Oi! Sou a Mia, com texto novo." || customSegments(c) != 1 || len(c.Segments) != len(mia.Defaults().Segments)+1 {
 		t.Fatalf("desfazer = %d v%d", r.code, v)
 	}
 	if hist := r.body["versions"].([]any); len(hist) != 3 {
