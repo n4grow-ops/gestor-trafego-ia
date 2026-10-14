@@ -53,6 +53,7 @@ const (
 	msgCreativesDone        = "Perfeito, recebi %d anúncio(s)! Etapa dos anúncios concluída: seu projeto está pronto pra publicar na Meta. Já te mando uma prévia de como fica no Instagram."
 	msgPreviewFeed          = "Prévia de como seu anúncio aparece no feed do Instagram 👆\n\nÉ uma ilustração: na publicação, a Meta pode ajustar um pouco o corte e o texto."
 	msgPreviewStory         = "E assim nos Stories e Reels 👆"
+	msgPreviewFailed        = "Não consegui te mandar a prévia por aqui, mas o anúncio segue normal pra Meta."
 	msgPreviewStoryOnly     = "Prévia de como seu anúncio aparece nos Stories e Reels do Instagram 👆\n\nÉ uma ilustração: na publicação, a Meta pode ajustar um pouco o corte e o texto."
 
 	msgCopyNoted          = "Anotei como referência pros textos ✍️"

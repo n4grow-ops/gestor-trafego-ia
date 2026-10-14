@@ -109,6 +109,15 @@ func run(log *slog.Logger) error {
 		} else {
 			eng.Storage = files
 		}
+		// Conta oficial: imagem (prévia do anúncio) só vai por link. Sobe num bucket privado e manda o
+		// link temporário.
+		if c, ok := wa.(*wame.Client); ok && c.Official {
+			if err := files.EnsureBucket(ctx, engine.PreviewsBucket); err != nil {
+				log.Error("bucket das prévias indisponível; prévia do anúncio não vai no WhatsApp oficial", "erro", err)
+			} else {
+				c.MediaURL = files.TempLinks(engine.PreviewsBucket, 24*60*60)
+			}
+		}
 	}
 	if cfg.MetaPublishEnabled() {
 		box, err := secretbox.New(cfg.MetaTokenKey)

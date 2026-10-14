@@ -52,6 +52,10 @@ func TestParseMedia(t *testing.T) {
 		{`{"from":"5511999998888","chat_type":"individual","id":"I","type":"image","image":{"id":"I","mime_type":"image/jpeg","caption":"foto"}}`, whatsapp.KindImage, "foto"},
 		{`{"from":"5511999998888","chat_type":"individual","id":"V","type":"video","video":{"id":"V","mime_type":"video/mp4","caption":"vid"}}`, whatsapp.KindVideo, "vid"},
 		{`{"from":"5511999998888","chat_type":"individual","id":"S","type":"sticker","sticker":{"id":"S"}}`, whatsapp.KindOther, ""},
+		// Caso real: foto mandada como arquivo (documento) é anúncio também.
+		{`{"from":"5511999998888","id":"D","type":"document","document":{"id":"D","filename":"20260330_184018.jpg","mime_type":"image/jpeg"}}`, whatsapp.KindImage, ""},
+		{`{"from":"5511999998888","id":"DV","type":"document","document":{"id":"DV","filename":"a.mp4","mime_type":"video/mp4","caption":"vid"}}`, whatsapp.KindVideo, "vid"},
+		{`{"from":"5511999998888","id":"DP","type":"document","document":{"id":"DP","filename":"a.pdf","mime_type":"application/pdf"}}`, whatsapp.KindOther, ""},
 	}
 	for _, tc := range cases {
 		in, ok, err := c.ParseWebhook(msg(tc.m))

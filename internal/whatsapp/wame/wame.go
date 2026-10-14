@@ -4,6 +4,7 @@
 package wame
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -20,6 +21,9 @@ type Client struct {
 	Token   string
 	// Official: instância da Cloud API. Visto e "digitando…" vão pela última mensagem recebida do chat.
 	Official bool
+	// MediaURL publica a imagem num link temporário. A conta oficial não aceita base64 e só manda imagem
+	// por link; sem ele, SendImage falha na conta oficial.
+	MediaURL func(ctx context.Context, data []byte, mime string) (string, error)
 	HTTP     *http.Client
 
 	last sync.Map // chat → id da última mensagem recebida (oficial: visto e digitando)
@@ -72,8 +76,9 @@ type message struct {
 			ResponseJSON string `json:"response_json"`
 		} `json:"nfm_reply"`
 	} `json:"interactive"`
-	Audio *media `json:"audio"`
-	Video *media `json:"video"`
+	Audio    *media `json:"audio"`
+	Video    *media `json:"video"`
+	Document *media `json:"document"`
 }
 
 func changes(body []byte) ([]change, error) {
@@ -149,6 +154,17 @@ func toInbound(m message, raw []byte) (whatsapp.Inbound, bool) {
 		in.Kind = whatsapp.KindVideo
 		if m.Video != nil {
 			in.Text = m.Video.Caption
+		}
+	case "document":
+		// Foto ou vídeo mandado como arquivo: vale como imagem ou vídeo (o download é o mesmo).
+		in.Kind = whatsapp.KindOther
+		if d := m.Document; d != nil {
+			switch {
+			case strings.HasPrefix(d.MimeType, "image/"):
+				in.Kind, in.Text = whatsapp.KindImage, d.Caption
+			case strings.HasPrefix(d.MimeType, "video/"):
+				in.Kind, in.Text = whatsapp.KindVideo, d.Caption
+			}
 		}
 	default:
 		in.Kind = whatsapp.KindOther

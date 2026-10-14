@@ -4,6 +4,8 @@ package storage
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -78,6 +80,52 @@ func (c *Client) Delete(ctx context.Context, bucket, path string) error {
 		return nil
 	}
 	return fmt.Errorf("storage: delete: status %d: %s", res.StatusCode, strings.TrimSpace(string(msg)))
+}
+
+// SignedURL devolve um link temporário (expiresIn em segundos) para ler um arquivo do bucket privado.
+func (c *Client) SignedURL(ctx context.Context, bucket, path string, expiresIn int) (string, error) {
+	body, _ := json.Marshal(map[string]any{"expiresIn": expiresIn})
+	res, err := c.do(ctx, http.MethodPost, "/storage/v1/object/sign/"+bucket+"/"+path, "application/json", body)
+	if err != nil {
+		return "", err
+	}
+	defer res.Body.Close()
+	msg, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+	if res.StatusCode/100 != 2 {
+		return "", fmt.Errorf("storage: link: status %d: %s", res.StatusCode, strings.TrimSpace(string(msg)))
+	}
+	var out struct {
+		SignedURL string `json:"signedURL"`
+	}
+	if err := json.Unmarshal(msg, &out); err != nil || out.SignedURL == "" {
+		return "", fmt.Errorf("storage: link: resposta sem signedURL: %s", strings.TrimSpace(string(msg)))
+	}
+	return c.URL + "/storage/v1" + out.SignedURL, nil
+}
+
+// TempLinks sobe cada arquivo com nome aleatório no bucket e devolve um link temporário (ttl em
+// segundos). Serve a conta oficial do WhatsApp, que só manda imagem por link.
+func (c *Client) TempLinks(bucket string, ttl int) func(ctx context.Context, data []byte, mime string) (string, error) {
+	return func(ctx context.Context, data []byte, mime string) (string, error) {
+		var b [16]byte
+		if _, err := rand.Read(b[:]); err != nil {
+			return "", fmt.Errorf("storage: %w", err)
+		}
+		ext := ".bin"
+		switch mime {
+		case "image/jpeg":
+			ext = ".jpg"
+		case "image/png":
+			ext = ".png"
+		case "image/webp":
+			ext = ".webp"
+		}
+		path := time.Now().UTC().Format("2006-01-02") + "/" + hex.EncodeToString(b[:]) + ext
+		if err := c.Upload(ctx, bucket, path, mime, data); err != nil {
+			return "", err
+		}
+		return c.SignedURL(ctx, bucket, path, ttl)
+	}
 }
 
 // maxDownload limita a leitura (vídeos do WhatsApp ficam bem abaixo disso).

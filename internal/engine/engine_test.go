@@ -44,6 +44,7 @@ type fakeWA struct {
 	mediaErr  error
 	fail      bool     // simula o WhatsApp fora do ar
 	voiceFail bool     // simula o WAHA recusando mensagem de voz
+	imageErr  error    // simula o provedor recusando imagem (ex.: conta oficial sem link)
 	events    []string // visto, presenças, voz e textos, na ordem
 	voices    []sent
 	images    []sentImage
@@ -91,6 +92,9 @@ func (f *fakeWA) SendImage(_ context.Context, chatID string, image []byte, mime,
 	defer f.mu.Unlock()
 	if f.fail {
 		return errors.New("whatsapp fora do ar")
+	}
+	if f.imageErr != nil {
+		return f.imageErr
 	}
 	f.events = append(f.events, "image:"+caption)
 	f.images = append(f.images, sentImage{chatID, image, mime, caption})

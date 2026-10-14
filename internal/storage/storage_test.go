@@ -84,3 +84,45 @@ func TestDownloadAndDelete(t *testing.T) {
 		t.Fatalf("chamadas = %q", calls)
 	}
 }
+
+func TestSignedURL(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if r.Method != http.MethodPost || r.URL.Path != "/storage/v1/object/sign/previews/a/b.jpg" || string(body) != `{"expiresIn":600}` {
+			t.Errorf("%s %s %s", r.Method, r.URL.Path, body)
+		}
+		io.WriteString(w, `{"signedURL":"/object/sign/previews/a/b.jpg?token=T"}`)
+	}))
+	defer srv.Close()
+	got, err := storage.New(srv.URL, "srv").SignedURL(context.Background(), "previews", "a/b.jpg", 600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != srv.URL+"/storage/v1/object/sign/previews/a/b.jpg?token=T" {
+		t.Fatalf("url = %q", got)
+	}
+}
+
+func TestTempLinks(t *testing.T) {
+	var uploaded string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/storage/v1/object/sign/previews/"):
+			io.WriteString(w, `{"signedURL":"/object/sign/previews/x.jpg?token=T"}`)
+		case strings.HasPrefix(r.URL.Path, "/storage/v1/object/previews/"):
+			body, _ := io.ReadAll(r.Body)
+			uploaded = r.URL.Path + " " + r.Header.Get("Content-Type") + " " + string(body)
+			io.WriteString(w, `{}`)
+		default:
+			t.Errorf("rota inesperada %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+	link, err := storage.New(srv.URL, "srv").TempLinks("previews", 60)(context.Background(), []byte("IMG"), "image/jpeg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(uploaded, ".jpg image/jpeg IMG") || !strings.Contains(link, "token=T") {
+		t.Fatalf("upload = %q link = %q", uploaded, link)
+	}
+}

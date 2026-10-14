@@ -15,6 +15,9 @@ import (
 // JobCreativesPreview manda a prévia do anúncio no Instagram depois que a etapa dos anúncios fecha.
 const JobCreativesPreview = "creatives.preview"
 
+// PreviewsBucket guarda as prévias que vão por link na conta oficial do WhatsApp.
+const PreviewsBucket = "previews"
+
 type PreviewJob struct {
 	ConversationID int64 `json:"conversation_id"`
 	DraftID        int64 `json:"draft_id"`
@@ -36,6 +39,30 @@ func (e *Engine) sendPreview(ctx context.Context, j PreviewJob) error {
 	if err != nil || len(list) == 0 {
 		return err
 	}
+	if err := e.sendPreviewImages(ctx, conv, data, list); err != nil {
+		if ctx.Err() != nil {
+			return err // desligando: o job volta e tenta de novo
+		}
+		// A prévia é um extra: se o WhatsApp recusa a imagem, o projeto segue para a Meta mesmo assim.
+		e.Log.Error("prévia do anúncio não enviada", "conversation_id", conv.ID, "erro", err)
+		ident, _ := e.Store.GetIdentity(ctx, conv.IdentityID)
+		e.audit(ctx, ident.OrgID, "system", "preview_failed", map[string]any{"conversation_id": conv.ID, "draft_id": j.DraftID, "error": err.Error()})
+		if err := e.send(ctx, conv, msgPreviewFailed); err != nil {
+			return err
+		}
+	} else if err := e.Store.AddMessage(ctx, conv.ID, "out", "image", "[prévia do anúncio no Instagram enviada]"); err != nil {
+		return err
+	}
+	// Projeto pronto: com conta conectada vai para a Meta; sem ela, já pede a conexão.
+	// Falha aqui não reenvia a prévia.
+	if err := e.afterPreview(ctx, conv, j.DraftID); err != nil {
+		e.Log.Error("falha ao seguir depois da prévia", "conversation_id", conv.ID, "erro", err)
+	}
+	return nil
+}
+
+// sendPreviewImages monta e manda as imagens da prévia (feed e Stories).
+func (e *Engine) sendPreviewImages(ctx context.Context, conv store.Conversation, data store.PreviewData, list []store.Creative) error {
 	feed, story := pickPreview(list)
 	if feed != nil {
 		post, err := e.previewPost(ctx, data, *feed)
@@ -66,14 +93,6 @@ func (e *Engine) sendPreview(ctx context.Context, j PreviewJob) error {
 		if err := e.WA.SendImage(ctx, conv.ChatID, img, "image/jpeg", caption); err != nil {
 			return err
 		}
-	}
-	if err := e.Store.AddMessage(ctx, conv.ID, "out", "image", "[prévia do anúncio no Instagram enviada]"); err != nil {
-		return err
-	}
-	// Projeto pronto: com conta conectada vai para a Meta; sem ela, já pede a conexão.
-	// Falha aqui não reenvia a prévia.
-	if err := e.afterPreview(ctx, conv, j.DraftID); err != nil {
-		e.Log.Error("falha ao seguir depois da prévia", "conversation_id", conv.ID, "erro", err)
 	}
 	return nil
 }

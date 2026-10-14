@@ -79,8 +79,18 @@ func (c *Client) SendVoice(ctx context.Context, chatID string, audio []byte, mim
 	return c.send(ctx, http.MethodPost, "/message/base64/audio", map[string]any{"to": to(chatID), "base64": dataURI(mime, audio)})
 }
 
-// SendImage manda a imagem em base64 com legenda.
+// SendImage manda a imagem com legenda: em base64 na não oficial, por link (MediaURL) na oficial.
 func (c *Client) SendImage(ctx context.Context, chatID string, image []byte, mime, caption string) error {
+	if c.Official {
+		if c.MediaURL == nil {
+			return errors.New("wame: conta oficial sem link de mídia configurado; imagem não enviada")
+		}
+		link, err := c.MediaURL(ctx, image, mime)
+		if err != nil {
+			return fmt.Errorf("wame: publicar imagem: %w", err)
+		}
+		return c.send(ctx, http.MethodPost, "/message/image", map[string]any{"to": to(chatID), "url": link, "caption": caption})
+	}
 	return c.send(ctx, http.MethodPost, "/message/base64/image", map[string]any{"to": to(chatID), "base64": dataURI(mime, image), "caption": caption})
 }
 

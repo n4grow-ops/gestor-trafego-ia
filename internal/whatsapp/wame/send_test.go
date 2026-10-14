@@ -246,3 +246,37 @@ func TestSendFlowDraft(t *testing.T) {
 		t.Fatalf("mode = %v", (*calls)[0].Body["mode"])
 	}
 }
+
+// Conta oficial (Cloud API) não aceita imagem em base64: a imagem sobe por MediaURL e vai como link.
+func TestSendImageOfficialUsesLink(t *testing.T) {
+	c, calls := server(t, 200, `{"status":200}`)
+	c.Official = true
+	var gotData []byte
+	c.MediaURL = func(_ context.Context, data []byte, mime string) (string, error) {
+		gotData = data
+		if mime != "image/jpeg" {
+			t.Errorf("mime = %q", mime)
+		}
+		return "https://files.example/p.jpg?token=x", nil
+	}
+	must(t, c.SendImage(context.Background(), "5511999998888", []byte("IMG"), "image/jpeg", "prévia"))
+	if string(gotData) != "IMG" {
+		t.Fatalf("imagem não subiu: %q", gotData)
+	}
+	got := (*calls)[0]
+	if got.Path != "/KEY/message/image" || got.Body["url"] != "https://files.example/p.jpg?token=x" ||
+		got.Body["caption"] != "prévia" || got.Body["to"] != "5511999998888" {
+		t.Fatalf("%+v", got)
+	}
+}
+
+func TestSendImageOfficialWithoutMediaURL(t *testing.T) {
+	c, calls := server(t, 200, `{"status":200}`)
+	c.Official = true
+	if err := c.SendImage(context.Background(), "5511999998888", []byte("IMG"), "image/jpeg", ""); err == nil {
+		t.Fatal("sem MediaURL, a conta oficial não tem como mandar imagem: tinha que dar erro")
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("não podia chamar a Wame: %+v", *calls)
+	}
+}

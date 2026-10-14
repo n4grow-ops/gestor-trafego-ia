@@ -987,3 +987,21 @@ func TestPublishAuditRedactsSecrets(t *testing.T) {
 		t.Fatalf("auditoria = %s", data)
 	}
 }
+
+// Caso real (conversa 51): a Wame oficial recusou a imagem da prévia (422), o job da prévia falhou três
+// vezes e a publicação, que vinha depois dela, nunca foi enfileirada. A prévia é um extra: se ela não sai,
+// o anúncio vai para a Meta do mesmo jeito.
+func TestPreviewImageFailureStillPublishes(t *testing.T) {
+	h, _, pub := newPublishHarness(t, "owner")
+	h.connectMeta()
+	h.readyProject()
+	h.wa.imageErr = errors.New(`wame /message/base64/image: status 422: {"status":422,"message":"Este tipo de mensagem não é suportado em conta oficial (WhatsApp Cloud API)."}`)
+	h.runKind(engine.JobCreativesPreview)
+	if h.pendingJobs(engine.JobMetaPublish) != 1 {
+		t.Fatal("prévia falhou e a publicação não foi enfileirada")
+	}
+	h.runKind(engine.JobMetaPublish)
+	if pub.calls() != 1 {
+		t.Fatalf("Publish chamado %d vezes", pub.calls())
+	}
+}
