@@ -1,0 +1,24 @@
+{
+  "suites": [
+    {
+      "nome": "go:.",
+      "tipo": "go",
+      "dir": ""
+    }
+  ],
+  "ignorar": [
+    "*.md",
+    "*.txt",
+    "*.log",
+    "*.png",
+    "*.jpg",
+    "*.jpeg",
+    "*.webp",
+    "*.svg",
+    "*.gif",
+    ".regressao/*",
+    "graphify-out/*",
+    ".claude/*"
+  ],
+  "timeout": 600
+}

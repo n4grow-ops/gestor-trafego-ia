@@ -273,6 +273,7 @@ func (e *Engine) publishInput(ctx context.Context, ident store.Identity, conn st
 		Objective:        prop.Objective,
 		LeadForm:         prop.LeadForm,
 		FormPrivacyURL:   e.LeadPrivacyURL,
+		Form:             leadFormSpec(prop.Form),
 		DailyBudgetCents: int64(math.Round(prop.DailyBudgetBRL * 100)),
 		LocationQuery:    strings.TrimSpace(fields.Location),
 		RadiusKM:         prop.Audience.RadiusKM,
@@ -899,4 +900,24 @@ func (e *Engine) draftFinalCopies(ctx context.Context, draftID int64) ([]meta.Pu
 	}
 	_ = json.Unmarshal(data.Fields, &fields)
 	return e.finalCopies(ctx, data.OrgID, data, prop, fields.Offer), nil
+}
+
+// leadFormSpec traduz o formulário que o cliente montou para os termos da Meta. Nil = formulário padrão.
+func leadFormSpec(f *contract.LeadForm) *meta.LeadFormSpec {
+	if f == nil {
+		return nil
+	}
+	n := f.Normalize()
+	spec := &meta.LeadFormSpec{
+		Qualified: n.Kind == "qualified", Headline: n.Headline, Intro: n.Intro, Bullets: n.Bullets,
+		IntroButton: n.IntroButton, QuestionsHeadline: n.QuestionsHeadline, ThanksTitle: n.ThanksTitle,
+		ThanksText: n.ThanksText, ButtonAction: n.ButtonAction, ButtonText: n.ButtonText, ButtonURL: n.ButtonURL,
+		ButtonPhone: whatsapp.Digits(n.ButtonPhone), PrivacyURL: n.PrivacyURL,
+	}
+	for _, q := range n.Questions {
+		spec.Questions = append(spec.Questions, meta.LeadFormQuestion{
+			Type: contract.LeadQuestionMetaType(q.Kind), Label: q.Label, Options: q.Options,
+		})
+	}
+	return spec
 }

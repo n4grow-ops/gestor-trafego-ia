@@ -28,15 +28,16 @@ type PublishCopy struct {
 type PublishInput struct {
 	AdAccountID      string // com ou sem "act_"
 	PageID           string
-	InstagramActorID string // opcional
-	WhatsAppNumber   string // número do WhatsApp da Página, só dígitos; opcional (vazio = fica de fora)
-	PageWhatsApp     bool   // a Página tem WhatsApp vinculado (mesmo sem o número conhecido)
-	LinkURL          string // opcional; vazio = página do Facebook
-	Name             string // terminando em "#p<id>", a campanha de tentativa anterior é procurada e apagada antes
-	Objective        string // OUTCOME_ENGAGEMENT | OUTCOME_LEADS | OUTCOME_TRAFFIC
-	LeadForm         bool   // com OUTCOME_LEADS: formulário instantâneo em vez de WhatsApp
-	FormPrivacyURL   string // política de privacidade do formulário (a Meta exige)
-	DailyBudgetCents int64  // na moeda da conta
+	InstagramActorID string        // opcional
+	WhatsAppNumber   string        // número do WhatsApp da Página, só dígitos; opcional (vazio = fica de fora)
+	PageWhatsApp     bool          // a Página tem WhatsApp vinculado (mesmo sem o número conhecido)
+	LinkURL          string        // opcional; vazio = página do Facebook
+	Name             string        // terminando em "#p<id>", a campanha de tentativa anterior é procurada e apagada antes
+	Objective        string        // OUTCOME_ENGAGEMENT | OUTCOME_LEADS | OUTCOME_TRAFFIC
+	LeadForm         bool          // com OUTCOME_LEADS: formulário instantâneo em vez de WhatsApp
+	FormPrivacyURL   string        // política de privacidade do formulário (a Meta exige)
+	Form             *LeadFormSpec // como o cliente montou o formulário; nil = nome, telefone e e-mail
+	DailyBudgetCents int64         // na moeda da conta
 	StartTime        time.Time
 	EndTime          time.Time // zero = sem fim
 	LocationQuery    string
@@ -91,4 +92,30 @@ type FirstActivation struct {
 // Opcional ao Publisher; *Client implementa.
 type Activator interface {
 	ActivateFirst(ctx context.Context, token string, a FirstActivation) error
+}
+
+// LeadFormSpec é o formulário instantâneo já nos termos da Meta. Campo vazio = padrão da Meta.
+type LeadFormSpec struct {
+	Qualified         bool // "mais qualificado": a pessoa revisa os dados antes de enviar
+	Headline          string
+	Intro             string
+	Bullets           []string
+	IntroButton       string
+	QuestionsHeadline string
+	Questions         []LeadFormQuestion // vazio = nome, telefone e e-mail
+	ThanksTitle       string
+	ThanksText        string
+	ButtonAction      string // "site" | "whatsapp" | "call" | "none"
+	ButtonText        string
+	ButtonURL         string // site; vazio = destino do anúncio
+	ButtonPhone       string // só dígitos com DDI (whatsapp e call)
+	PrivacyURL        string // política do cliente; vazio = FormPrivacyURL
+}
+
+// LeadFormQuestion é uma pergunta: Type é o tipo da Meta (FULL_NAME, PHONE, CUSTOM...).
+// CUSTOM com Options vira múltipla escolha; sem Options, resposta livre.
+type LeadFormQuestion struct {
+	Type    string
+	Label   string
+	Options []string
 }

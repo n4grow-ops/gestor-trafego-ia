@@ -251,7 +251,7 @@ func (e *Engine) propose(ctx context.Context, p ProposeJob) error {
 	}
 	// Campanha de formulário é pedido do cliente: o objetivo de leads vale mesmo que a organização
 	// tenha só mensagens na lista.
-	leadForm := contract.WantsLeadForm(b.ObjectiveHint)
+	leadForm := contract.WantsLeadForm(b.ObjectiveHint) || b.LeadForm != nil
 	if leadForm && !slices.Contains(b.Constraints.AllowedObjectives, "OUTCOME_LEADS") {
 		b.Constraints.AllowedObjectives = append(slices.Clone(b.Constraints.AllowedObjectives), "OUTCOME_LEADS")
 	}
@@ -287,6 +287,12 @@ func (e *Engine) propose(ctx context.Context, p ProposeJob) error {
 	prop.Placements = b.Placements
 	if leadForm {
 		prop.Objective, prop.LeadForm = "OUTCOME_LEADS", true
+		// O formulário é do cliente (perguntas, textos, tela final): o Gestor não mexe.
+		form := contract.LeadForm{}.Normalize()
+		if b.LeadForm != nil {
+			form = *b.LeadForm
+		}
+		prop.Form = &form
 	}
 	hash, err := campaign.ProposalHash(prop)
 	if err != nil {

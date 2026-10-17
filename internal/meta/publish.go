@@ -214,9 +214,10 @@ func (c *Client) Publish(ctx context.Context, token string, in PublishInput) (Pu
 
 	// Formulário instantâneo: criado na Página antes da campanha (se falhar, nada fica na conta de anúncios).
 	if p.leadForm {
-		if p.formID, err = c.ensureLeadForm(ctx, token, in); err != nil {
+		if p.formID, warns, err = c.ensureLeadForm(ctx, token, in, p.link); err != nil {
 			return res, publishError("leadform", err)
 		}
+		res.Warnings = append(res.Warnings, warns...)
 	}
 
 	// Daqui em diante, falha apaga a campanha.

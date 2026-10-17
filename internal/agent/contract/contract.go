@@ -48,6 +48,8 @@ type Fields struct {
 	// Placements: onde o anúncio aparece, só quando o cliente pediu ("feed", "stories", "reels").
 	// Vazio = automático (a Meta distribui).
 	Placements []string `json:"placements,omitempty"`
+	// LeadForm: formulário instantâneo que o cliente montou (perguntas, abertura, tela final). Nil = não falou.
+	LeadForm *LeadForm `json:"lead_form,omitempty"`
 }
 
 // Posicionamentos que o cliente pode escolher.
@@ -125,13 +127,14 @@ func (f Fields) Merge(o Fields) Fields {
 	if pl := NormalizePlacements(o.Placements); len(pl) > 0 {
 		out.Placements = pl
 	}
+	out.LeadForm = MergeLeadForm(f.LeadForm, o.LeadForm)
 	return out
 }
 
 // HasData diz se algum campo foi de fato informado.
 func (f Fields) HasData() bool {
 	return !blank(f.Offer) || !blank(f.Audience) || !blank(f.Location) || !blank(f.ObjectiveHint) ||
-		positive(f.DailyBudgetBRL) || len(f.Media) > 0 || len(NormalizePlacements(f.Placements)) > 0
+		positive(f.DailyBudgetBRL) || len(f.Media) > 0 || len(NormalizePlacements(f.Placements)) > 0 || f.LeadForm != nil
 }
 
 // Missing lista os campos obrigatórios que faltam, em ordem fixa.
@@ -193,6 +196,7 @@ type Briefing struct {
 	ObjectiveHint  string      `json:"objective_hint,omitempty"`
 	Media          []string    `json:"media,omitempty"`
 	Placements     []string    `json:"placements,omitempty"` // pedido do cliente; vazio = automático
+	LeadForm       *LeadForm   `json:"lead_form,omitempty"`  // formulário que o cliente montou; nil = não falou
 	Constraints    Constraints `json:"constraints"`
 	Adjustment     string      `json:"adjustment,omitempty"`
 	// CopyVariations: quantas variações de texto o cliente pediu. 0 = não pediu (o Gestor gera 1).
@@ -216,6 +220,10 @@ func NewBriefing(orgID int64, f Fields, c Constraints) (Briefing, error) {
 	}
 	if f.ObjectiveHint != nil {
 		b.ObjectiveHint = *f.ObjectiveHint
+	}
+	if f.LeadForm != nil {
+		lf := f.LeadForm.Normalize()
+		b.LeadForm = &lf
 	}
 	return b, nil
 }
@@ -249,6 +257,8 @@ type CampaignProposal struct {
 	Placements []string `json:"placements,omitempty"`
 	// LeadForm: o cliente pediu formulário (o sistema copia do briefing; objetivo vira OUTCOME_LEADS).
 	LeadForm bool `json:"lead_form,omitempty"`
+	// Form: como o formulário fica (copiado do briefing, já normalizado). Nil com LeadForm = padrão.
+	Form *LeadForm `json:"form,omitempty"`
 }
 
 // MinRadiusKM é o menor raio que a Meta aceita em volta de cidade. Raio 0 = só a cidade.

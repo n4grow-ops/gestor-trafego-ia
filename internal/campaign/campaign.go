@@ -115,7 +115,7 @@ func SummaryWith(p contract.CampaignProposal, code string, o SummaryOptions) str
 		label = p.Objective
 	}
 	if p.LeadForm {
-		label = "contatos por formulário (a pessoa preenche nome, telefone e e-mail na própria Meta)"
+		label = "contatos por formulário (a pessoa preenche um formulário na própria Meta)"
 	}
 	fmt.Fprintf(&b, "Objetivo: %s\n", label)
 	area := fmt.Sprintf("raio de %d km", p.Audience.RadiusKM)
@@ -135,6 +135,9 @@ func SummaryWith(p contract.CampaignProposal, code string, o SummaryOptions) str
 			label = " (foco em " + a + ")"
 		}
 		fmt.Fprintf(&b, "\nAnúncio %d%s: *%s*\n%s\n", i+1, label, c.Headline, c.Text)
+	}
+	if p.LeadForm {
+		b.WriteString(LeadFormText(p.Form))
 	}
 	b.WriteString(copyNotes(p, o))
 	fmt.Fprintf(&b, "\nPor quê: %s\n", p.Rationale)
@@ -170,4 +173,77 @@ func genders(g []string) string {
 		}
 	}
 	return "todos os gêneros"
+}
+
+// LeadFormText descreve o formulário no resumo da proposta, para o cliente conferir antes de aprovar.
+func LeadFormText(f *contract.LeadForm) string {
+	n := contract.LeadForm{}.Normalize()
+	if f != nil {
+		n = f.Normalize()
+	}
+	var b strings.Builder
+	b.WriteString("\n*Formulário*\n")
+	if n.Kind == "qualified" {
+		b.WriteString("Tipo: mais qualificado (a pessoa confere os dados antes de enviar)\n")
+	} else {
+		b.WriteString("Tipo: mais cadastros (preenchimento rápido)\n")
+	}
+	if n.HasIntro() {
+		intro := n.Intro
+		if len(n.Bullets) > 0 {
+			intro = strings.Join(n.Bullets, " • ")
+		}
+		b.WriteString("Abertura:")
+		if n.Headline != "" {
+			fmt.Fprintf(&b, " *%s*", n.Headline)
+		}
+		if intro != "" && intro != n.Headline {
+			b.WriteString(" " + intro)
+		}
+		if n.IntroButton != "" {
+			fmt.Fprintf(&b, " [%s]", n.IntroButton)
+		}
+		b.WriteString("\n")
+	} else {
+		b.WriteString("Abertura: sem tela de abertura\n")
+	}
+	if n.QuestionsHeadline != "" {
+		fmt.Fprintf(&b, "Título das perguntas: %s\n", n.QuestionsHeadline)
+	}
+	b.WriteString("Perguntas:\n")
+	for i, q := range n.Questions {
+		fmt.Fprintf(&b, "%d. %s\n", i+1, contract.LeadQuestionText(q))
+	}
+	if n.HasThanks() {
+		title := n.ThanksTitle
+		if title == "" {
+			title = "Obrigado!"
+		}
+		fmt.Fprintf(&b, "Tela final: *%s*", title)
+		if n.ThanksText != "" {
+			b.WriteString(" " + n.ThanksText)
+		}
+		b.WriteString("\n")
+		switch n.ButtonAction {
+		case "none":
+			b.WriteString("Botão: sem botão\n")
+		case "whatsapp":
+			fmt.Fprintf(&b, "Botão: abre o WhatsApp %s\n", n.ButtonPhone)
+		case "call":
+			fmt.Fprintf(&b, "Botão: liga para %s\n", n.ButtonPhone)
+		default:
+			dest := n.ButtonURL
+			if dest == "" {
+				dest = "o destino do anúncio"
+			}
+			fmt.Fprintf(&b, "Botão: abre %s\n", dest)
+		}
+	} else {
+		b.WriteString("Tela final: padrão da Meta (agradecimento)\n")
+	}
+	if n.PrivacyURL != "" {
+		fmt.Fprintf(&b, "Política de privacidade: %s\n", n.PrivacyURL)
+	}
+	b.WriteString("Pode mudar qualquer parte: perguntas, opções, textos e botão.\n")
+	return b.String()
 }

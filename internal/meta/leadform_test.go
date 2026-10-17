@@ -2,6 +2,7 @@ package meta_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -82,5 +83,66 @@ func TestPublishLeadFormTermsNotAccepted(t *testing.T) {
 	}
 	if len(f.calls("POST /act_9/campaigns")) != 0 {
 		t.Fatal("campanha criada sem formulário")
+	}
+}
+
+func TestPublishLeadFormCustom(t *testing.T) {
+	f, c := newFake(t)
+	f.leadFormBasics()
+	in := leadFormInput()
+	in.Form = &meta.LeadFormSpec{
+		Qualified: true, Headline: "Ganhe 10% na primeira compra", Bullets: []string{"Sem custo", "Resposta em 1 dia"},
+		IntroButton: "Quero", QuestionsHeadline: "Conte um pouco",
+		Questions: []meta.LeadFormQuestion{{Type: "FULL_NAME"}, {Type: "WHATSAPP_NUMBER"},
+			{Type: "CUSTOM", Label: "Melhor horário?", Options: []string{"Manhã", "Tarde"}}, {Type: "CUSTOM", Label: "Seu caso"}},
+		ThanksTitle: "Recebemos!", ThanksText: "Te chamamos hoje.", ButtonAction: "whatsapp", ButtonPhone: "11999990000",
+		PrivacyURL: "https://cliente.com/privacidade",
+	}
+	if _, err := c.Publish(context.Background(), tok, in); err != nil {
+		t.Fatal(err)
+	}
+	form := f.one("POST /P1/leadgen_forms").Form
+	if form.Get("is_optimized_for_quality") != "true" || form.Get("question_page_custom_headline") != "Conte um pouco" ||
+		!strings.Contains(form.Get("privacy_policy"), "cliente.com/privacidade") || !strings.Contains(form.Get("name"), "formulário ") {
+		t.Fatalf("formulário = %v", form)
+	}
+	var qs []map[string]any
+	if err := json.Unmarshal([]byte(form.Get("questions")), &qs); err != nil {
+		t.Fatal(err)
+	}
+	if len(qs) != 4 || qs[1]["type"] != "WHATSAPP_NUMBER" || qs[2]["label"] != "Melhor horário?" || qs[2]["key"] != "pergunta_1" ||
+		len(qs[2]["options"].([]any)) != 2 || qs[3]["options"] != nil || qs[0]["label"] != nil {
+		t.Fatalf("perguntas = %v", qs)
+	}
+	card := decode(t, form.Get("context_card"))
+	if card["title"] != "Ganhe 10% na primeira compra" || card["style"] != "LIST_STYLE" || card["button_text"] != "Quero" {
+		t.Fatalf("abertura = %v", card)
+	}
+	ty := decode(t, form.Get("thank_you_page"))
+	if ty["title"] != "Recebemos!" || ty["body"] != "Te chamamos hoje." || ty["button_type"] != "VIEW_WEBSITE" ||
+		ty["website_url"] != "https://wa.me/5511999990000" {
+		t.Fatalf("tela final = %v", ty)
+	}
+}
+
+func TestPublishLeadFormCallWithoutPhoneFallsBackToSite(t *testing.T) {
+	f, c := newFake(t)
+	f.leadFormBasics()
+	in := leadFormInput()
+	in.Form = &meta.LeadFormSpec{ThanksTitle: "Valeu", ButtonAction: "call"}
+	res, err := c.Publish(context.Background(), tok, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	form := f.one("POST /P1/leadgen_forms").Form
+	if form.Get("context_card") != "" {
+		t.Fatal("abertura sem pedido")
+	}
+	ty := decode(t, form.Get("thank_you_page"))
+	if ty["button_type"] != "VIEW_WEBSITE" || ty["website_url"] != "https://www.facebook.com/P1" || len(res.Warnings) == 0 {
+		t.Fatalf("tela final = %v avisos = %v", ty, res.Warnings)
+	}
+	if !strings.Contains(form.Get("questions"), "FULL_NAME") {
+		t.Fatal("sem perguntas deve usar o padrão")
 	}
 }
