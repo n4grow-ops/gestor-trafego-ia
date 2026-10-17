@@ -85,3 +85,18 @@ func TestLeadFormCampaignCustomForm(t *testing.T) {
 		t.Fatalf("formulário = %+v", f)
 	}
 }
+
+// Texto que o cliente fechou com a Mia na conversa vai igual para a proposta.
+func TestClientCopyGoesToProposal(t *testing.T) {
+	h, _, _ := newPublishHarness(t, "owner")
+	h.att.Responses = []string{turnOffer, `{"intent":"provide_info","fields":{"audience":"famílias","location":"Campinas","daily_budget_brl":50,
+		"copies":[{"headline":"Sexta é dia de pizza","text":"Massa de fermentação natural e borda recheada. Chama no WhatsApp e garanta a sua."}]},"reply":"Fechado, uso esse texto."}`}
+	h.mgr.Responses = []string{validProposal}
+	h.say("quero anunciar pizza")
+	h.say("famílias em Campinas, 50 por dia, usa o texto 2")
+	h.runJobs()
+	summary := h.wa.last().Text
+	if !strings.Contains(summary, "Sexta é dia de pizza") || !strings.Contains(summary, "fermentação natural") {
+		t.Fatalf("proposta sem o texto do cliente:\n%s", summary)
+	}
+}

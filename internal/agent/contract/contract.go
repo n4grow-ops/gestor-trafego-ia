@@ -50,6 +50,8 @@ type Fields struct {
 	Placements []string `json:"placements,omitempty"`
 	// LeadForm: formulário instantâneo que o cliente montou (perguntas, abertura, tela final). Nil = não falou.
 	LeadForm *LeadForm `json:"lead_form,omitempty"`
+	// Copies: textos do anúncio que o cliente escreveu ou escolheu na conversa com a Mia. Valem como vieram.
+	Copies []Copy `json:"copies,omitempty"`
 }
 
 // Posicionamentos que o cliente pode escolher.
@@ -128,13 +130,17 @@ func (f Fields) Merge(o Fields) Fields {
 		out.Placements = pl
 	}
 	out.LeadForm = MergeLeadForm(f.LeadForm, o.LeadForm)
+	if cs := CleanCopies(o.Copies); len(cs) > 0 {
+		out.Copies = cs // lista completa como deve ficar
+	}
 	return out
 }
 
 // HasData diz se algum campo foi de fato informado.
 func (f Fields) HasData() bool {
 	return !blank(f.Offer) || !blank(f.Audience) || !blank(f.Location) || !blank(f.ObjectiveHint) ||
-		positive(f.DailyBudgetBRL) || len(f.Media) > 0 || len(NormalizePlacements(f.Placements)) > 0 || f.LeadForm != nil
+		positive(f.DailyBudgetBRL) || len(f.Media) > 0 || len(NormalizePlacements(f.Placements)) > 0 || f.LeadForm != nil ||
+		len(CleanCopies(f.Copies)) > 0
 }
 
 // Missing lista os campos obrigatórios que faltam, em ordem fixa.
@@ -164,6 +170,9 @@ type AttendantTurn struct {
 	Reply   string  `json:"reply"`
 }
 
+// MaxReply é o tamanho máximo da resposta da Atendente.
+const MaxReply = 2500
+
 func (t AttendantTurn) Validate() error {
 	if !t.Intent.Valid() {
 		return fmt.Errorf("intent %q desconhecida", t.Intent)
@@ -171,8 +180,9 @@ func (t AttendantTurn) Validate() error {
 	if strings.TrimSpace(t.Reply) == "" {
 		return errors.New("reply vazio")
 	}
-	if utf8.RuneCountInString(t.Reply) > 1000 {
-		return errors.New("reply com mais de 1000 caracteres")
+	// Cabe até 3 opções de texto de anúncio inteiras (o WhatsApp aceita 4096).
+	if utf8.RuneCountInString(t.Reply) > MaxReply {
+		return fmt.Errorf("reply com mais de %d caracteres", MaxReply)
 	}
 	if utf8.RuneCountInString(t.Project) > 60 {
 		return errors.New("project com mais de 60 caracteres")
@@ -197,6 +207,8 @@ type Briefing struct {
 	Media          []string    `json:"media,omitempty"`
 	Placements     []string    `json:"placements,omitempty"` // pedido do cliente; vazio = automático
 	LeadForm       *LeadForm   `json:"lead_form,omitempty"`  // formulário que o cliente montou; nil = não falou
+	// ClientCopies: textos que o cliente fechou na conversa; o Gestor usa exatamente estes.
+	ClientCopies []Copy `json:"client_copies,omitempty"`
 	Constraints    Constraints `json:"constraints"`
 	Adjustment     string      `json:"adjustment,omitempty"`
 	// CopyVariations: quantas variações de texto o cliente pediu. 0 = não pediu (o Gestor gera 1).
@@ -225,6 +237,7 @@ func NewBriefing(orgID int64, f Fields, c Constraints) (Briefing, error) {
 		lf := f.LeadForm.Normalize()
 		b.LeadForm = &lf
 	}
+	b.ClientCopies = CleanCopies(f.Copies)
 	return b, nil
 }
 

@@ -91,7 +91,8 @@ func TestAttendantTurnValidate(t *testing.T) {
 		{"válido", contract.AttendantTurn{Intent: contract.IntentQuestion, Reply: "Oi!"}, true},
 		{"intent desconhecida", contract.AttendantTurn{Intent: "hack", Reply: "x"}, false},
 		{"reply vazio", contract.AttendantTurn{Intent: contract.IntentOther, Reply: "  "}, false},
-		{"reply longo", contract.AttendantTurn{Intent: contract.IntentOther, Reply: strings.Repeat("a", 1001)}, false},
+		{"reply longo", contract.AttendantTurn{Intent: contract.IntentOther, Reply: strings.Repeat("a", contract.MaxReply+1)}, false},
+		{"três opções de texto cabem", contract.AttendantTurn{Intent: contract.IntentOther, Reply: strings.Repeat("a", 1600)}, true},
 	}
 	for _, c := range cases {
 		if err := c.turn.Validate(); (err == nil) != c.ok {

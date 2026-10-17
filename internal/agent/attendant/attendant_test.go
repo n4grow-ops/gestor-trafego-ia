@@ -174,7 +174,7 @@ func TestReplyGivesBusinessMemoryAndProjects(t *testing.T) {
 		t.Error("ficha não pode mais ser a primeira regra obrigatória")
 	}
 	// Estilo simples: sem inventar, sem decidir estratégia, Advantage+ só se o cliente aceitar.
-	for _, want := range []string{"NUNCA invente dados", "NÃO decida nem pergunte", "DESLIGADOS por padrão", "copy"} {
+	for _, want := range []string{"NUNCA invente dados", "NÃO decida, não sugira e não questione estratégia", "DESLIGADOS por padrão", "parceira de COPY"} {
 		if !strings.Contains(sys, want) {
 			t.Errorf("prompt sem %q", want)
 		}
@@ -251,7 +251,7 @@ func TestSystemPromptHasMiaPersona(t *testing.T) {
 		t.Fatal(err)
 	}
 	sys := fake.Requests[0].Messages[0].Content
-	for _, want := range []string{"Você é a Mia", "Personalidade da Mia", "PENSE COMO ESTRATEGISTA", "Minha sugestão é", "Nunca invente", "Nunca diga que é uma IA genérica"} {
+	for _, want := range []string{"Você é a Mia", "Personalidade da Mia", "boa de copy", "Que tal assim?", "Nunca invente", "Nunca diga que é uma IA genérica"} {
 		if !strings.Contains(sys, want) {
 			t.Errorf("persona sem %q", want)
 		}

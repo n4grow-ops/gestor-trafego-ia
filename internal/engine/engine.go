@@ -442,6 +442,10 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 	}
 
 	noteTurn(ctx, turn)
+	if f, dropped := groundFields(turn.Fields, text, deref(ident.Profile.City), deref(ident.Profile.ServiceArea)); len(dropped) > 0 {
+		noteAction(ctx, "ignorou dado que o cliente não disse: "+strings.Join(dropped, ", "))
+		turn.Fields = f
+	}
 	// Código de aprovação só no resumo oficial; antes do SIM, a IA não diz que aprovou.
 	if clean := scrubReply(turn.Reply, conv.State == store.StateAwaitingApproval || conv.State == store.StateAwaitingProposal); clean != turn.Reply {
 		noteAction(ctx, "tirou código ou aprovação falsa da fala da IA")

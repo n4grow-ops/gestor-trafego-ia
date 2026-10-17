@@ -196,7 +196,8 @@ func TestCacheFallbackAndTTL(t *testing.T) {
 
 func TestAttendantPromptHasCopyHelpBlock(t *testing.T) {
 	p := mia.Defaults().AttendantSystem("", contract.Fields{}, nil)
-	for _, want := range []string{"Ajuda com copy", "mais curto", "outro ângulo", "UMA vez", "não insista", "Nenhuma mudança de estratégia"} {
+	for _, want := range []string{"Copy (sua maior ajuda)", "mais curto", "UMA vez", "sem insistir", "fields.copies", "Rascunho que ele ainda não aprovou não entra",
+		"oferta, público, local, orçamento e objetivo ficam como estão"} {
 		if !strings.Contains(p, want) {
 			t.Errorf("prompt da Mia sem %q", want)
 		}

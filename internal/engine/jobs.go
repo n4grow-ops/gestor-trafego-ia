@@ -257,6 +257,9 @@ func (e *Engine) propose(ctx context.Context, p ProposeJob) error {
 	}
 	b.Adjustment = p.Adjustment
 	b.CopyVariations = e.copyVariations(ctx, conv.ID, p.Adjustment)
+	if n := len(b.ClientCopies); n > 0 {
+		b.CopyVariations = n // o cliente já fechou os textos: uma variação para cada
+	}
 	b.Business = campaignBusiness(ident.Profile, b.Offer)
 
 	cfg := e.miaConfig(ctx)
@@ -274,6 +277,9 @@ func (e *Engine) propose(ctx context.Context, p ProposeJob) error {
 	if err != nil {
 		return err
 	}
+
+	// Texto que o cliente fechou com a Mia vale como veio (o Gestor só completa o que faltar).
+	prop.Copies = contract.ApplyClientCopies(b.ClientCopies, prop.Copies)
 
 	// Laboratório de copy: troca só o que tem versão segura mecânica; o resto vira aviso no resumo.
 	copySegment := b.Constraints.Niche
