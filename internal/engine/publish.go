@@ -609,6 +609,41 @@ var campaignCommands = map[string]campaignCmd{
 	"publicar a campanha": cmdRetryPublish, "publica a campanha": cmdRetryPublish,
 }
 
+// retryVerbs e retryObjects: pedido curto para publicar de novo o projeto pronto ou o que falhou, como
+// "tenta subir agora" ou "agora suba o anúncio" (caso real: sem isso a Atendente mandava o link da conta).
+var (
+	retryVerbs = map[string]bool{"tenta de novo": true, "tenta novamente": true, "tenta subir": true, "tenta publicar": true,
+		"tentar subir": true, "tente subir": true, "pode subir": true, "sobe": true, "suba": true, "subir": true,
+		"publica": true, "publique": true, "publicar": true, "pode publicar": true}
+	retryObjects = []string{"", " o anuncio", " o anúncio", " os anuncios", " os anúncios", " a campanha", " minha campanha", " meu anuncio", " meu anúncio"}
+	retryFiller  = []string{"agora ", "entao ", "então ", "ok ", "beleza ", "pronto ", "ja ", "já "}
+)
+
+// retryPhrase: verbo de publicar, com objeto opcional e "agora"/"por favor" em volta. Frase com mais
+// conteúdo ("quero subir um anúncio de formulário") não casa e segue para a Atendente.
+func retryPhrase(s string) bool {
+	for changed := true; changed; {
+		changed = false
+		for _, f := range retryFiller {
+			if rest, ok := strings.CutPrefix(s, f); ok {
+				s, changed = rest, true
+			}
+		}
+		for _, f := range []string{" agora", " por favor", " pfv", " pf", " ai", " aí", " pra mim"} {
+			if rest, ok := strings.CutSuffix(s, f); ok && rest != "" {
+				s, changed = rest, true
+			}
+		}
+	}
+	s, again := strings.CutSuffix(s, " de novo")
+	for _, obj := range retryObjects {
+		if verb, ok := strings.CutSuffix(s, obj); ok && (retryVerbs[verb] || again && retryVerbs[verb+" de novo"]) {
+			return true
+		}
+	}
+	return false
+}
+
 // parseCampaignCommand reconhece só a frase curta e exata, sem gastar IA. "ATIVAR 2" e "ativar rodízio"
 // devolvem o complemento (número ou nome do projeto) em arg.
 func parseCampaignCommand(s string) (campaignCmd, string) {
@@ -616,6 +651,9 @@ func parseCampaignCommand(s string) (campaignCmd, string) {
 	s = strings.Join(strings.Fields(strings.ReplaceAll(s, "*", "")), " ")
 	if cmd := campaignCommands[s]; cmd != cmdCampaignNone {
 		return cmd, ""
+	}
+	if retryPhrase(s) {
+		return cmdRetryPublish, ""
 	}
 	for _, prefix := range []string{"pode ativar a campanha ", "ativar a campanha ", "ativa a campanha ", "pode ativar ", "ativar ", "ativa "} {
 		if arg, ok := strings.CutPrefix(s, prefix); ok && strings.TrimSpace(arg) != "" && utf8.RuneCountInString(arg) <= 60 {
