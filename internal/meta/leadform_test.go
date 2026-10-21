@@ -169,3 +169,36 @@ func TestPublishLeadTermsOnAdSetIsClientSide(t *testing.T) {
 		t.Errorf("erro do cliente com texto genérico: %s", pe.UserMessage)
 	}
 }
+
+// Casos reais 1815316 e 1856030: no anúncio de formulário o link do criativo é externo (nunca a Página) e o
+// botão não é CONTACT_US.
+func TestPublishLeadFormCreativeLinkAndCTA(t *testing.T) {
+	for _, site := range []string{"", "https://www.facebook.com/minhapagina", "https://instagram.com/loja"} {
+		f, c := newFake(t)
+		f.leadFormBasics()
+		in := leadFormInput()
+		in.LinkURL = site
+		in.Copies[0].CTA = "CONTACT_US"
+		if _, err := c.Publish(context.Background(), tok, in); err != nil {
+			t.Fatal(err)
+		}
+		spec := decode(t, f.one("POST /act_9/adcreatives").Form.Get("object_story_spec"))
+		ld := spec["link_data"].(map[string]any)
+		cta := ld["call_to_action"].(map[string]any)
+		if ld["link"] != "https://meuanuncio.io/privacidade" || cta["type"] != "SIGN_UP" ||
+			cta["value"].(map[string]any)["link"] != "https://meuanuncio.io/privacidade" {
+			t.Errorf("site %q: link_data = %v", site, ld)
+		}
+	}
+	f, c := newFake(t)
+	f.leadFormBasics()
+	in := leadFormInput()
+	in.LinkURL = "https://metodov3.com.br"
+	if _, err := c.Publish(context.Background(), tok, in); err != nil {
+		t.Fatal(err)
+	}
+	ld := decode(t, f.one("POST /act_9/adcreatives").Form.Get("object_story_spec"))["link_data"].(map[string]any)
+	if ld["link"] != "https://metodov3.com.br" {
+		t.Errorf("site do cliente: link = %v", ld["link"])
+	}
+}

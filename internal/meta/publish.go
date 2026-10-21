@@ -167,7 +167,7 @@ func planFor(in PublishInput) (plan, []string, error) {
 	case "OUTCOME_LEADS":
 		// O cliente pediu formulário: formulário instantâneo da Meta (leads sem sair do Facebook/Instagram).
 		if in.LeadForm {
-			return plan{objective: in.Objective, optimization: "LEAD_GENERATION", destination: "ON_AD", leadForm: true, link: link}, nil, nil
+			return plan{objective: in.Objective, optimization: "LEAD_GENERATION", destination: "ON_AD", leadForm: true, link: leadLink(in)}, nil, nil
 		}
 		// Sem pedido de formulário: leads por conversa no WhatsApp; sem WhatsApp vira tráfego.
 		if wantsWhatsApp {
@@ -224,7 +224,12 @@ func (c *Client) publish(ctx context.Context, token string, in PublishInput) (Pu
 
 	// Formulário instantâneo: criado na Página antes da campanha (se falhar, nada fica na conta de anúncios).
 	if p.leadForm {
-		if p.formID, warns, err = c.ensureLeadForm(ctx, token, in, p.link); err != nil {
+		// a tela final do formulário leva ao site do cliente ou à Página (lá a Meta aceita), não ao link do anúncio
+		site := strings.TrimSpace(in.LinkURL)
+		if site == "" {
+			site = "https://www.facebook.com/" + in.PageID
+		}
+		if p.formID, warns, err = c.ensureLeadForm(ctx, token, in, site); err != nil {
 			return res, publishError("leadform", err)
 		}
 		res.Warnings = append(res.Warnings, warns...)
@@ -523,6 +528,36 @@ func (c *Client) videoThumb(ctx context.Context, token, id string) (string, erro
 	return first, nil
 }
 
+// leadLink é o link do anúncio de formulário. A Meta exige conteúdo externo (código 1815316): link para a
+// Página do Facebook ou Instagram é recusado. Sem site do cliente, vai a política de privacidade do formulário.
+func leadLink(in PublishInput) string {
+	if l := strings.TrimSpace(in.LinkURL); l != "" && !metaOwnedLink(l) {
+		return l
+	}
+	if in.Form != nil && strings.TrimSpace(in.Form.PrivacyURL) != "" {
+		return strings.TrimSpace(in.Form.PrivacyURL)
+	}
+	if p := strings.TrimSpace(in.FormPrivacyURL); p != "" {
+		return p
+	}
+	return "https://www.facebook.com/" + in.PageID
+}
+
+// metaOwnedLink: endereço da própria Meta (Facebook, Instagram, WhatsApp), que não conta como conteúdo externo.
+func metaOwnedLink(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(strings.TrimPrefix(u.Hostname(), "www."))
+	for _, d := range []string{"facebook.com", "fb.com", "fb.me", "instagram.com", "wa.me", "whatsapp.com", "m.me"} {
+		if host == d || strings.HasSuffix(host, "."+d) {
+			return true
+		}
+	}
+	return false
+}
+
 // storySpec monta o object_story_spec do criativo.
 func storySpec(in PublishInput, p plan, m uploaded, cp PublishCopy) map[string]any {
 	spec := map[string]any{"page_id": in.PageID}
@@ -576,8 +611,8 @@ func callToAction(p plan, cp PublishCopy, video bool) map[string]any {
 	}
 	if p.leadForm {
 		t := cp.CTA
-		if t != "LEARN_MORE" && t != "CONTACT_US" {
-			t = "SIGN_UP" // WHATSAPP_MESSAGE não vale para formulário
+		if t != "LEARN_MORE" {
+			t = "SIGN_UP" // a Meta recusa CONTACT_US e WHATSAPP_MESSAGE com formulário (código 1856030)
 		}
 		return map[string]any{"type": t, "value": map[string]any{"lead_gen_form_id": p.formID, "link": p.link}}
 	}
