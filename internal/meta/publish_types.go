@@ -65,6 +65,8 @@ type PublishError struct {
 	Subcode     int
 	Message     string // técnico
 	UserMessage string // pt-BR, para o cliente
+	// ClientSide: só quem anuncia resolve (termos, pagamento, conta, Página); a mensagem traz erro e solução.
+	ClientSide bool
 	// Orphan é a campanha que ficou na conta porque o rollback falhou (a equipe apaga ou a próxima
 	// tentativa acha pela marca do nome).
 	Orphan string

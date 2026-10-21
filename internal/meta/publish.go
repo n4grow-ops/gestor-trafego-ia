@@ -184,6 +184,16 @@ func planFor(in PublishInput) (plan, []string, error) {
 
 // Publish cria campanha, conjunto, criativos e anúncios PAUSADOS na conta do cliente.
 func (c *Client) Publish(ctx context.Context, token string, in PublishInput) (PublishResult, error) {
+	res, err := c.publish(ctx, token, in)
+	var pe *PublishError
+	if errors.As(err, &pe) && pe.ClientSide && strings.TrimSpace(in.PageID) != "" {
+		// o link dos termos abre direto na Página do cliente
+		pe.UserMessage = strings.Replace(pe.UserMessage, leadTOSURL, leadTOSURL+"?page_id="+url.QueryEscape(strings.TrimSpace(in.PageID)), 1)
+	}
+	return res, err
+}
+
+func (c *Client) publish(ctx context.Context, token string, in PublishInput) (PublishResult, error) {
 	var res PublishResult
 	acct := strings.TrimPrefix(strings.TrimSpace(in.AdAccountID), "act_")
 	if err := validateInput(acct, in); err != nil {
@@ -693,20 +703,36 @@ func publishError(step string, err error) error {
 			out.Message += " (" + ae.UserTitle + ": " + ae.UserMsg + ")"
 		}
 	}
-	out.UserMessage = userMessage(step, err, ae)
+	out.UserMessage, out.ClientSide = userMessage(step, err, ae)
 	return out
 }
 
-func userMessage(step string, err error, ae *apiError) string {
+// leadTOSURL: página onde o administrador da Página aceita os Termos de Anúncios de Cadastro.
+const leadTOSURL = "https://www.facebook.com/ads/leadgen/tos"
+
+// clientFix monta o aviso de um erro que só quem anuncia resolve: o que aconteceu, o erro da Meta e a solução.
+func clientFix(what, metaMsg, fix string) string {
+	out := "*O que aconteceu:* " + what
+	if m := strings.TrimSpace(metaMsg); m != "" {
+		if r := []rune(m); len(r) > 300 {
+			m = string(r[:300]) + "…"
+		}
+		out += "\n*Erro da Meta:* " + m
+	}
+	return out + "\n*Como resolver:* " + fix
+}
+
+// userMessage devolve a mensagem para o cliente e se o erro depende dele (conta, Página, pagamento, termos).
+func userMessage(step string, err error, ae *apiError) (string, bool) {
 	if errors.Is(err, errVideoFailed) {
-		return "A Meta não conseguiu processar um dos vídeos. Manda o vídeo de novo em MP4 (até 4 GB) que eu tento outra vez."
+		return "A Meta não conseguiu processar um dos vídeos. Manda o vídeo de novo em MP4 (até 4 GB) que eu tento outra vez.", false
 	}
 	generic := genericUserMessage
 	if step == "status" {
 		generic = statusUserMessage
 	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || ae == nil {
-		return generic
+		return generic, false
 	}
 	text := strings.ToLower(ae.Message + " " + ae.UserTitle + " " + ae.UserMsg)
 	has := func(words ...string) bool {
@@ -717,25 +743,36 @@ func userMessage(step string, err error, ae *apiError) string {
 		}
 		return false
 	}
-	switch {
-	case step == "leadform" && has("terms", "termos", "tos", "lead ads"):
-		return "Sua Página ainda não aceitou os Termos de Anúncios de Cadastro da Meta. Abre facebook.com/ads/leadgen/tos com a conta administradora da Página, aceita os termos e me avisa aqui que eu publico."
-	case ae.Code == 190 || ae.Code == 102:
-		return "A conexão com a sua conta da Meta expirou. Conecta de novo pelo link que eu te mandar e eu publico na sequência."
-	case ae.Code == 10 || ae.Code == 3 || (ae.Code >= 200 && ae.Code <= 299) || has("ads_management", "permission"):
-		return "Faltou permissão pra criar anúncios na sua conta da Meta. Conecta a conta de novo e deixa marcadas todas as permissões (contas de anúncios e Página)."
-	case ae.Code == 4 || ae.Code == 17 || ae.Code == 32 || ae.Code == 613 || ae.Code == 80004:
-		return "A Meta pediu pra esperar um pouco antes de criar mais coisas na sua conta. Responde aqui daqui a alguns minutos que eu tento de novo."
-	case has("whatsapp"):
-		return "Sua Página do Facebook não está com o WhatsApp Business vinculado (ou o número não confere). Vincula o WhatsApp na Página (Configurações > Contas vinculadas > WhatsApp) e me avisa aqui."
-	case has("payment", "funding", "pagamento"):
-		return "Sua conta de anúncios está sem forma de pagamento válida. Cadastra um cartão ou saldo no Gerenciador de Anúncios (Configurações de pagamento) e me avisa aqui que eu publico."
-	case has("disabled", "desativad", "restricted", "restrit"):
-		return "Sua conta de anúncios está desativada ou com restrição na Meta. Confere a Qualidade da Conta no Gerenciador de Anúncios; quando liberar, eu publico."
-	case ae.Code == 368 || has("policy", "polític", "politic"):
-		return "A Meta recusou o anúncio pelas políticas de publicidade. A equipe vai revisar o texto e as imagens com você."
-	case step == "upload" && has("image", "imagem", "small", "pequen", "dimension", "resolution", "resolução"):
-		return "Uma das imagens ficou pequena demais pra Meta. Manda imagens com pelo menos 600x600 pixels (o ideal é 1080x1080)."
+	metaMsg := ae.UserMsg
+	if metaMsg == "" {
+		metaMsg = ae.Message
 	}
-	return generic
+	switch {
+	case ae.Subcode == 1815089 || ae.Subcode == 1692035 || has("termos de serviço de geração de cadastros", "lead ads terms", "leadgen") ||
+		(step == "leadform" && has("terms", "termos", "tos", "lead ads")):
+		return clientFix("sua Página do Facebook ainda não aceitou os Termos de Anúncios de Cadastro da Meta. Sem esse aceite a Meta não deixa criar campanha com formulário.",
+			metaMsg, "quem administra a Página abre "+leadTOSURL+" logado no Facebook, toca em *Aceitar* e me manda *tenta de novo* aqui que eu publico."), true
+	case ae.Code == 190 || ae.Code == 102:
+		return clientFix("a conexão com a sua conta da Meta expirou.", metaMsg,
+			"conecta de novo pelo link que eu te mandar e eu publico na sequência."), true
+	case ae.Code == 10 || ae.Code == 3 || (ae.Code >= 200 && ae.Code <= 299) || has("ads_management", "permission"):
+		return clientFix("faltou permissão pra criar anúncios na sua conta da Meta.", metaMsg,
+			"conecta a conta de novo e deixa marcadas todas as permissões (contas de anúncios e Página)."), true
+	case ae.Code == 4 || ae.Code == 17 || ae.Code == 32 || ae.Code == 613 || ae.Code == 80004:
+		return "A Meta pediu pra esperar um pouco antes de criar mais coisas na sua conta. Responde aqui daqui a alguns minutos que eu tento de novo.", false
+	case has("whatsapp"):
+		return clientFix("sua Página do Facebook não está com o WhatsApp Business vinculado (ou o número não confere).", metaMsg,
+			"no WhatsApp Business: Configurações → Ferramentas comerciais → Facebook e Instagram, entra com o Facebook, escolhe a Página e me manda *tenta de novo*."), true
+	case has("payment", "funding", "pagamento"):
+		return clientFix("sua conta de anúncios está sem forma de pagamento válida.", metaMsg,
+			"cadastra um cartão ou saldo em https://business.facebook.com/billing_hub e me manda *tenta de novo*."), true
+	case has("disabled", "desativad", "restricted", "restrit"):
+		return clientFix("sua conta de anúncios está desativada ou com restrição na Meta.", metaMsg,
+			"confere em https://www.facebook.com/accountquality e pede a revisão se for o caso; quando liberar, me manda *tenta de novo*."), true
+	case ae.Code == 368 || has("policy", "polític", "politic"):
+		return "A Meta recusou o anúncio pelas políticas de publicidade. A equipe vai revisar o texto e as imagens com você.", false
+	case step == "upload" && has("image", "imagem", "small", "pequen", "dimension", "resolution", "resolução"):
+		return "Uma das imagens ficou pequena demais pra Meta. Manda imagens com pelo menos 600x600 pixels (o ideal é 1080x1080).", false
+	}
+	return generic, false
 }

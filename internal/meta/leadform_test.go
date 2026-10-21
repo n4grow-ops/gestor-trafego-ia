@@ -146,3 +146,26 @@ func TestPublishLeadFormCallWithoutPhoneFallsBackToSite(t *testing.T) {
 		t.Fatal("sem perguntas deve usar o padrão")
 	}
 }
+
+// Termos de cadastro recusados no conjunto (caso real 1815089): erro do cliente, com o erro da Meta, a solução
+// e o link de aceite já na Página dele.
+func TestPublishLeadTermsOnAdSetIsClientSide(t *testing.T) {
+	f, c := newFake(t)
+	f.leadFormBasics()
+	f.onCode("POST /act_9/adsets", 400, `{"error":{"message":"Invalid parameter","code":100,"error_subcode":1815089,"error_user_title":"Os Termos de Serviço não foram aceitos","error_user_msg":"Você não pode veicular anúncios de cadastros até sua Página do Facebook aceitar os Termos de Serviço de Geração de Cadastros do Facebook."}}`)
+	in := leadFormInput()
+	_, err := c.Publish(context.Background(), tok, in)
+	var pe *meta.PublishError
+	if !errors.As(err, &pe) || !pe.ClientSide {
+		t.Fatalf("erro = %+v", err)
+	}
+	for _, want := range []string{"*O que aconteceu:*", "*Erro da Meta:* Você não pode veicular", "*Como resolver:*",
+		"https://www.facebook.com/ads/leadgen/tos?page_id=" + in.PageID} {
+		if !strings.Contains(pe.UserMessage, want) {
+			t.Errorf("mensagem sem %q: %s", want, pe.UserMessage)
+		}
+	}
+	if strings.Contains(pe.UserMessage, "equipe já foi avisada") {
+		t.Errorf("erro do cliente com texto genérico: %s", pe.UserMessage)
+	}
+}

@@ -187,7 +187,11 @@ func (e *Engine) publish(ctx context.Context, j PublishJob) error {
 		// worker parando (o cancelamento chega como PublishError) ou falha passageira: o outbox tenta de novo
 		return err
 	}
-	e.alertTeam(ctx, ident, fmt.Sprintf("a Meta recusou a campanha (etapa %s, código %d/%d): %s", perr.Step, perr.Code, perr.Subcode, store.RedactSecrets(perr.Message)))
+	alert := fmt.Sprintf("a Meta recusou a campanha (etapa %s, código %d/%d): %s", perr.Step, perr.Code, perr.Subcode, store.RedactSecrets(perr.Message))
+	if perr.ClientSide {
+		alert += " — depende do cliente; ele já recebeu o erro e a solução"
+	}
+	e.alertTeam(ctx, ident, alert)
 	user := strings.TrimSpace(perr.UserMessage)
 	if user == "" {
 		user = msgPublishMetaRefused
