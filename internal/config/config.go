@@ -16,6 +16,7 @@ type Config struct {
 	WebhookSecret     string
 	OpenRouterAPIKey  string
 	OpenRouterBaseURL string
+	LLMBudgetUSD      float64 // teto de gasto da chave do OpenRouter neste sistema; 0 = sem teto
 	AttendantModel    string
 	ManagerModel      string
 	TranscribeModel   string
@@ -126,6 +127,7 @@ func Load(getenv func(string) string) Config {
 		WebhookSecret:     getenv("WEBHOOK_SECRET"),
 		OpenRouterAPIKey:  getenv("OPENROUTER_API_KEY"),
 		OpenRouterBaseURL: orDefault(getenv("OPENROUTER_BASE_URL"), "https://openrouter.ai/api/v1"),
+		LLMBudgetUSD:      positiveFloat(strings.Replace(getenv("LLM_BUDGET_USD"), ",", ".", 1), 0),
 		AttendantModel:    getenv("ATTENDANT_MODEL"),
 		ManagerModel:      getenv("MANAGER_MODEL"),
 		TranscribeModel:   getenv("TRANSCRIBE_MODEL"),

@@ -160,7 +160,7 @@ func newAdmin(ctx context.Context, cfg config.Config, st *store.Store, pool http
 	}
 	// "Testar a Mia" e "ouvir amostra" usam a mesma IA e o mesmo TTS do worker, se a api tiver as chaves.
 	if cfg.OpenRouterAPIKey != "" {
-		router := llm.NewOpenRouter(cfg.OpenRouterBaseURL, cfg.OpenRouterAPIKey)
+		router := llm.NewBudget(llm.NewOpenRouter(cfg.OpenRouterBaseURL, cfg.OpenRouterAPIKey), st, cfg.OpenRouterAPIKey, cfg.LLMBudgetUSD, log)
 		if cfg.AttendantModel != "" {
 			a.MiaTest = &attendant.Agent{LLM: router, Model: cfg.AttendantModel}
 		}

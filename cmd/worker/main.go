@@ -65,7 +65,7 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	router := llm.NewOpenRouter(cfg.OpenRouterBaseURL, cfg.OpenRouterAPIKey)
+	router := llm.NewBudget(llm.NewOpenRouter(cfg.OpenRouterBaseURL, cfg.OpenRouterAPIKey), st, cfg.OpenRouterAPIKey, cfg.LLMBudgetUSD, log)
 	eng := &engine.Engine{
 		Store: st,
 		WA:    wa,
