@@ -37,6 +37,8 @@ type Input struct {
 	Voice       bool // a resposta vai virar mensagem de voz
 	// Meta: estado da conta de anúncios ("não conectada" ou "conectada: …"); vazio = conexão desligada.
 	Meta string
+	// Live: campanha do cliente que já está na Meta ("pausada", "no ar"); vazio = nenhuma.
+	Live string
 	// Config é a Mia configurada no painel (nil = padrão do código); Segment, o módulo do segmento do cliente.
 	Config  *mia.Config
 	Segment *mia.Segment
@@ -119,6 +121,9 @@ func userPrompt(in Input) string {
 	fmt.Fprintf(&b, "Estado da conversa: %s\nDados já coletados: %s\nDados faltando: %s\n", in.State, fields, missing)
 	if in.Meta != "" {
 		fmt.Fprintf(&b, "Conta Meta: %s\n", in.Meta)
+	}
+	if in.Live != "" {
+		fmt.Fprintf(&b, "Campanha na Meta: %s\n", in.Live)
 	}
 	if in.Voice {
 		b.WriteString("Formato da resposta: áudio (fale como numa mensagem de voz: sem listas, sem emoji, sem asterisco, uma parte só)\n")

@@ -26,12 +26,14 @@ const (
 	IntentProjectStatus  Intent = "project_status"
 	IntentConnectMeta    Intent = "connect_meta"
 	IntentBilling        Intent = "billing"
+	// IntentChangeLive: mudança numa campanha que já está na Meta (pausada ou no ar).
+	IntentChangeLive Intent = "change_live"
 )
 
 func (i Intent) Valid() bool {
 	switch i {
 	case IntentCreateCampaign, IntentProvideInfo, IntentApprove, IntentReject, IntentQuestion, IntentHuman, IntentOther,
-		IntentNewProject, IntentSwitchProject, IntentListProjects, IntentProjectStatus, IntentConnectMeta, IntentBilling:
+		IntentNewProject, IntentSwitchProject, IntentListProjects, IntentProjectStatus, IntentConnectMeta, IntentBilling, IntentChangeLive:
 		return true
 	}
 	return false

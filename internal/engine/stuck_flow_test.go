@@ -23,8 +23,8 @@ func fullProfile() contract.Profile {
 func TestCampaignUsesOfferFromProfile(t *testing.T) {
 	h := newHarness(t, "owner")
 	h.must(h.st.UpdateOrgProfile(ctx, h.ident().OrgID, fullProfile()))
-	h.att.Responses = []string{`{"intent":"create_campaign","fields":{"daily_budget_brl":50},"reply":"Perfeito! O especialista vai montar a proposta."}`}
-	h.say("quero anunciar, 50 por dia")
+	h.att.Responses = []string{`{"intent":"create_campaign","fields":{"location":"Maravilha","daily_budget_brl":50},"reply":"Perfeito! O especialista vai montar a proposta."}`}
+	h.say("quero anunciar em Maravilha, 50 por dia")
 	if c := h.conv(); c.State != store.StateAwaitingProposal {
 		t.Fatalf("com a ficha completa e o orçamento, a proposta tinha que ser pedida; estado = %s campos = %+v", c.State, c.Fields)
 	}
@@ -42,8 +42,8 @@ func TestOnboardingDoesNotBlockCampaign(t *testing.T) {
 	h.must(h.st.UpdateOrgProfile(ctx, h.ident().OrgID, p))
 	c := h.conv()
 	h.must(h.st.UpdateConversation(ctx, c.ID, store.StateOnboarding, c.Fields))
-	h.att.Responses = []string{`{"intent":"create_campaign","fields":{"offer":"seguidores no Instagram","daily_budget_brl":10},"reply":"Recebi os dados."}`}
-	h.say("quero anunciar para ganhar seguidores, 10 por dia")
+	h.att.Responses = []string{`{"intent":"create_campaign","fields":{"offer":"seguidores no Instagram","location":"Maravilha","daily_budget_brl":10},"reply":"Recebi os dados."}`}
+	h.say("quero anunciar para ganhar seguidores em Maravilha, 10 por dia")
 	c = h.conv()
 	if c.State != store.StateAwaitingProposal {
 		t.Fatalf("pedido de anúncio com tudo preenchido ficou preso; estado = %s campos = %+v", c.State, c.Fields)
@@ -95,5 +95,27 @@ func TestEmptyProfileDoesNotBlockOnboarding(t *testing.T) {
 	h.say("pizza em Campinas, 20 por dia")
 	if c = h.conv(); c.State != store.StateAwaitingProposal {
 		t.Fatalf("campanha com os dados mínimos deve seguir sem ficha; estado = %s campos = %+v", c.State, c.Fields)
+	}
+}
+
+// Pedido do conselho do Meu Anúncio: a proposta não sai direto com a cidade da ficha. A Mia conversa e
+// pergunta a região desta campanha; "sim" à sugestão dela confirma a cidade da ficha.
+func TestRegionIsAskedNotTakenFromProfile(t *testing.T) {
+	h := newHarness(t, "owner")
+	h.must(h.st.UpdateOrgProfile(ctx, h.ident().OrgID, fullProfile()))
+	h.att.Responses = []string{
+		`{"intent":"create_campaign","fields":{"daily_budget_brl":30,"location":"Maravilha"},"reply":"Boa! Maravilha mesmo ou outra região?"}`,
+		`{"intent":"provide_info","fields":{"location":"Maravilha"},"reply":"Fechado."}`,
+	}
+	h.say("quero uma campanha de formulário, 30 reais por dia")
+	if c := h.conv(); c.State != store.StateCollecting || c.Fields.Location != nil {
+		t.Fatalf("região veio da ficha sem o cliente dizer; estado = %s campos = %+v", c.State, c.Fields)
+	}
+	if h.pendingJobs(engine.JobPropose) != 0 {
+		t.Fatal("proposta pedida sem a região")
+	}
+	h.say("sim, pode ser")
+	if c := h.conv(); c.State != store.StateAwaitingProposal || c.Fields.Location == nil || *c.Fields.Location != "Maravilha" {
+		t.Fatalf("confirmação da cidade sugerida não valeu; estado = %s campos = %+v", c.State, c.Fields)
 	}
 }

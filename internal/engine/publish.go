@@ -612,7 +612,7 @@ var campaignCommands = map[string]campaignCmd{
 // retryVerbs e retryObjects: pedido curto para publicar de novo o projeto pronto ou o que falhou, como
 // "tenta subir agora" ou "agora suba o anúncio" (caso real: sem isso a Atendente mandava o link da conta).
 var (
-	retryVerbs = map[string]bool{"tenta de novo": true, "tenta novamente": true, "tenta subir": true, "tenta publicar": true,
+	retryVerbs = map[string]bool{"tenta de novo": true, "tenta novamente": true, "tente novamente": true, "tentar novamente": true, "tenta subir": true, "tenta publicar": true,
 		"tentar subir": true, "tente subir": true, "pode subir": true, "sobe": true, "suba": true, "subir": true,
 		"publica": true, "publique": true, "publicar": true, "pode publicar": true}
 	retryObjects = []string{"", " o anuncio", " o anúncio", " os anuncios", " os anúncios", " a campanha", " minha campanha", " meu anuncio", " meu anúncio"}
@@ -962,4 +962,33 @@ func leadFormSpec(f *contract.LeadForm) *meta.LeadFormSpec {
 		})
 	}
 	return spec
+}
+
+// liveCampaign descreve a última campanha do cliente que está na Meta ("pausada", "no ar"); vazio = nenhuma.
+// Erro de leitura vira vazio: sem a informação, a Mia só não oferece o caminho do ajuste.
+func (e *Engine) liveCampaign(ctx context.Context, orgID int64) string {
+	last, err := e.pubs().LatestPublication(ctx, orgID)
+	if err != nil {
+		return ""
+	}
+	switch last.Status {
+	case "paused":
+		return "pausada, criada em " + last.CreatedAt.In(saoPaulo).Format("02/01")
+	case "active":
+		return "no ar, criada em " + last.CreatedAt.In(saoPaulo).Format("02/01")
+	}
+	return ""
+}
+
+// changeLive: pedido de mudança numa campanha já criada. Ainda não há edição automática na Meta: a equipe
+// recebe o pedido e o cliente fica sabendo, sem promessa da IA de que já foi feito.
+func (e *Engine) changeLive(ctx context.Context, ident store.Identity, conv store.Conversation, text, live string) error {
+	noteAction(ctx, "ajuste em campanha publicada: avisou a equipe")
+	ask := strings.TrimSpace(text)
+	if r := []rune(ask); len(r) > 300 {
+		ask = string(r[:300]) + "…"
+	}
+	e.alertTeam(ctx, ident, fmt.Sprintf(msgTeamChangeLive, live, ask))
+	e.audit(ctx, ident.OrgID, member(ident), "live_change_requested", map[string]any{"conversation_id": conv.ID, "request": ask})
+	return e.send(ctx, conv, fmt.Sprintf(msgChangeLive, ask))
 }

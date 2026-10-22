@@ -426,12 +426,14 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 	if err != nil {
 		return err
 	}
+	live := e.liveCampaign(ctx, ident.OrgID)
 	turn, usage, err := e.Attendant.Reply(ctx, attendant.Input{
 		OrgName: ident.OrgName, Niche: ident.Niche, State: conv.State,
 		Fields: current, Missing: cfg.CampaignMissing(current), History: history, Message: text,
 		Profile: ident.Profile, ProjectName: activeName, Projects: names,
 		Voice:  e.voiceOn(cfg) && voiceWanted(ctx),
 		Meta:   metaState,
+		Live:   live,
 		Config: &cfg, Segment: cfg.SegmentFor(ident.Segment, ident.Niche),
 	})
 	e.recordUsage(ctx, ident.OrgID, "attendant", usage)
@@ -442,7 +444,7 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 	}
 
 	noteTurn(ctx, turn)
-	if f, dropped := groundFields(turn.Fields, text, deref(ident.Profile.City), deref(ident.Profile.ServiceArea)); len(dropped) > 0 {
+	if f, dropped := groundFields(turn.Fields, text, knownPlaces(text, ident.Profile)...); len(dropped) > 0 {
 		noteAction(ctx, "ignorou dado que o cliente não disse: "+strings.Join(dropped, ", "))
 		turn.Fields = f
 	}
@@ -487,6 +489,10 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 		return e.startProject(ctx, ident, conv, turn, projects)
 	case contract.IntentSwitchProject:
 		return e.switchProject(ctx, ident, conv, turn, projects)
+	case contract.IntentChangeLive:
+		if live != "" {
+			return e.changeLive(ctx, ident, conv, text, live)
+		}
 	case contract.IntentHuman:
 		return e.escalateWith(ctx, ident, conv, e.humanNotice(ident, text), "cliente pediu atendimento humano", msgHuman)
 	case contract.IntentReject:

@@ -55,7 +55,8 @@ func missingText(cfg mia.Config, f contract.Fields) string {
 // ficha só vale para o produto principal: campanha de outro produto (ex.: imóvel numa consultoria) pede o
 // público dela.
 func withDefaults(p contract.Profile, f contract.Fields) contract.Fields {
-	d := contract.Fields{Offer: p.Offer, Location: p.City}
+	// A região não vem da ficha: cada campanha confirma a sua na conversa (a Mia pergunta).
+	d := contract.Fields{Offer: p.Offer}
 	if f.Offer == nil || mainOffer(p, *f.Offer) {
 		d.Audience = p.Audience
 	}
@@ -318,4 +319,37 @@ func projectLimit(err error) (int, bool) {
 // WithProfileDefaults completa os dados da campanha com a ficha do negócio, como a conversa faz (painel).
 func WithProfileDefaults(p contract.Profile, f contract.Fields) contract.Fields {
 	return withDefaults(p, f)
+}
+
+// knownPlaces: a cidade e a região da ficha valem como local só quando o cliente confirma uma sugestão da
+// Mia ("sim", "isso", "pode ser") ou cita o próprio lugar ("na minha cidade"). Fora disso o local precisa
+// estar na mensagem dele.
+func knownPlaces(message string, p contract.Profile) []string {
+	if !shortYes(message) && !ownPlace(message) {
+		return nil
+	}
+	return []string{deref(p.City), deref(p.ServiceArea)}
+}
+
+func ownPlace(message string) bool {
+	m := normalizeName(message)
+	for _, w := range []string{"minha cidade", "nossa cidade", "mesma cidade", "minha regiao", "nossa regiao", "aqui na cidade", "onde atendo", "onde atendemos"} {
+		if strings.Contains(m, w) {
+			return true
+		}
+	}
+	return false
+}
+
+func shortYes(message string) bool {
+	m := normalizeName(message)
+	if len(strings.Fields(m)) > 4 {
+		return false
+	}
+	for _, w := range []string{"sim", "isso", "pode", "mesmo", "essa", "esse", "ok", "exato", "confirmo", "beleza", "certo", "claro"} {
+		if containsWord(m, w) {
+			return true
+		}
+	}
+	return false
 }

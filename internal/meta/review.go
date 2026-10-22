@@ -32,19 +32,17 @@ func (c *Client) AdsReview(ctx context.Context, token string, adIDs []string) ([
 	if len(adIDs) == 0 {
 		return nil, nil
 	}
-	var out map[string]struct {
-		EffectiveStatus string                       `json:"effective_status"`
-		Feedback        map[string]map[string]string `json:"ad_review_feedback"`
-	}
-	q := url.Values{"ids": {strings.Join(adIDs, ",")}, "fields": {"effective_status,ad_review_feedback"}}
-	if err := c.call(ctx, http.MethodGet, "/", token, q, &out); err != nil {
-		return nil, err
-	}
+	// Um GET por anúncio: o parâmetro ids (vários objetos numa chamada) foi descontinuado pela Meta
+	// ("The ids query parameter is deprecated in v26.0+"). São no máximo 5 anúncios por campanha.
 	res := make([]AdReview, 0, len(adIDs))
 	for _, id := range adIDs {
-		a, ok := out[id]
-		if !ok {
-			continue
+		var a struct {
+			EffectiveStatus string                       `json:"effective_status"`
+			Feedback        map[string]map[string]string `json:"ad_review_feedback"`
+		}
+		if err := c.call(ctx, http.MethodGet, "/"+url.PathEscape(id), token,
+			url.Values{"fields": {"effective_status,ad_review_feedback"}}, &a); err != nil {
+			return nil, err
 		}
 		r := AdReview{ID: id, EffectiveStatus: a.EffectiveStatus}
 		seen := map[string]bool{}

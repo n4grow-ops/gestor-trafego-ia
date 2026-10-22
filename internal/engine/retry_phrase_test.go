@@ -6,7 +6,7 @@ import "testing"
 func TestParseCampaignCommandRetryPhrases(t *testing.T) {
 	for _, s := range []string{"Tenta subir agora", "Agora suba o anúncio", "tenta de novo", "Tenta de novo!", "sobe a campanha",
 		"pode subir", "suba o anúncio de novo", "publica por favor", "Pode publicar a campanha", "tenta subir de novo",
-		"agora sobe", "Então pode subir o anúncio agora"} {
+		"agora sobe", "Tente novamente", "Então pode subir o anúncio agora"} {
 		if cmd, _ := parseCampaignCommand(s); cmd != cmdRetryPublish {
 			t.Errorf("%q não virou tentar de novo", s)
 		}

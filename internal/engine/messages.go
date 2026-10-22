@@ -6,6 +6,8 @@ const (
 	msgBusy           = "Tô montando sua proposta com o especialista, já já ela chega aqui."
 	msgRetryLater     = "Opa, tive um problema técnico aqui. Me manda de novo daqui a pouquinho?"
 	msgHuman          = "Beleza! Vou chamar uma pessoa da nossa equipe pra continuar com você."
+	msgChangeLive     = "Anotei o ajuste: \"%s\"\n\nSua campanha já está criada na Meta, e mudança nela quem faz por enquanto é a nossa equipe. Já passei pra eles e te confirmo aqui quando estiver feito."
+	msgTeamChangeLive = "cliente pediu ajuste na campanha que já está na Meta (%s): \"%s\". Faça no Gerenciador e confirme com o cliente."
 	msgOverBudget     = "O limite de investimento por dia da sua conta é %s. Qual valor até esse limite fica bom pra você?"
 	msgUnsupported    = "[mensagem de um tipo que ainda não entendo]"
 	msgApproved       = "Campanha aprovada! Anotei sua aprovação. Assim que a conexão com o Facebook estiver ativa, ela é publicada pausada pra uma última conferência."
