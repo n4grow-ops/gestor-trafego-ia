@@ -99,6 +99,12 @@ func (e *Engine) keepCreative(ctx context.Context, ident store.Identity, convID 
 		} else if changed {
 			data, mime = up, "image/jpeg"
 		}
+		// Print de tela inteira ou panorama: vai inteiro num quadro que a Meta aceita, em vez de recusar.
+		if fit, changed, err := media.FitExtreme(data); err != nil {
+			e.Log.Warn("imagem sem encaixe de proporção", "conversation_id", convID, "erro", err)
+		} else if changed {
+			data, mime = fit, "image/jpeg"
+		}
 	}
 	c := store.Creative{OrgID: ident.OrgID, DraftID: d.ID, ProjectID: d.ProjectID, Kind: kind, Mime: mime,
 		Size: int64(len(data)), Format: string(media.Other), Placement: string(media.Feed),
