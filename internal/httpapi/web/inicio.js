@@ -54,7 +54,7 @@
     });
   }
 
-  // ---------- planos: brilho segue o cursor; depois da entrada o atraso em cascata sai do hover ----------
+  // ---------- planos: brilho segue o cursor ----------
   var tiers = document.querySelector(".tiers");
   if (tiers && !reduce && window.matchMedia("(hover: hover)").matches) {
     tiers.querySelectorAll("[data-tier]").forEach(function (card) {
@@ -64,16 +64,6 @@
         card.style.setProperty("--my", (((e.clientY - r.top) / r.height) * 100).toFixed(1) + "%");
       });
     });
-  }
-  if (tiers) {
-    var settle = function () { setTimeout(function () { tiers.classList.add("done"); }, 1400); };
-    if (tiers.classList.contains("armed")) {
-      new MutationObserver(function (m, obs) {
-        if (!tiers.classList.contains("armed")) { obs.disconnect(); settle(); }
-      }).observe(tiers, { attributes: true, attributeFilter: ["class"] });
-    } else {
-      settle();
-    }
   }
 
   // ---------- conversa de demonstração ----------
