@@ -97,6 +97,8 @@ func (h *harness) sendFile(file func() ([]byte, string)) {
 
 func (h *harness) creatives() int { return h.count(`SELECT count(*) FROM creatives`) }
 
+func init() { engine.MediaRetryDelays = nil } // sem pausa entre tentativas nos testes
+
 func TestApprovalAsksForCreatives(t *testing.T) {
 	h, fs := newCreativeHarness(t)
 	code := h.reachApproval()
@@ -192,17 +194,21 @@ func TestCreativeQualityCheck(t *testing.T) {
 	h, fs := newCreativeHarness(t)
 	h.say("SIM " + h.reachApproval())
 	h.sendFile(tiny)
-	if msg := h.wa.last().Text; h.creatives() != 0 || fs.count() != 0 || !strings.Contains(msg, "não deu pra usar") || !strings.Contains(msg, "pequena demais") {
+	// pequena demais pra Meta: amplia até 600 px e aceita, com aviso (antes recusava)
+	if msg := h.wa.last().Text; h.creatives() != 1 || fs.count() != 1 || !strings.Contains(msg, "Recebi") || !strings.Contains(msg, "era pequena (400x400)") {
 		t.Fatalf("imagem pequena: criativos = %d msg = %q", h.creatives(), msg)
 	}
+	if n := h.count(`SELECT count(*) FROM creatives WHERE width = 600 AND height = 600`); n != 1 {
+		t.Fatalf("imagem pequena não ampliada para 600x600")
+	}
 	h.sendFile(lowRes)
-	if msg := h.wa.last().Text; h.creatives() != 1 || !strings.Contains(msg, "Recebi") || !strings.Contains(msg, "⚠️") {
+	if msg := h.wa.last().Text; h.creatives() != 2 || !strings.Contains(msg, "Recebi") || !strings.Contains(msg, "⚠️") {
 		t.Fatalf("imagem baixa: criativos = %d msg = %q", h.creatives(), msg)
 	}
 	h.wa.media, h.wa.mime = mediatest.MP4(300, 1080, 1920, false), "video/mp4"
 	h.seq++
 	h.must(h.eng.HandleInbound(ctx, whatsapp.Inbound{ExternalID: fmt.Sprintf("m%d", h.seq), ChatID: chatID, Phone: phone, Kind: whatsapp.KindVideo}))
-	if msg := h.wa.last().Text; h.creatives() != 1 || !strings.Contains(msg, "4 minutos") {
+	if msg := h.wa.last().Text; h.creatives() != 2 || !strings.Contains(msg, "4 minutos") {
 		t.Fatalf("vídeo longo: criativos = %d msg = %q", h.creatives(), msg)
 	}
 }

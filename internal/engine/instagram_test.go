@@ -292,7 +292,8 @@ func TestInstagramRejectedMediaAndLimit(t *testing.T) {
 	h.say("SIM " + h.reachApproval())
 	h.say("https://www.instagram.com/p/MEU1/")
 	h.runKind(engine.JobInstagramFetch)
-	if msg := h.lastClient(); h.creatives() != 0 || !strings.Contains(msg, "pequena demais") || strings.Contains(msg, "Peguei") {
+	// pequena demais: ampliada e aceita, com aviso
+	if msg := h.lastClient(); h.creatives() != 1 || !strings.Contains(msg, "era pequena") {
 		t.Fatalf("imagem pequena: criativos = %d msg = %q", h.creatives(), msg)
 	}
 	h.sendFile(vertical)

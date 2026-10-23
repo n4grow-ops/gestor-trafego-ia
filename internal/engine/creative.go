@@ -49,9 +49,16 @@ func (e *Engine) saveCreative(ctx context.Context, ident store.Identity, conv st
 	if err != nil || n >= maxCreatives {
 		return creativeSaved // já tem o bastante; o turno conclui
 	}
-	data, mime, err := e.WA.DownloadMedia(ctx, in)
+	var data []byte
+	var mime string
+	err = retryMedia(ctx, func() error {
+		var err error
+		data, mime, err = e.WA.DownloadMedia(ctx, in)
+		return err
+	})
 	if err != nil {
 		e.Log.Error("falha ao baixar criativo", "conversation_id", conv.ID, "erro", err)
+		e.audit(ctx, ident.OrgID, member(ident), "creative_failed", map[string]any{"draft_id": d.ID, "step": "download", "error": err.Error()})
 		return creativeFailed
 	}
 	mime = mediaMime(mime, data)
@@ -60,6 +67,26 @@ func (e *Engine) saveCreative(ctx context.Context, ident store.Identity, conv st
 		kind = "video"
 	}
 	return e.keepCreative(ctx, ident, conv.ID, d, creativeFile{data: data, mime: mime, kind: kind, name: in.ExternalID})
+}
+
+// MediaRetryDelays: pausas entre as tentativas de baixar e guardar o arquivo. A Wame às vezes falha
+// logo que o webhook chega (mídia ainda não pronta, timeout); de novo, em segundos, costuma dar certo.
+var MediaRetryDelays = []time.Duration{time.Second, 3 * time.Second}
+
+func retryMedia(ctx context.Context, fn func() error) error {
+	err := fn()
+	for _, d := range MediaRetryDelays {
+		if err == nil || ctx.Err() != nil {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(d):
+		}
+		err = fn()
+	}
+	return err
 }
 
 // mediaMime confia no tipo do provedor só quando é imagem ou vídeo; foto mandada como documento pode chegar
@@ -92,6 +119,7 @@ type creativeFile struct {
 // (creativeSaved, creativeWarned..., creativeRejected... ou creativeFailed).
 func (e *Engine) keepCreative(ctx context.Context, ident store.Identity, convID int64, d store.ApprovedDraft, f creativeFile) string {
 	mime, kind, data := f.mime, f.kind, f.data
+	upscaled := ""
 	if kind == "image" {
 		// Foto do celular gravada deitada com a tag de giro: endireita antes de medir, guardar e publicar.
 		if up, changed, err := media.Upright(data); err != nil {
@@ -104,6 +132,13 @@ func (e *Engine) keepCreative(ctx context.Context, ident store.Identity, convID 
 			e.Log.Warn("imagem sem encaixe de proporção", "conversation_id", convID, "erro", err)
 		} else if changed {
 			data, mime = fit, "image/jpeg"
+		}
+		// Imagem pequena: amplia até o mínimo da Meta e segue com aviso, em vez de recusar.
+		if big, from, changed, err := media.UpscaleSmall(data); err != nil {
+			e.Log.Warn("imagem sem ampliar", "conversation_id", convID, "erro", err)
+		} else if changed {
+			data, mime = big, "image/jpeg"
+			upscaled = fmt.Sprintf("a imagem era pequena (%dx%d): aumentei pra Meta aceitar, mas pode sair menos nítida. Se tiver uma versão maior, manda como *documento*", from.X, from.Y)
 		}
 	}
 	c := store.Creative{OrgID: ident.OrgID, DraftID: d.ID, ProjectID: d.ProjectID, Kind: kind, Mime: mime,
@@ -124,6 +159,9 @@ func (e *Engine) keepCreative(ctx context.Context, ident store.Identity, convID 
 			return creativeRejected + v.Reason + "]"
 		}
 		warning = v.Warning
+		if upscaled != "" {
+			warning = upscaled
+		}
 		fm := info.Format()
 		c.Width, c.Height, c.DurationMS = info.Width, info.Height, int(info.Duration/time.Millisecond)
 		c.Format, c.Placement = string(fm), string(fm.Placement())
@@ -133,13 +171,15 @@ func (e *Engine) keepCreative(ctx context.Context, ident store.Identity, convID 
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
-	if err := e.Storage.Upload(ctx, CreativesBucket, c.Path, contentType, data); err != nil {
+	if err := retryMedia(ctx, func() error { return e.Storage.Upload(ctx, CreativesBucket, c.Path, contentType, data) }); err != nil {
 		e.Log.Error("falha ao guardar criativo", "conversation_id", convID, "erro", err)
+		e.audit(ctx, ident.OrgID, member(ident), "creative_failed", map[string]any{"draft_id": d.ID, "step": "upload", "error": err.Error()})
 		return creativeFailed
 	}
 	id, err := e.Store.AddCreative(ctx, c)
 	if err != nil {
 		e.Log.Error("falha ao registrar criativo", "conversation_id", convID, "erro", err)
+		e.audit(ctx, ident.OrgID, member(ident), "creative_failed", map[string]any{"draft_id": d.ID, "step": "register", "error": err.Error()})
 		return creativeFailed
 	}
 	if err := e.linkFile(ctx, "creative", id, CreativesBucket, c.Path, c.Mime); err != nil {
