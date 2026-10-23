@@ -158,7 +158,10 @@ func (s *Store) FinishJob(ctx context.Context, id int64, procErr error) (bool, e
 	err := s.pool.QueryRow(ctx, `UPDATE outbox_jobs
 		SET status = CASE WHEN attempts >= max_attempts THEN 'failed' ELSE 'pending' END,
 		    last_error = $2, locked_until = NULL,
-		    run_after = now() + attempts * interval '30 seconds', updated_at = now()
+		    -- balão do WhatsApp volta rápido (2 s, 8 s, 18 s...): o cliente está esperando na conversa
+		    run_after = now() + CASE WHEN kind = 'whatsapp.send' THEN least(2 * attempts * attempts, 60) * interval '1 second'
+		                             ELSE attempts * interval '30 seconds' END,
+		    updated_at = now()
 		WHERE id = $1 RETURNING status`, id, procErr.Error()).Scan(&status)
 	return status == "failed", err
 }

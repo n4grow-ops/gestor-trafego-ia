@@ -12,8 +12,8 @@ import (
 const (
 	MaxParts      = 3
 	MaxVoiceRunes = 600
-	MinTyping     = 1500 * time.Millisecond
-	MaxTyping     = 7 * time.Second
+	MinTyping     = 1 * time.Second
+	MaxTyping     = 3 * time.Second
 )
 
 var blankLine = regexp.MustCompile(`\n[ \t]*\n`)
@@ -34,14 +34,14 @@ func Split(reply string) []string {
 
 // TypingDelay é quanto tempo mostrar "digitando…" antes de um balão. r em [0, 1] dá a variação.
 func TypingDelay(text string, r float64) time.Duration {
-	base := 1200*time.Millisecond + time.Duration(utf8.RuneCountInString(text))*35*time.Millisecond
+	base := 800*time.Millisecond + time.Duration(utf8.RuneCountInString(text))*12*time.Millisecond
 	d := time.Duration(float64(base) * (0.85 + 0.3*r))
 	return min(max(d, MinTyping), MaxTyping)
 }
 
 // Gap é a pausa entre dois balões seguidos.
 func Gap(r float64) time.Duration {
-	return 600*time.Millisecond + time.Duration(r*float64(800*time.Millisecond))
+	return 300*time.Millisecond + time.Duration(r*float64(400*time.Millisecond))
 }
 
 // ChainDuration é o tempo máximo que os balões de uma resposta levam para sair (pior caso).

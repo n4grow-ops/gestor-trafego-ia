@@ -85,7 +85,7 @@ func WelcomeJobFor(cfg mia.Config) func(convID int64, chatID, fullName, email st
 			name = first[0]
 		}
 		conv := store.Conversation{ID: convID, ChatID: chatID}
-		return humanJob(0, conv, cfg.Text(mia.TextWelcome, map[string]string{"nome": name, "email": email}), false)
+		return wholeJob(conv, cfg.Text(mia.TextWelcome, map[string]string{"nome": name, "email": email}))
 	}
 }
 

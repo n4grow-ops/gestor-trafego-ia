@@ -101,6 +101,7 @@ func run(log *slog.Logger) error {
 	}
 	if cfg.MetaConnectEnabled() {
 		eng.MetaConnectBaseURL = cfg.PublicBaseURL + "/m"
+		eng.RequireMetaBeforeProposal = true
 		// Testador automático: lê os testadores do app (token APP_ID|SECRET) a cada 5 min.
 		eng.MetaAppID = cfg.MetaAppID
 		eng.AppTesters = meta.New(cfg.MetaAppID, cfg.MetaAppSecret, cfg.MetaLoginConfigID, cfg.PublicBaseURL+"/meta/callback").AppTesters

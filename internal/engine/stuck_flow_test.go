@@ -23,7 +23,7 @@ func fullProfile() contract.Profile {
 func TestCampaignUsesOfferFromProfile(t *testing.T) {
 	h := newHarness(t, "owner")
 	h.must(h.st.UpdateOrgProfile(ctx, h.ident().OrgID, fullProfile()))
-	h.att.Responses = []string{`{"intent":"create_campaign","fields":{"location":"Maravilha","daily_budget_brl":50},"reply":"Perfeito! O especialista vai montar a proposta."}`}
+	h.att.Responses = []string{`{"intent":"create_campaign","fields":{"audience":"empresários","location":"Maravilha","daily_budget_brl":50},"reply":"Perfeito! O especialista vai montar a proposta."}`}
 	h.say("quero anunciar em Maravilha, 50 por dia")
 	if c := h.conv(); c.State != store.StateAwaitingProposal {
 		t.Fatalf("com a ficha completa e o orçamento, a proposta tinha que ser pedida; estado = %s campos = %+v", c.State, c.Fields)
@@ -42,7 +42,7 @@ func TestOnboardingDoesNotBlockCampaign(t *testing.T) {
 	h.must(h.st.UpdateOrgProfile(ctx, h.ident().OrgID, p))
 	c := h.conv()
 	h.must(h.st.UpdateConversation(ctx, c.ID, store.StateOnboarding, c.Fields))
-	h.att.Responses = []string{`{"intent":"create_campaign","fields":{"offer":"seguidores no Instagram","location":"Maravilha","daily_budget_brl":10},"reply":"Recebi os dados."}`}
+	h.att.Responses = []string{`{"intent":"create_campaign","fields":{"offer":"seguidores no Instagram","audience":"empresários","location":"Maravilha","daily_budget_brl":10},"reply":"Recebi os dados."}`}
 	h.say("quero anunciar para ganhar seguidores em Maravilha, 10 por dia")
 	c = h.conv()
 	if c.State != store.StateAwaitingProposal {
@@ -104,7 +104,7 @@ func TestRegionIsAskedNotTakenFromProfile(t *testing.T) {
 	h := newHarness(t, "owner")
 	h.must(h.st.UpdateOrgProfile(ctx, h.ident().OrgID, fullProfile()))
 	h.att.Responses = []string{
-		`{"intent":"create_campaign","fields":{"daily_budget_brl":30,"location":"Maravilha"},"reply":"Boa! Maravilha mesmo ou outra região?"}`,
+		`{"intent":"create_campaign","fields":{"audience":"empresários","daily_budget_brl":30,"location":"Maravilha"},"reply":"Boa! Maravilha mesmo ou outra região?"}`,
 		`{"intent":"provide_info","fields":{"location":"Maravilha"},"reply":"Fechado."}`,
 	}
 	h.say("quero uma campanha de formulário, 30 reais por dia")

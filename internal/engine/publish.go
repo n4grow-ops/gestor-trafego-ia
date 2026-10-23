@@ -574,6 +574,14 @@ func (e *Engine) afterSendDone(ctx context.Context, s SendJob) error {
 	if conv.State == store.StateNeedsHuman {
 		return nil
 	}
+	if conv.State == store.StateCollecting && len(e.miaConfig(ctx).CampaignMissing(conv.Fields)) == 0 {
+		// Os dados já estavam completos esperando a conexão: a proposta sai agora.
+		ident, err := e.Store.GetIdentity(ctx, conv.IdentityID)
+		if err != nil {
+			return err
+		}
+		return e.requestProposal(ctx, ident, conv, conv.Fields, "", msgProposalAfterMeta, true)
+	}
 	draftID, ok, err := e.readyDraft(ctx, conv)
 	if err != nil || !ok {
 		return err

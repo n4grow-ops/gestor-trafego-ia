@@ -201,12 +201,18 @@ func TestBusinessMemoryFillsFieldsAndBriefing(t *testing.T) {
 		BusinessName: contract.Str("Pizzaria Boa"), City: contract.Str("Salvador"), Audience: contract.Str("famílias do bairro"),
 	}))
 	h.att.Responses = []string{turnOffer, `{"intent":"provide_info","fields":{"location":"Salvador"},"reply":"Boa! Quanto por dia?"}`,
-		`{"intent":"provide_info","fields":{"daily_budget_brl":50},"reply":"Anotado."}`}
+		`{"intent":"provide_info","fields":{"daily_budget_brl":50},"reply":"Pra quem é o anúncio?"}`,
+		`{"intent":"provide_info","fields":{"audience":"famílias do bairro"},"reply":"Anotado."}`}
 	h.mgr.Responses = []string{validProposal}
 	h.say("quero anunciar pizza")
 	// a região é desta campanha: a Mia sugere a cidade da ficha e o cliente confirma
 	h.say("sim, Salvador mesmo")
 	h.say("50 por dia")
+	// o público também é desta campanha: a ficha só serve de sugestão
+	if c := h.conv(); c.State != store.StateCollecting || c.Fields.Audience != nil {
+		t.Fatalf("público veio da ficha sem o cliente confirmar: %+v", c)
+	}
+	h.say("famílias do bairro mesmo")
 	if c := h.conv(); c.State != store.StateAwaitingProposal {
 		t.Fatalf("com a memória, os campos deveriam estar completos: %+v", c)
 	}

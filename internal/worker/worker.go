@@ -72,7 +72,7 @@ func (w *Worker) Run(ctx context.Context) error {
 	defer w.Wait()
 	idle := w.Idle
 	if idle <= 0 {
-		idle = time.Second
+		idle = 300 * time.Millisecond
 	}
 	for {
 		did, err := w.Tick(ctx)

@@ -89,6 +89,13 @@ func humanJob(orgID int64, conv store.Conversation, text string, voice bool) sto
 	return store.JobSpec{Kind: JobSend, Payload: s, MaxAttempts: sendAttempts}
 }
 
+// wholeJob manda o texto fixo do sistema num balão só: cada balão a mais custa digitação, fila e
+// uma chamada à Wame, e o cliente ficava esperando a pergunta que vinha no último.
+func wholeJob(conv store.Conversation, text string) store.JobSpec {
+	s := SendJob{ConversationID: conv.ID, ChatID: conv.ChatID, Text: text, Human: true}
+	return store.JobSpec{Kind: JobSend, Payload: s, MaxAttempts: sendAttempts}
+}
+
 func splitJob(s SendJob) SendJob {
 	parts := humanize.Split(s.Text)
 	if len(parts) == 0 {

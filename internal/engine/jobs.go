@@ -262,7 +262,9 @@ func (e *Engine) propose(ctx context.Context, p ProposeJob) error {
 	}
 	leadForm, followers := goal == contract.GoalLeadForm, goal == contract.GoalFollowers
 	b.Adjustment = p.Adjustment
-	b.CopyVariations = e.copyVariations(ctx, conv.ID, p.Adjustment)
+	if n := e.copyVariations(ctx, conv.ID, p.Adjustment); n > 0 || b.CopyVariations == 0 {
+		b.CopyVariations = n // pedido escrito na conversa vale acima da resposta "quantos anúncios"
+	}
 	if n := len(b.ClientCopies); n > 0 {
 		b.CopyVariations = n // o cliente já fechou os textos: uma variação para cada
 	}
@@ -295,8 +297,17 @@ func (e *Engine) propose(ctx context.Context, p ProposeJob) error {
 	lab := copylab.Apply(prop.Copies, copySegment)
 	prop.Copies = lab.Copies
 
-	// Onde o anúncio aparece é escolha do cliente, não do Gestor.
+	// Onde o anúncio aparece, por quantos dias e com quais interesses é escolha do cliente, não do Gestor.
 	prop.Placements = b.Placements
+	if b.DurationDays > 0 {
+		prop.DurationDays = b.DurationDays
+	}
+	switch {
+	case len(b.Interests) > 0:
+		prop.Audience.Interests = b.Interests
+	case b.NoInterests:
+		prop.Audience.Interests = nil
+	}
 	// Raio que o cliente escreveu no local vale acima do que o Gestor pôs (caso real: "Maravilha + 15km"
 	// virou só a cidade). Com vários lugares, cada um leva o seu raio. Abaixo do mínimo da Meta fica o
 	// mínimo, e o resumo explica.

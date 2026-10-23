@@ -27,6 +27,11 @@ var fieldLabels = map[string]string{
 	"location":         "a cidade ou região",
 	"daily_budget_brl": "o orçamento por dia",
 	"link_url":         "o link do site",
+	"objective_hint":   "o objetivo",
+	"interests":        "os interesses",
+	"duration_days":    "quantos dias fica ativo",
+	"placements":       "onde aparece",
+	"ads_count":        "quantos anúncios",
 }
 
 var stageLabels = map[string]string{
@@ -56,11 +61,9 @@ func missingText(cfg mia.Config, f contract.Fields) string {
 // ficha só vale para o produto principal: campanha de outro produto (ex.: imóvel numa consultoria) pede o
 // público dela.
 func withDefaults(p contract.Profile, f contract.Fields) contract.Fields {
-	// A região não vem da ficha: cada campanha confirma a sua na conversa (a Mia pergunta).
+	// A região e o público não vêm da ficha: cada campanha confirma os seus na conversa (a Mia pergunta,
+	// e pode sugerir o cliente ideal da ficha).
 	d := contract.Fields{Offer: p.Offer}
-	if f.Offer == nil || mainOffer(p, *f.Offer) {
-		d.Audience = p.Audience
-	}
 	return d.Merge(f)
 }
 

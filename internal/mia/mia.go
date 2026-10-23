@@ -368,7 +368,8 @@ func (c Config) Normalize() Config {
 			}
 		}
 		if f.Core {
-			f.Active, f.Required = true, true
+			// campo core: sempre pedido e na ordem do padrão (a Mia pergunta nessa sequência)
+			f.Active, f.Required, f.Order = true, true, df.Order
 		}
 		out.Fields = append(out.Fields, f)
 	}

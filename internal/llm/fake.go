@@ -17,7 +17,9 @@ type Fake struct {
 	SpeechErr  error    // se definido, Speak falha
 	Spoken     []string // textos pedidos ao Speak
 	Requests   []Request
-	calls      int
+	// Rewrite, se definido, ajusta cada resposta antes de devolver (ex.: completar campos nos testes).
+	Rewrite func(string) string
+	calls   int
 }
 
 func (f *Fake) Complete(_ context.Context, req Request) (Response, error) {
@@ -32,7 +34,11 @@ func (f *Fake) Complete(_ context.Context, req Request) (Response, error) {
 	if i >= len(f.Responses) {
 		return Response{}, fmt.Errorf("llm.Fake: sem resposta para a chamada %d", i)
 	}
-	return Response{Content: f.Responses[i], Usage: Usage{Model: req.Model, InputTokens: 10, OutputTokens: 5, CostUSD: 0.0001}}, nil
+	content := f.Responses[i]
+	if f.Rewrite != nil {
+		content = f.Rewrite(content)
+	}
+	return Response{Content: content, Usage: Usage{Model: req.Model, InputTokens: 10, OutputTokens: 5, CostUSD: 0.0001}}, nil
 }
 
 func (f *Fake) Transcribe(_ context.Context, model string, _ []byte, _ string) (Response, error) {

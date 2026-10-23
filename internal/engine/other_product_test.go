@@ -62,7 +62,7 @@ func TestOtherProductAsksAudience(t *testing.T) {
 func TestMainProductBriefingKeepsProfile(t *testing.T) {
 	h := newHarness(t, "owner")
 	h.must(h.st.UpdateOrgProfile(ctx, h.ident().OrgID, fullProfile()))
-	h.att.Responses = []string{`{"intent":"create_campaign","fields":{"location":"Maravilha","daily_budget_brl":50},"reply":"Vou pedir a proposta."}`}
+	h.att.Responses = []string{`{"intent":"create_campaign","fields":{"audience":"empresários","location":"Maravilha","daily_budget_brl":50},"reply":"Vou pedir a proposta."}`}
 	h.mgr.Responses = []string{validProposal}
 	h.say("quero anunciar em Maravilha, 50 por dia")
 	h.runJobs()

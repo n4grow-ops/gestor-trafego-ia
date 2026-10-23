@@ -34,14 +34,14 @@ func TestTypingDelayBounds(t *testing.T) {
 			t.Errorf("texto longo r=%v: %v; want %v", r, d, humanize.MaxTyping)
 		}
 	}
-	// 100 runas, r=0.5: (1,2 s + 3,5 s) × 1,0 = 4,7 s
-	if d := humanize.TypingDelay(strings.Repeat("é", 100), 0.5); d != 4700*time.Millisecond {
-		t.Errorf("100 runas: %v; want 4.7s", d)
+	// 100 runas, r=0.5: (0,8 s + 1,2 s) × 1,0 = 2 s
+	if d := humanize.TypingDelay(strings.Repeat("é", 100), 0.5); d != 2*time.Second {
+		t.Errorf("100 runas: %v; want 2s", d)
 	}
 }
 
 func TestGap(t *testing.T) {
-	if humanize.Gap(0) != 600*time.Millisecond || humanize.Gap(1) != 1400*time.Millisecond {
+	if humanize.Gap(0) != 300*time.Millisecond || humanize.Gap(1) != 700*time.Millisecond {
 		t.Errorf("Gap fora dos limites: %v %v", humanize.Gap(0), humanize.Gap(1))
 	}
 }

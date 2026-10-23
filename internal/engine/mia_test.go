@@ -26,6 +26,12 @@ func TestMiaRequiredFieldHoldsProposal(t *testing.T) {
 	}
 	cfg.Segments = []mia.Segment{{Key: "pizza", Name: "Pizzaria", Keywords: []string{"restaurante"}, Strategy: "Anuncie no horário do jantar.", Active: true}}
 	withMia(h, cfg)
+	h.att.Rewrite = func(s string) string { // completa as outras perguntas, menos o objetivo
+		if strings.Contains(s, "objective_hint") {
+			return completeCampaign(s)
+		}
+		return strings.Replace(completeCampaign(s), `"objective_hint":"whatsapp",`, "", 1)
+	}
 
 	h.att.Responses = append(h.att.Responses, turnOffer, turnRest)
 	h.say("quero anunciar pizza")

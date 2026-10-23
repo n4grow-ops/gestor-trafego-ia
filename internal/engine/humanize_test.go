@@ -127,7 +127,7 @@ func TestTypingSchedulesBubbleInsteadOfSleeping(t *testing.T) {
 	var wait float64
 	h.must(h.pool.QueryRow(ctx, `SELECT extract(epoch FROM run_after - now()) FROM outbox_jobs
 		WHERE status = 'pending' AND kind = 'whatsapp.send'`).Scan(&wait))
-	if wait < 1.3 || wait > 7 {
+	if wait < 0.8 || wait > 3.5 {
 		t.Fatalf("balão agendado para %.1f s", wait)
 	}
 }

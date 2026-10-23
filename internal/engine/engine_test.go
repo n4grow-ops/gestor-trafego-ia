@@ -2,6 +2,7 @@ package engine_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -175,6 +176,7 @@ func newHarness(t *testing.T, role string) *harness {
 	pool := testdb.New(t)
 	h := &harness{t: t, pool: pool, st: store.New(pool), wa: &fakeWA{}, att: &llm.Fake{}, mgr: &llm.Fake{},
 		now: time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)}
+	h.att.Rewrite = completeCampaign
 	org, err := h.st.CreateOrganization(ctx, "Pizzaria Boa", "restaurante", 100, []string{"OUTCOME_ENGAGEMENT"})
 	h.must(err)
 	mem, err := h.st.CreateMember(ctx, org, "Ana", role)
@@ -192,6 +194,28 @@ func newHarness(t *testing.T, role string) *harness {
 		Log:             slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 	return h
+}
+
+// completeCampaign completa, nas respostas da IA que trazem o orçamento, as perguntas que a Mia passou a
+// fazer antes da proposta (objetivo, interesses, dias, onde aparece, quantos anúncios). Os testes antigos
+// seguem testando o que testavam; os novos (TestProposalWaitsForAllAnswers) desligam isto.
+func completeCampaign(s string) string {
+	var turn map[string]any
+	if json.Unmarshal([]byte(s), &turn) != nil {
+		return s
+	}
+	f, ok := turn["fields"].(map[string]any)
+	if !ok || f["daily_budget_brl"] == nil {
+		return s
+	}
+	for k, v := range map[string]any{"objective_hint": "whatsapp", "interests": "pizza", "duration_days": 7,
+		"placements": []string{"automatico"}, "ads_count": 1} {
+		if _, has := f[k]; !has {
+			f[k] = v
+		}
+	}
+	out, _ := json.Marshal(turn)
+	return string(out)
 }
 
 func (h *harness) must(err error) {

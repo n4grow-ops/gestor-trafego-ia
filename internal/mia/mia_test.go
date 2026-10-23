@@ -17,14 +17,16 @@ func TestDefaultsMatchTodaysBehavior(t *testing.T) {
 	if err := d.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	// Faltantes da campanha: os mesmos e na mesma ordem do contrato.
+	// Faltantes da campanha: as 9 perguntas antes da proposta, na ordem em que a Mia pergunta (23/10).
+	all := []string{"objective_hint", "offer", "audience", "interests", "location", "daily_budget_brl", "duration_days", "placements", "ads_count"}
 	f := contract.Fields{}
-	if got := d.CampaignMissing(f); !slices.Equal(got, f.Missing()) {
-		t.Fatalf("campanha = %v, contrato = %v", got, f.Missing())
+	if got := d.CampaignMissing(f); !slices.Equal(got, all) {
+		t.Fatalf("campanha = %v", got)
 	}
-	f = contract.Fields{Offer: contract.Str("pizza"), DailyBudgetBRL: contract.Num(30)}
-	if got := d.CampaignMissing(f); !slices.Equal(got, f.Missing()) {
-		t.Fatalf("campanha parcial = %v, contrato = %v", got, f.Missing())
+	f = contract.Fields{Offer: contract.Str("pizza"), DailyBudgetBRL: contract.Num(30), Interests: contract.Str("nenhum"),
+		DurationDays: contract.Num(4), Placements: []string{contract.PlacementAuto}, AdsCount: contract.Num(1)}
+	if got := d.CampaignMissing(f); !slices.Equal(got, []string{"objective_hint", "audience", "location"}) {
+		t.Fatalf("campanha parcial = %v", got)
 	}
 	p := contract.Profile{BusinessName: contract.Str("Pizzaria"), City: contract.Str(" ")}
 	// A ficha do negócio é opcional por padrão: nunca falta nada nem bloqueia o fluxo.
@@ -80,7 +82,7 @@ func TestConfiguredFieldsDriveMissing(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := c.CampaignMissing(contract.Fields{})
-	if !slices.Equal(got, []string{"objective_hint", "offer", "audience", "location", "daily_budget_brl"}) {
+	if !slices.Equal(got, []string{"objective_hint", "offer", "audience", "interests", "location", "daily_budget_brl", "duration_days", "placements", "ads_count"}) {
 		t.Fatalf("campanha = %v", got)
 	}
 	pm := c.ProfileMissing(contract.Profile{})

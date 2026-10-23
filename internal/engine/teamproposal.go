@@ -63,7 +63,8 @@ func (e *Engine) projectPropose(ctx context.Context, raw []byte) error {
 		}
 		conv.ActiveProjectID, conv.State, conv.Fields = &p.ID, store.StateCollecting, fields
 	}
-	if m := e.miaConfig(ctx).CampaignMissing(fields); len(m) > 0 {
+	// A equipe decide pelo painel: valem só os dados básicos (as perguntas da conversa ficam com o padrão).
+	if m := fields.Missing(); len(m) > 0 {
 		e.Log.Warn("proposta da equipe sem dados completos", "project_id", p.ID, "faltam", m)
 		return nil // a api já confere; dado apagado no meio do caminho: nada a pedir
 	}

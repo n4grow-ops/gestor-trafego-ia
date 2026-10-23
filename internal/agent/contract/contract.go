@@ -58,6 +58,53 @@ type Fields struct {
 	LeadForm *LeadForm `json:"lead_form,omitempty"`
 	// Copies: textos do anúncio que o cliente escreveu ou escolheu na conversa com a Mia. Valem como vieram.
 	Copies []Copy `json:"copies,omitempty"`
+	// Interests: interesses da Meta que o cliente aceitou ("Empreendedorismo, Pequenas empresas") ou
+	// "nenhum" quando ele não quer interesses. Nil = ainda não respondeu.
+	Interests *string `json:"interests,omitempty"`
+	// DurationDays: quantos dias o anúncio fica ativo, como o cliente disse.
+	DurationDays *float64 `json:"duration_days,omitempty"`
+	// AdsCount: quantos anúncios (variações de texto) o cliente quer, de 1 a 5.
+	AdsCount *float64 `json:"ads_count,omitempty"`
+}
+
+// PlacementAuto marca em Fields.Placements que o cliente escolheu "automático" (a Meta distribui).
+const PlacementAuto = "automatico"
+
+// NoInterests diz se a resposta sobre interesses é "não quero interesses".
+func NoInterests(s string) bool {
+	switch strings.ToLower(strings.Trim(strings.TrimSpace(s), ".!")) {
+	case "", "nenhum", "nenhuma", "não", "nao", "sem", "sem interesses", "sem interesse", "não quero", "nao quero":
+		return true
+	}
+	return false
+}
+
+var interestSep = regexp.MustCompile(`\s*(?:[,;
+]|\s+e\s+)\s*`)
+
+// InterestList separa os interesses aceitos pelo cliente; vazio quando ele não quer interesses.
+func InterestList(s string) []string {
+	if NoInterests(s) {
+		return nil
+	}
+	var out []string
+	for _, p := range regexp.MustCompile(`\s*(?:[,;\n]|\s+e\s+)\s*`).Split(s, -1) {
+		if p = strings.Trim(strings.TrimSpace(p), ".-•*"); p != "" && !slices.Contains(out, p) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// wantsAutoPlacement diz se a lista traz a escolha "automático".
+func wantsAutoPlacement(pl []string) bool {
+	for _, p := range pl {
+		switch strings.ToLower(strings.TrimSpace(p)) {
+		case PlacementAuto, "automático", "auto", "todos", "tudo":
+			return true
+		}
+	}
+	return false
 }
 
 // Posicionamentos que o cliente pode escolher.
@@ -161,6 +208,17 @@ func (f Fields) Merge(o Fields) Fields {
 	}
 	if pl := NormalizePlacements(o.Placements); len(pl) > 0 {
 		out.Placements = pl
+	} else if wantsAutoPlacement(o.Placements) {
+		out.Placements = []string{PlacementAuto}
+	}
+	if !blank(o.Interests) {
+		out.Interests = o.Interests
+	}
+	if positive(o.DurationDays) {
+		out.DurationDays = o.DurationDays
+	}
+	if positive(o.AdsCount) {
+		out.AdsCount = o.AdsCount
 	}
 	out.LeadForm = MergeLeadForm(f.LeadForm, o.LeadForm)
 	if cs := CleanCopies(o.Copies); len(cs) > 0 {
@@ -173,7 +231,8 @@ func (f Fields) Merge(o Fields) Fields {
 func (f Fields) HasData() bool {
 	return !blank(f.Offer) || !blank(f.Audience) || !blank(f.Location) || !blank(f.ObjectiveHint) || !blank(f.LinkURL) ||
 		positive(f.DailyBudgetBRL) || len(f.Media) > 0 || len(NormalizePlacements(f.Placements)) > 0 || f.LeadForm != nil ||
-		len(CleanCopies(f.Copies)) > 0
+		len(CleanCopies(f.Copies)) > 0 || wantsAutoPlacement(f.Placements) || !blank(f.Interests) ||
+		positive(f.DurationDays) || positive(f.AdsCount)
 }
 
 // Missing lista os campos obrigatórios que faltam, em ordem fixa.
@@ -255,6 +314,12 @@ type Briefing struct {
 	Adjustment     string      `json:"adjustment,omitempty"`
 	// CopyVariations: quantas variações de texto o cliente pediu. 0 = não pediu (o Gestor gera 1).
 	CopyVariations int `json:"copy_variations,omitempty"`
+	// DurationDays: dias que o cliente pediu. 0 = não disse (o Gestor usa 7).
+	DurationDays int `json:"duration_days,omitempty"`
+	// Interests: interesses que o cliente aceitou (o Gestor usa exatamente estes). NoInterests: ele não quer
+	// interesses. Os dois vazios = não respondeu (o Gestor traduz o público).
+	Interests   []string `json:"interests,omitempty"`
+	NoInterests bool     `json:"no_interests,omitempty"`
 	Business       Profile     `json:"business,omitempty"` // memória do negócio
 }
 
@@ -283,6 +348,16 @@ func NewBriefing(orgID int64, f Fields, c Constraints) (Briefing, error) {
 		b.LeadForm = &lf
 	}
 	b.ClientCopies = CleanCopies(f.Copies)
+	if f.DurationDays != nil && *f.DurationDays >= 1 {
+		b.DurationDays = min(int(*f.DurationDays), 90)
+	}
+	if f.AdsCount != nil && *f.AdsCount >= 1 {
+		b.CopyVariations = min(int(*f.AdsCount), MaxCopies)
+	}
+	if f.Interests != nil {
+		b.Interests = InterestList(*f.Interests)
+		b.NoInterests = len(b.Interests) == 0
+	}
 	return b, nil
 }
 

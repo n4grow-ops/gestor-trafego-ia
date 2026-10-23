@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/manager"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/campaign"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/humanize"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/instagram"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/llm"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/meta"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/mia"
@@ -132,6 +134,8 @@ type Engine struct {
 
 	// Conexão da conta Meta: base do link (…/m). Vazio = desligada.
 	MetaConnectBaseURL string
+	// RequireMetaBeforeProposal: a proposta só sai com a conta de anúncios conectada (o link vai antes).
+	RequireMetaBeforeProposal bool
 	// LeadPrivacyURL é a política de privacidade que a Meta exige no formulário de cadastro dos anúncios.
 	LeadPrivacyURL string
 
@@ -376,6 +380,21 @@ func (e *Engine) dispatch(ctx context.Context, ident store.Identity, conv store.
 func (e *Engine) inboundText(ctx context.Context, ident store.Identity, conv *store.Conversation, in whatsapp.Inbound) (string, error) {
 	switch in.Kind {
 	case whatsapp.KindText:
+		if conv.State != store.StateAwaitingCreatives && e.Instagram != nil {
+			// Link de post antes da etapa dos anúncios: fica guardado e entra quando a campanha for aprovada.
+			var ids []string
+			for _, l := range instagram.ParseLinks(in.Text) {
+				if id := earlyLinkPrefix + l.URL; !slices.Contains(conv.Fields.Media, id) {
+					ids = append(ids, id)
+				}
+			}
+			if len(ids) > 0 {
+				conv.Fields = conv.Fields.Merge(contract.Fields{Media: ids})
+				if err := e.Store.UpdateConversation(ctx, conv.ID, conv.State, conv.Fields); err != nil {
+					return "", err
+				}
+			}
+		}
 		return in.Text, nil
 	case whatsapp.KindAudio:
 		data, mime, err := e.WA.DownloadMedia(ctx, in)
@@ -552,13 +571,46 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 	if !campaignTalk && conv.State != store.StateCollecting {
 		return e.speakNoPromise(ctx, ident, conv, turn.Reply, merged, cfg)
 	}
+	needsMeta, err := e.needsMeta(ctx, ident)
+	if err != nil {
+		return err
+	}
 	if len(cfg.CampaignMissing(merged)) == 0 {
+		if needsMeta {
+			// Proposta só com a conta de anúncios conectada: os dados ficam guardados e a proposta sai
+			// sozinha quando a conexão fechar.
+			noteAction(ctx, "proposta esperando a conexão da conta de anúncios")
+			if err := e.Store.UpdateConversation(ctx, conv.ID, store.StateCollecting, merged); err != nil {
+				return err
+			}
+			return e.sendMetaLink(ctx, ident, conv, msgProposalNeedsMeta)
+		}
 		return e.requestProposal(ctx, ident, conv, merged, "", turn.Reply, false)
 	}
 	if err := e.Store.UpdateConversation(ctx, conv.ID, store.StateCollecting, merged); err != nil {
 		return err
 	}
+	if needsMeta && campaignTalk {
+		// Primeira conversa de campanha sem conta conectada: o link vai junto, uma vez por dia, para o
+		// cliente conectar enquanto responde as perguntas.
+		sent, err := e.Store.MetaLinkOpenWithin(ctx, ident.ID, metaLinkTTL)
+		if err != nil {
+			return err
+		}
+		if !sent && ident.Role == "owner" {
+			return e.sendMetaLink(ctx, ident, conv, join(e.noPromise(ctx, turn.Reply, merged, cfg), msgConnectWhileCollecting))
+		}
+	}
 	return e.speakNoPromise(ctx, ident, conv, turn.Reply, merged, cfg)
+}
+
+// needsMeta diz se falta conectar a conta de anúncios (conexão ligada no sistema e nada conectado).
+func (e *Engine) needsMeta(ctx context.Context, ident store.Identity) (bool, error) {
+	if e.MetaConnectBaseURL == "" || !e.RequireMetaBeforeProposal {
+		return false, nil
+	}
+	_, connected, err := e.Store.ActiveMeta(ctx, ident.OrgID)
+	return !connected, err
 }
 
 // promiseRe acha a resposta da IA que anuncia a proposta ("o especialista vai montar", "chega em instantes").
@@ -567,16 +619,20 @@ var promiseRe = regexp.MustCompile(`(?i)especialista\s+(vai|já|ja|está|esta)\b
 // speakNoPromise fala a resposta da IA, menos quando ela promete a proposta sem o sistema ter pedido: o
 // cliente ficaria esperando algo que nunca chega. Aí a resposta vira a pergunta do que falta.
 func (e *Engine) speakNoPromise(ctx context.Context, ident store.Identity, conv store.Conversation, reply string, f contract.Fields, cfg mia.Config) error {
-	if promiseRe.MatchString(reply) {
-		noteAction(ctx, "trocou promessa de proposta que não foi pedida")
-		if m := missingText(cfg, f); m != "" {
-			reply = fmt.Sprintf(msgStillMissing, m)
-		} else {
-			reply = msgWhatToAdvertise
-		}
-		e.Log.Warn("resposta prometia proposta sem pedido; trocada", "conversation_id", conv.ID)
+	return e.speak(ctx, ident, conv, e.noPromise(ctx, reply, f, cfg))
+}
+
+// noPromise troca a resposta que promete a proposta sem pedido pela pergunta do que falta.
+func (e *Engine) noPromise(ctx context.Context, reply string, f contract.Fields, cfg mia.Config) string {
+	if !promiseRe.MatchString(reply) {
+		return reply
 	}
-	return e.speak(ctx, ident, conv, reply)
+	noteAction(ctx, "trocou promessa de proposta que não foi pedida")
+	e.Log.Warn("resposta prometia proposta sem pedido; trocada")
+	if m := missingText(cfg, f); m != "" {
+		return fmt.Sprintf(msgStillMissing, m)
+	}
+	return msgWhatToAdvertise
 }
 
 // requestProposal pede a proposta ao Gestor; fixed indica que reply é mensagem fixa (nunca vira voz).
@@ -662,7 +718,7 @@ func (e *Engine) escalateWith(ctx context.Context, ident store.Identity, conv st
 // send manda uma mensagem fixa. No modo humano ela vai em balões com "digitando…", nunca em voz.
 func (e *Engine) send(ctx context.Context, conv store.Conversation, text string) error {
 	if e.Humanize {
-		return e.Store.Enqueue(ctx, humanJob(0, conv, text, false))
+		return e.Store.Enqueue(ctx, wholeJob(conv, text))
 	}
 	if err := e.WA.SendText(ctx, conv.ChatID, text); err != nil {
 		return err
