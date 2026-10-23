@@ -101,6 +101,8 @@ type MetaSummary struct {
 	PageName      string
 	Instagram     string
 	PageWhatsApp  bool
+	// PageWhatsAppUnknown: a Meta não disse se a Página tem WhatsApp; aí não avisa "sem WhatsApp".
+	PageWhatsAppUnknown bool
 }
 
 // MetaConnectedJob é a confirmação no WhatsApp, enfileirada pela api quando a conexão fecha.
@@ -119,7 +121,7 @@ func MetaConnectedJob(convID int64, chatID string, s MetaSummary) store.JobSpec 
 	if s.Currency != "BRL" || (s.Timezone != "" && s.Timezone != "America/Sao_Paulo") {
 		parts = append(parts, fmt.Sprintf(msgMetaWarnLocale, s.Currency, s.Timezone))
 	}
-	if !s.PageWhatsApp {
+	if !s.PageWhatsApp && !s.PageWhatsAppUnknown {
 		parts = append(parts, msgMetaWarnWA)
 	}
 	job := humanJob(0, store.Conversation{ID: convID, ChatID: chatID}, join(parts...), false)

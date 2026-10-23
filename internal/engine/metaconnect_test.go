@@ -132,6 +132,12 @@ func TestMetaConnectedMessage(t *testing.T) {
 	if strings.Contains(ok, "WhatsApp Business") || strings.Contains(ok, "fuso") || strings.Contains(ok, "⚠️") || !strings.Contains(ok, "@loja") {
 		t.Fatalf("sem avisos esperado: %q", ok)
 	}
+	// Caso do cliente: a Meta não respondeu se há WhatsApp; não afirma que a Página não tem.
+	unk := jobText(engine.MetaConnectedJob(1, chatID, engine.MetaSummary{AccountName: "Loja", Currency: "BRL", Timezone: "America/Sao_Paulo",
+		AccountStatus: 1, PageName: "Loja", Instagram: "loja", PageWhatsAppUnknown: true}))
+	if strings.Contains(unk, "ainda não tem WhatsApp") || strings.Contains(unk, "WhatsApp Business") {
+		t.Fatalf("aviso de sem WhatsApp com detecção incerta: %q", unk)
+	}
 }
 
 func TestPreviewAsksForMetaConnection(t *testing.T) {

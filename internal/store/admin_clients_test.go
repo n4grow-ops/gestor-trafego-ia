@@ -24,6 +24,7 @@ type clientsFixture struct {
 func seedClients(t *testing.T) (*store.Store, clientsFixture) {
 	t.Helper()
 	st, pool := newStore(t)
+	legacyPlans(t, pool)
 	f := clientsFixture{pool: pool}
 	exec := func(sql string, args ...any) {
 		t.Helper()

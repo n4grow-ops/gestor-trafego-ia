@@ -37,6 +37,7 @@ type AdminPlan struct {
 	DailyMessageLimit int       `json:"daily_message_limit"`
 	MaxDailyBudgetBRL float64   `json:"max_daily_budget_brl"`
 	MaxProjects       int       `json:"max_projects"`
+	MaxCampaignsMonth int       `json:"max_campaigns_month"` // 0 = sem limite
 	Available         bool      `json:"available"` // dá para assinar no cadastro
 	Visible           bool      `json:"visible"`   // aparece no cadastro (indisponível = "em breve")
 	SortOrder         int       `json:"sort_order"`
@@ -54,6 +55,7 @@ type PlanInput struct {
 	DailyMessageLimit int     `json:"daily_message_limit"`
 	MaxDailyBudgetBRL float64 `json:"max_daily_budget_brl"`
 	MaxProjects       int     `json:"max_projects"`
+	MaxCampaignsMonth int     `json:"max_campaigns_month"`
 	Available         bool    `json:"available"`
 	Visible           bool    `json:"visible"`
 	SortOrder         int     `json:"sort_order"`
@@ -81,6 +83,8 @@ func (in PlanInput) Normalize() (PlanInput, error) {
 		return bad("investimento por dia: de R$ 1 a R$ 1.000.000")
 	case in.MaxProjects < 1 || in.MaxProjects > 1000:
 		return bad("projetos: de 1 a 1.000")
+	case in.MaxCampaignsMonth < 0 || in.MaxCampaignsMonth > 100_000:
+		return bad("campanhas por mês: de 0 (sem limite) a 100.000")
 	case in.SortOrder < 0 || in.SortOrder > 999:
 		return bad("ordem: de 0 a 999")
 	case in.Available && !in.Visible:
@@ -92,14 +96,14 @@ func (in PlanInput) Normalize() (PlanInput, error) {
 }
 
 const adminPlanCols = `p.code, p.name, p.price_cents, p.currency, p.billing_interval, p.daily_message_limit,
-	p.max_daily_budget_brl::float8, p.max_projects, p.available, p.visible, p.sort_order, p.updated_at,
+	p.max_daily_budget_brl::float8, p.max_projects, p.max_campaigns_month, p.available, p.visible, p.sort_order, p.updated_at,
 	(SELECT count(*) FROM subscriptions s WHERE s.plan_code = p.code),
 	(SELECT count(*) FROM subscriptions s WHERE s.plan_code = p.code AND s.status IN ('active', 'trialing', 'past_due'))`
 
 func scanAdminPlan(row pgx.Row) (AdminPlan, error) {
 	var p AdminPlan
 	err := row.Scan(&p.Code, &p.Name, &p.PriceCents, &p.Currency, &p.Interval, &p.DailyMessageLimit, &p.MaxDailyBudgetBRL,
-		&p.MaxProjects, &p.Available, &p.Visible, &p.SortOrder, &p.UpdatedAt, &p.Subscribers, &p.ActiveSubs)
+		&p.MaxProjects, &p.MaxCampaignsMonth, &p.Available, &p.Visible, &p.SortOrder, &p.UpdatedAt, &p.Subscribers, &p.ActiveSubs)
 	return p, err
 }
 
@@ -130,13 +134,13 @@ func (s *Store) AdminPlan(ctx context.Context, code string) (AdminPlan, error) {
 func planAudit(p AdminPlan) map[string]any {
 	return map[string]any{"code": p.Code, "name": p.Name, "price_cents": p.PriceCents, "interval": p.Interval,
 		"daily_message_limit": p.DailyMessageLimit, "max_daily_budget_brl": p.MaxDailyBudgetBRL, "max_projects": p.MaxProjects,
-		"available": p.Available, "visible": p.Visible, "sort_order": p.SortOrder}
+		"max_campaigns_month": p.MaxCampaignsMonth, "available": p.Available, "visible": p.Visible, "sort_order": p.SortOrder}
 }
 
 func planChanges(before, after map[string]any) []string {
 	var out []string
 	for _, k := range []string{"code", "name", "price_cents", "interval", "daily_message_limit", "max_daily_budget_brl",
-		"max_projects", "available", "visible", "sort_order"} {
+		"max_projects", "max_campaigns_month", "available", "visible", "sort_order"} {
 		if before[k] != after[k] {
 			out = append(out, k)
 		}
@@ -158,10 +162,10 @@ func (s *Store) CreatePlan(ctx context.Context, in PlanInput, audit AdminAction)
 	}
 	defer tx.Rollback(ctx)
 	tag, err := tx.Exec(ctx, `INSERT INTO plans (code, name, price_cents, billing_interval, daily_message_limit,
-			max_daily_budget_brl, max_projects, available, visible, sort_order, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6::numeric, $7, $8, $9, $10, now()) ON CONFLICT (code) DO NOTHING`,
+			max_daily_budget_brl, max_projects, available, visible, sort_order, max_campaigns_month, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6::numeric, $7, $8, $9, $10, $11, now()) ON CONFLICT (code) DO NOTHING`,
 		in.Code, in.Name, in.PriceCents, in.Interval, in.DailyMessageLimit, budgetParam(in.MaxDailyBudgetBRL),
-		in.MaxProjects, in.Available, in.Visible, in.SortOrder)
+		in.MaxProjects, in.Available, in.Visible, in.SortOrder, in.MaxCampaignsMonth)
 	if err != nil {
 		return AdminPlan{}, err
 	}
@@ -218,10 +222,10 @@ func (s *Store) UpdatePlan(ctx context.Context, code string, in PlanInput, base 
 	}
 	if _, err := tx.Exec(ctx, `UPDATE plans SET code = $2, name = $3, price_cents = $4, billing_interval = $5,
 			daily_message_limit = $6, max_daily_budget_brl = $7::numeric, max_projects = $8, available = $9, visible = $10,
-			sort_order = $11, updated_at = now()
+			sort_order = $11, max_campaigns_month = $12, updated_at = now()
 		WHERE code = $1`,
 		cur.Code, in.Code, in.Name, in.PriceCents, in.Interval, in.DailyMessageLimit, budgetParam(in.MaxDailyBudgetBRL),
-		in.MaxProjects, in.Available, in.Visible, in.SortOrder); err != nil {
+		in.MaxProjects, in.Available, in.Visible, in.SortOrder, in.MaxCampaignsMonth); err != nil {
 		return AdminPlan{}, err
 	}
 	p, err := adminPlan(ctx, tx, in.Code, false)

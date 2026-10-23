@@ -93,19 +93,20 @@ type Plan struct {
 	DailyMessageLimit int     `json:"daily_message_limit"`
 	MaxDailyBudgetBRL float64 `json:"max_daily_budget_brl"`
 	MaxProjects       int     `json:"max_projects"`
+	MaxCampaignsMonth int     `json:"max_campaigns_month"` // 0 = sem limite
 	Available         bool    `json:"available"`
 }
 
 // Plans são os planos que o cadastro mostra (os ocultos pelo painel ficam de fora).
 func (s *Store) Plans(ctx context.Context) ([]Plan, error) {
 	rows, err := s.pool.Query(ctx, `SELECT code, name, price_cents, currency, daily_message_limit,
-		max_daily_budget_brl::float8, max_projects, available FROM plans WHERE visible ORDER BY sort_order, code`)
+		max_daily_budget_brl::float8, max_projects, max_campaigns_month, available FROM plans WHERE visible ORDER BY sort_order, code`)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Plan, error) {
 		var p Plan
-		err := r.Scan(&p.Code, &p.Name, &p.PriceCents, &p.Currency, &p.DailyMessageLimit, &p.MaxDailyBudgetBRL, &p.MaxProjects, &p.Available)
+		err := r.Scan(&p.Code, &p.Name, &p.PriceCents, &p.Currency, &p.DailyMessageLimit, &p.MaxDailyBudgetBRL, &p.MaxProjects, &p.MaxCampaignsMonth, &p.Available)
 		return p, err
 	})
 }

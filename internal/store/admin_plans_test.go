@@ -37,6 +37,7 @@ func by(action string) store.AdminAction {
 
 func TestAdminPlansListWithSubscribers(t *testing.T) {
 	st, pool := newStore(t)
+	legacyPlans(t, pool)
 	id := seedIdentity(t, st, "owner", "5511900000010")
 	_, err := pool.Exec(ctx, `INSERT INTO subscriptions (organization_id, plan_code, status) VALUES ($1, 'starter', 'active')`, id.OrgID)
 	must(t, err)
@@ -98,6 +99,7 @@ func TestCreatePlanValidatesAndAudits(t *testing.T) {
 
 func TestUpdatePlanBeforeAfterConflictAndCode(t *testing.T) {
 	st, pool := newStore(t)
+	legacyPlans(t, pool)
 	cur, err := st.AdminPlan(ctx, "starter")
 	must(t, err)
 

@@ -54,6 +54,28 @@
     });
   }
 
+  // ---------- planos: brilho segue o cursor; depois da entrada o atraso em cascata sai do hover ----------
+  var tiers = document.querySelector(".tiers");
+  if (tiers && !reduce && window.matchMedia("(hover: hover)").matches) {
+    tiers.querySelectorAll("[data-tier]").forEach(function (card) {
+      card.addEventListener("pointermove", function (e) {
+        var r = card.getBoundingClientRect();
+        card.style.setProperty("--mx", (((e.clientX - r.left) / r.width) * 100).toFixed(1) + "%");
+        card.style.setProperty("--my", (((e.clientY - r.top) / r.height) * 100).toFixed(1) + "%");
+      });
+    });
+  }
+  if (tiers) {
+    var settle = function () { setTimeout(function () { tiers.classList.add("done"); }, 1400); };
+    if (tiers.classList.contains("armed")) {
+      new MutationObserver(function (m, obs) {
+        if (!tiers.classList.contains("armed")) { obs.disconnect(); settle(); }
+      }).observe(tiers, { attributes: true, attributeFilter: ["class"] });
+    } else {
+      settle();
+    }
+  }
+
   // ---------- conversa de demonstração ----------
   var chat = document.querySelector("[data-demo]");
   var ad = document.querySelector("[data-ad]");

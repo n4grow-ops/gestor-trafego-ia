@@ -26,6 +26,15 @@ func newStore(t *testing.T) (*store.Store, *pgxpool.Pool) {
 	return store.New(pool), pool
 }
 
+// legacyPlans volta os planos ao que eram antes da 0048 (free grátis, starter R$ 97 e pro R$ 297 em
+// breve): os testes de painel e cobrança foram escritos com esses valores.
+func legacyPlans(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	_, err := pool.Exec(ctx, `UPDATE plans SET price_cents = CASE code WHEN 'free' THEN 0 WHEN 'starter' THEN 9700 ELSE 29700 END,
+		available = code = 'free', max_campaigns_month = 0`)
+	must(t, err)
+}
+
 // seedIdentity cria organização, membro e telefone, e devolve a identidade.
 func seedIdentity(t *testing.T, st *store.Store, role, phone string) store.Identity {
 	t.Helper()

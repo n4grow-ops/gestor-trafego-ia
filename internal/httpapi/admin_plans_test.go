@@ -32,7 +32,7 @@ func TestPlansStaffSeesButCannotEdit(t *testing.T) {
 		}
 	}
 	p, err := e.st.AdminPlan(context.Background(), "starter")
-	if err != nil || p.PriceCents != 9700 {
+	if err != nil || p.PriceCents != 39700 {
 		t.Fatalf("staff mudou o plano: %+v %v", p, err)
 	}
 	if r := e.do("GET", "/api/plans", nil, nil); r.code != http.StatusUnauthorized {

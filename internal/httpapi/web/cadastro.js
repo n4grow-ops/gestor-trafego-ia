@@ -136,20 +136,49 @@
     return cents === 0 ? "Grátis" : (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) + "/mês";
   }
 
+  let chosenPlan = "free";
+  const planExtras = {
+    free: ["Edições ilimitadas", "IA que escreve a copy e otimiza", "Relatórios", "1 conta de anúncio"],
+    starter: ["Tudo do Básico", "Alerta de saturação e datas sazonais", "Relatório de gastos em PDF", "Criativos e carrosséis pela IA (até 10)"],
+    pro: ["Tudo do Intermediário", "Laboratório de Ads em vídeo, sob demanda", "Criativos e carrosséis pela IA (até 10)", "Contas de anúncio a combinar"],
+  };
+
   function renderPlans(plans) {
     const box = $("planos");
     box.innerHTML = "";
+    box.setAttribute("role", "radiogroup");
+    box.setAttribute("aria-label", "Planos");
+    const pick = (code) => {
+      chosenPlan = code;
+      box.querySelectorAll(".plan").forEach((x) => {
+        const on = x.dataset.code === code;
+        x.classList.toggle("selected", on);
+        x.setAttribute("aria-checked", on ? "true" : "false");
+        x.tabIndex = on ? 0 : -1;
+      });
+      const p = plans.find((x) => x.code === code);
+      $("fim-plano").textContent = p ? p.name : code;
+    };
     plans.forEach((p, i) => {
       const el = document.createElement("div");
       el.className = "plan" + (p.code === "free" ? " selected" : "") + (p.available ? "" : " soon");
+      el.dataset.code = p.code;
+      if (p.available) {
+        el.setAttribute("role", "radio");
+        el.setAttribute("aria-checked", p.code === "free" ? "true" : "false");
+        el.tabIndex = p.code === "free" ? 0 : -1;
+        el.addEventListener("click", () => pick(p.code));
+        el.addEventListener("keydown", (e) => {
+          if (e.key === " " || e.key === "Enter") { e.preventDefault(); pick(p.code); }
+        });
+      }
       el.style.setProperty("--i", i);
       const info = document.createElement("div");
       const h = document.createElement("h2");
       h.textContent = p.name;
       const ul = document.createElement("ul");
-      [`Até ${p.daily_message_limit} mensagens por dia`,
-       `Investimento de até ${p.max_daily_budget_brl.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} por dia`,
-       `Até ${p.max_projects} projetos`].forEach((t) => { const li = document.createElement("li"); li.textContent = t; ul.appendChild(li); });
+      [p.max_campaigns_month ? `${p.max_campaigns_month} campanhas por mês` : "Campanhas ilimitadas",
+       ...(planExtras[p.code] || [`Até ${p.max_projects} projetos`])].forEach((t) => { const li = document.createElement("li"); li.textContent = t; ul.appendChild(li); });
       info.append(h, ul);
       if (!p.available) { const b = document.createElement("span"); b.className = "badge"; b.textContent = "Em breve"; info.appendChild(b); }
       const price = document.createElement("div");
@@ -248,7 +277,7 @@
       const r = await fetch(api, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({ ...formData, plan: "free" }),
+        body: JSON.stringify({ ...formData, plan: chosenPlan }),
       });
       const body = await r.json().catch(() => ({}));
       if (r.ok || r.status === 409) {
@@ -261,7 +290,7 @@
       if (r.status === 410) { fail("Esse link expirou. Manda uma mensagem pra gente no WhatsApp que enviamos um novo."); return; }
       if (r.status === 403) { fail("O cadastro da conta precisa ser feito pelo responsável. Peça pra ele mandar uma mensagem no WhatsApp."); return; }
       if (r.status === 429) { msg("msg-plano", "Muitas tentativas seguidas. Espere um minuto e tente de novo.", true); return; }
-      if (r.status === 422 && body.error === "plano_indisponivel") { msg("msg-plano", "Esse plano ainda não está disponível. Siga com o Free.", true); return; }
+      if (r.status === 422 && body.error === "plano_indisponivel") { msg("msg-plano", "Esse plano ainda não está disponível. Escolha outro.", true); return; }
       if (r.status === 422) { show("passo-dados"); markErrors(body.fields); msg("msg-dados", "Confira os campos marcados.", true); return; }
       msg("msg-plano", "Não deu certo agora. Tenta de novo em instantes.", true);
     } catch (_) {

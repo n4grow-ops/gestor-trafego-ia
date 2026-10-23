@@ -25,6 +25,7 @@ type billingFixture struct {
 func seedBilling(t *testing.T) (*store.Store, billingFixture) {
 	t.Helper()
 	st, pool := newStore(t)
+	legacyPlans(t, pool)
 	f := billingFixture{pool: pool, orgs: map[string]int64{}, subs: map[string]int64{}}
 	type sub struct {
 		key, plan, status string

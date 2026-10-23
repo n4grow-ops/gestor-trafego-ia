@@ -56,6 +56,8 @@ type Page struct {
 	WhatsApp          bool   `json:"whatsapp"`
 	// WhatsAppNumber é o número vinculado à Página, como a Meta devolve (vazio = sem número ou sem permissão).
 	WhatsAppNumber string `json:"whatsapp_number,omitempty"`
+	// WhatsAppUnknown: a Meta não respondeu se há WhatsApp (erro ou campo sem permissão). Não é "sem WhatsApp".
+	WhatsAppUnknown bool `json:"whatsapp_unknown,omitempty"`
 }
 
 // Assets é o que o cliente liberou no login.
@@ -120,16 +122,17 @@ func (c *Client) Assets(ctx context.Context, token string) (Assets, error) {
 	}
 	var pages struct {
 		Data []struct {
-			ID        string `json:"id"`
-			Name      string `json:"name"`
-			Instagram struct {
+			ID          string `json:"id"`
+			Name        string `json:"name"`
+			AccessToken string `json:"access_token"` // token da Página: só para ler o WhatsApp, nunca guardado
+			Instagram   struct {
 				ID       string `json:"id"`
 				Username string `json:"username"`
 			} `json:"instagram_business_account"`
 		} `json:"data"`
 	}
 	if err := c.get(ctx, "/me/accounts", c.auth(token, url.Values{"limit": {"100"},
-		"fields": {"id,name,instagram_business_account{id,username}"}}), &pages); err != nil {
+		"fields": {"id,name,access_token,instagram_business_account{id,username}"}}), &pages); err != nil {
 		return a, err
 	}
 	a.Pages = make([]Page, len(pages.Data))
@@ -143,23 +146,40 @@ func (c *Client) Assets(ctx context.Context, token string) (Assets, error) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			num := c.pageWhatsApp(ctx, token, x.ID)
-			a.Pages[i].WhatsApp, a.Pages[i].WhatsAppNumber = num != "", num
+			has, num, known := c.pageWhatsApp(ctx, x.AccessToken, token, x.ID)
+			a.Pages[i].WhatsApp, a.Pages[i].WhatsAppNumber, a.Pages[i].WhatsAppUnknown = has, num, !known
 		}()
 	}
 	wg.Wait()
 	return a, nil
 }
 
-// pageWhatsApp devolve o número de WhatsApp vinculado à Página. Erro (campo sem permissão) conta como sem número.
-func (c *Client) pageWhatsApp(ctx context.Context, token, pageID string) string {
-	var p struct {
-		WhatsApp string `json:"whatsapp_number"`
+// pageWhatsApp lê o WhatsApp vinculado à Página. Os campos exigem PPCA/PPMA com token de usuário; com o token
+// da própria Página (pages_read_engagement) voltam. Tenta o da Página e depois o do usuário.
+// known=false: nenhuma leitura deu certo, ou a resposta não trouxe nenhum sinal; quem chama não afirma "sem WhatsApp".
+func (c *Client) pageWhatsApp(ctx context.Context, pageToken, userToken, pageID string) (has bool, number string, known bool) {
+	for _, tok := range []string{pageToken, userToken} {
+		if tok == "" {
+			continue
+		}
+		var p struct {
+			Number   string `json:"whatsapp_number"`
+			HasWA    *bool  `json:"has_whatsapp_number"`
+			HasWABiz *bool  `json:"has_whatsapp_business_number"`
+		}
+		if err := c.get(ctx, "/"+url.PathEscape(pageID), c.auth(tok, url.Values{"fields": {"whatsapp_number,has_whatsapp_number,has_whatsapp_business_number"}}), &p); err != nil {
+			continue
+		}
+		number = strings.TrimSpace(p.Number)
+		if number != "" || (p.HasWA != nil && *p.HasWA) || (p.HasWABiz != nil && *p.HasWABiz) {
+			return true, number, true
+		}
+		// "Não tem" só quando a Meta respondeu um dos indicadores como false (campo ausente não prova nada).
+		if p.HasWA != nil || p.HasWABiz != nil {
+			return false, "", true
+		}
 	}
-	if err := c.get(ctx, "/"+url.PathEscape(pageID), c.auth(token, url.Values{"fields": {"whatsapp_number"}}), &p); err != nil {
-		return ""
-	}
-	return strings.TrimSpace(p.WhatsApp)
+	return false, "", false
 }
 
 func (c *Client) auth(token string, q url.Values) url.Values {

@@ -31,7 +31,8 @@ views.planos = async view => {
       <p class="pc-price"><b class="num">${esc(planPrice(p))}</b>${p.price_cents ? `<span>/${perInterval(p)}</span>` : ''}</p>
       <dl class="kv pc-kv"><dt>Mensagens por dia</dt><dd class="num">${num(p.daily_message_limit)}</dd>
         <dt>Investimento por dia</dt><dd class="num">até R$ ${esc(reais(p.max_daily_budget_brl))}</dd>
-        <dt>Projetos ativos</dt><dd class="num">${num(p.max_projects)}</dd></dl>
+        <dt>Projetos ativos</dt><dd class="num">${num(p.max_projects)}</dd>
+        <dt>Campanhas por mês</dt><dd class="num">${p.max_campaigns_month ? num(p.max_campaigns_month) : 'sem limite'}</dd></dl>
       <div class="pc-foot"><span class="pc-subs">${icon('users')}<span><b class="num">${num(p.active_subs)}</b> ${p.active_subs === 1 ? 'assinatura ativa' : 'assinaturas ativas'}${canceled ? ` · ${num(canceled)} cancelada${canceled > 1 ? 's' : ''}` : ''}</span></span>
         ${PLANOS.canEdit ? `<button class="btn sm" type="button" data-plan-edit="${esc(p.code)}" aria-label="Editar ${esc(p.name)}">Editar</button>` : ''}</div>
     </article>`;
@@ -59,7 +60,7 @@ function openPlan(code) {
   PLANOS.edit = p; PLANOS.confirmed = false;
   const isDefault = p && p.code === PLANOS.defaultPlan;
   const codeLocked = p && (p.subscribers > 0 || isDefault);
-  const v = p || { code: '', name: '', price_cents: 0, interval: 'month', daily_message_limit: 60, max_daily_budget_brl: 50, max_projects: 3,
+  const v = p || { code: '', name: '', price_cents: 0, interval: 'month', daily_message_limit: 60, max_daily_budget_brl: 50, max_projects: 3, max_campaigns_month: 0,
     available: false, visible: true, sort_order: (PLANOS.list.reduce((m, x) => Math.max(m, x.sort_order), 0) + 1) };
   const sit = planSit(v);
   const d = $('#drawer');
@@ -77,6 +78,7 @@ function openPlan(code) {
       <label>Mensagens com a IA por dia<input class="field num" name="daily_message_limit" type="number" inputmode="numeric" min="1" max="100000" step="1" required value="${v.daily_message_limit}"></label>
       <label>Investimento máximo por dia (R$)<input class="field num" name="budget" inputmode="decimal" required autocomplete="off" value="${esc(reais(v.max_daily_budget_brl))}"></label>
       <label>Projetos ativos<input class="field num" name="max_projects" type="number" inputmode="numeric" min="1" max="1000" step="1" required value="${v.max_projects}"></label>
+      <label>Campanhas por mês (0 = sem limite)<input class="field num" name="max_campaigns_month" type="number" inputmode="numeric" min="0" max="100000" step="1" required value="${v.max_campaigns_month || 0}"></label>
       <label>Ordem na lista<input class="field num" name="sort_order" type="number" inputmode="numeric" min="0" max="999" step="1" required value="${v.sort_order}"></label>
       <label class="full">Situação no cadastro<select class="field" name="situation" ${isDefault ? 'disabled aria-describedby="sit-hint"' : ''}>
         ${Object.entries({ available: 'Disponível: dá para assinar', soon: 'Em breve: aparece sem poder assinar', hidden: 'Oculto: some do cadastro' }).map(([k, l]) => `<option value="${k}" ${k === sit ? 'selected' : ''}>${l}</option>`).join('')}</select>
@@ -104,7 +106,7 @@ function planFormData(f) {
     code: el('code').value.trim().toLowerCase(), name: el('name').value.trim().replace(/\s+/g, ' '),
     price_cents: Math.round(price * 100), interval: el('interval').value,
     daily_message_limit: Number(el('daily_message_limit').value), max_daily_budget_brl: Math.round(budget * 100) / 100,
-    max_projects: Number(el('max_projects').value), sort_order: Number(el('sort_order').value),
+    max_projects: Number(el('max_projects').value), max_campaigns_month: Number(el('max_campaigns_month').value), sort_order: Number(el('sort_order').value),
     available: sit === 'available', visible: sit !== 'hidden',
   };
   const int = (n, lo, hi) => Number.isInteger(n) && n >= lo && n <= hi;
@@ -115,6 +117,7 @@ function planFormData(f) {
   if (!int(body.daily_message_limit, 1, 100000)) errs.push(['daily_message_limit', 'Mensagens por dia: número inteiro de 1 a 100.000.']);
   if (!(budget >= 1 && budget <= 1_000_000)) errs.push(['budget', 'Investimento por dia: de R$ 1 a R$ 1.000.000.']);
   if (!int(body.max_projects, 1, 1000)) errs.push(['max_projects', 'Projetos ativos: número inteiro de 1 a 1.000.']);
+  if (!int(body.max_campaigns_month, 0, 100000)) errs.push(['max_campaigns_month', 'Campanhas por mês: número inteiro de 0 (sem limite) a 100.000.']);
   if (!int(body.sort_order, 0, 999)) errs.push(['sort_order', 'Ordem: número inteiro de 0 a 999.']);
   return { body, errs };
 }

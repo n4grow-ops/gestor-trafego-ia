@@ -71,7 +71,9 @@ func TestPlansSeeded(t *testing.T) {
 	st, _ := newStore(t)
 	plans, err := st.Plans(ctx)
 	must(t, err)
-	if len(plans) != 3 || plans[0].Code != "free" || !plans[0].Available || plans[1].Available || plans[0].PriceCents != 0 {
+	if len(plans) != 3 || plans[0].Code != "free" || plans[0].Name != "Básico" || plans[0].PriceCents != 14700 || plans[0].MaxCampaignsMonth != 4 ||
+		!plans[1].Available || plans[1].PriceCents != 39700 || plans[1].MaxCampaignsMonth != 35 ||
+		!plans[2].Available || plans[2].PriceCents != 99700 || plans[2].MaxCampaignsMonth != 0 {
 		t.Fatalf("planos = %+v", plans)
 	}
 }
@@ -152,7 +154,8 @@ func TestCompleteRegistrationKeepsConversationState(t *testing.T) {
 }
 
 func TestCompleteRegistrationRejectsBadInput(t *testing.T) {
-	st, _ := newStore(t)
+	st, pool := newStore(t)
+	legacyPlans(t, pool)
 	ident := pendingIdentity(t, st, "owner", "5511988887777")
 	_, err := st.GetOrCreateConversation(ctx, ident.ID, "5511988887777@c.us")
 	must(t, err)

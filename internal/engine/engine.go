@@ -638,6 +638,20 @@ func (e *Engine) noPromise(ctx context.Context, reply string, f contract.Fields,
 // requestProposal pede a proposta ao Gestor; fixed indica que reply é mensagem fixa (nunca vira voz).
 // No modo humano o Gestor só começa depois dos balões da resposta, para o resumo chegar por último.
 func (e *Engine) requestProposal(ctx context.Context, ident store.Identity, conv store.Conversation, f contract.Fields, adjustment, reply string, fixed bool) error {
+	if adjustment == "" {
+		q, err := e.Store.CampaignQuota(ctx, ident.OrgID, conv.ActiveProjectID)
+		if err != nil {
+			return err
+		}
+		if q.Blocked() {
+			noteAction(ctx, "limite de campanhas do mês do plano")
+			e.audit(ctx, ident.OrgID, member(ident), "campaign_limit", map[string]any{"plan": q.Plan, "max": q.Max, "used": q.Used})
+			if err := e.Store.UpdateConversation(ctx, conv.ID, store.StateCollecting, f); err != nil {
+				return err
+			}
+			return e.send(ctx, conv, fmt.Sprintf(msgCampaignLimit, q.Max, q.Plan))
+		}
+	}
 	if adjustment != "" {
 		noteAction(ctx, "ajuste: pediu proposta nova ao especialista")
 	} else {

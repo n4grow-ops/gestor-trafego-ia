@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -55,8 +56,18 @@ func graph(t *testing.T) *httptest.Server {
 			w.Write([]byte(`{"access_token":"TOKEN1","token_type":"bearer"}`))
 			return
 		}
-		if q.Get("access_token") != "TOKEN1" || q.Get("appsecret_proof") != proof("TOKEN1") {
+		tok := q.Get("access_token")
+		if (tok != "TOKEN1" && !strings.HasPrefix(tok, "PTOK")) || q.Get("appsecret_proof") != proof(tok) {
 			t.Errorf("chamada sem token/proof: %s", r.URL.Path)
+		}
+		if strings.HasPrefix(r.URL.Path, "/v23.0/P") {
+			if f := q.Get("fields"); !strings.Contains(f, "whatsapp_number") || !strings.Contains(f, "has_whatsapp_business_number") {
+				t.Errorf("campos do WhatsApp = %q", f)
+			}
+		}
+		denied := func() {
+			w.WriteHeader(400)
+			w.Write([]byte(`{"error":{"message":"requires Page Public Content Access","code":10}}`))
 		}
 		switch r.URL.Path {
 		case "/v23.0/me":
@@ -64,12 +75,31 @@ func graph(t *testing.T) *httptest.Server {
 		case "/v23.0/me/adaccounts":
 			w.Write([]byte(`{"data":[{"id":"act_1","name":"Loja","account_status":1,"currency":"BRL","timezone_name":"America/Sao_Paulo","disable_reason":0,"business":{"id":"B1"}}]}`))
 		case "/v23.0/me/accounts":
-			w.Write([]byte(`{"data":[{"id":"P1","name":"Loja Page","instagram_business_account":{"id":"IG1","username":"loja"}},{"id":"P2","name":"Outra"}]}`))
+			if !strings.Contains(q.Get("fields"), "access_token") {
+				t.Errorf("Páginas sem access_token: %q", q.Get("fields"))
+			}
+			w.Write([]byte(`{"data":[{"id":"P1","name":"Loja Page","access_token":"PTOK1","instagram_business_account":{"id":"IG1","username":"loja"}},` +
+				`{"id":"P2","name":"Outra"},{"id":"P3","name":"Sem WA","access_token":"PTOK3"},{"id":"P4","name":"Biz","access_token":"PTOK4"},` +
+				`{"id":"P5","name":"Muda","access_token":"PTOK5"}]}`))
 		case "/v23.0/P1":
-			w.Write([]byte(`{"id":"P1","whatsapp_number":"+5511999990000"}`))
+			// caso do cliente: com o token do usuário a Meta exige PPCA; com o da Página o número volta
+			if tok != "PTOK1" {
+				denied()
+				return
+			}
+			w.Write([]byte(`{"id":"P1","whatsapp_number":"+5511999990000","has_whatsapp_number":true,"has_whatsapp_business_number":true}`))
 		case "/v23.0/P2":
-			w.WriteHeader(400)
-			w.Write([]byte(`{"error":{"message":"sem permissão","code":10}}`))
+			denied()
+		case "/v23.0/P3":
+			w.Write([]byte(`{"id":"P3","has_whatsapp_number":false,"has_whatsapp_business_number":false}`))
+		case "/v23.0/P4":
+			if tok == "PTOK4" {
+				denied()
+				return
+			}
+			w.Write([]byte(`{"id":"P4","has_whatsapp_business_number":true}`))
+		case "/v23.0/P5":
+			w.Write([]byte(`{"id":"P5"}`))
 		default:
 			t.Errorf("caminho inesperado %s", r.URL.Path)
 			w.WriteHeader(404)
@@ -99,9 +129,25 @@ func TestExchangeCodeAndAssets(t *testing.T) {
 		t.Fatalf("contas = %+v", a)
 	}
 	// I3: o número da Página é guardado para o promoted_object (não o do membro do chat)
-	if len(a.Pages) != 2 || a.Pages[0].InstagramUsername != "loja" || !a.Pages[0].WhatsApp || a.Pages[1].WhatsApp ||
-		a.Pages[0].WhatsAppNumber != "+5511999990000" || a.Pages[1].WhatsAppNumber != "" {
+	if len(a.Pages) != 5 || a.Pages[0].InstagramUsername != "loja" || !a.Pages[0].WhatsApp || a.Pages[0].WhatsAppUnknown ||
+		a.Pages[0].WhatsAppNumber != "+5511999990000" {
 		t.Fatalf("páginas = %+v", a.Pages)
+	}
+	// Erro de permissão ou resposta sem nenhum sinal: "não sei", nunca "sem WhatsApp".
+	for _, i := range []int{1, 4} {
+		if p := a.Pages[i]; p.WhatsApp || !p.WhatsAppUnknown || p.WhatsAppNumber != "" {
+			t.Errorf("página %s = %+v", p.ID, p)
+		}
+	}
+	if p := a.Pages[2]; p.WhatsApp || p.WhatsAppUnknown {
+		t.Errorf("página sem WhatsApp confirmada = %+v", p)
+	}
+	if p := a.Pages[3]; !p.WhatsApp || p.WhatsAppUnknown || p.WhatsAppNumber != "" {
+		t.Errorf("página com WhatsApp Business sem número = %+v", p)
+	}
+	// O token da Página não vai para os candidatos guardados no banco.
+	if raw, _ := json.Marshal(a); strings.Contains(string(raw), "PTOK") {
+		t.Errorf("token da Página vazou: %s", raw)
 	}
 }
 

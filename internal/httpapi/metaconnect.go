@@ -204,7 +204,8 @@ func (m *MetaConnect) choose(w http.ResponseWriter, r *http.Request) {
 
 func (m *MetaConnect) complete(w http.ResponseWriter, r *http.Request, link store.MetaLink, connID int64, acc meta.AdAccount, page meta.Page) {
 	summary := engine.MetaSummary{AccountID: acc.ID, AccountName: acc.Name, Currency: acc.Currency, Timezone: acc.Timezone, AccountStatus: acc.Status,
-		DisableReason: acc.DisableReason, PageName: page.Name, Instagram: page.InstagramUsername, PageWhatsApp: page.WhatsApp}
+		DisableReason: acc.DisableReason, PageName: page.Name, Instagram: page.InstagramUsername, PageWhatsApp: page.WhatsApp,
+		PageWhatsAppUnknown: page.WhatsAppUnknown}
 	orgID, err := m.Store.CompleteMeta(r.Context(), store.MetaChoice{ConnectionID: connID, LinkID: link.ID, Account: acc, Page: page,
 		Message: func(convID int64, chatID string) store.JobSpec {
 			return engine.MetaConnectedJob(convID, chatID, summary)

@@ -290,6 +290,9 @@ func TestSignupSubmit(t *testing.T) {
 
 func TestSignupRejectsUnavailablePlan(t *testing.T) {
 	e := newSignupEnv(t)
+	if _, err := e.pool.Exec(context.Background(), `UPDATE plans SET available = false WHERE code = 'pro'`); err != nil {
+		t.Fatal(err)
+	}
 	body := strings.Replace(validBody, `"plan":"free"`, `"plan":"pro"`, 1)
 	if rec := e.do("POST", "/api/cadastro/"+e.token, body, "sessao-ok"); rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("plano pago: %d %s", rec.Code, rec.Body)
