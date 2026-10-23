@@ -120,17 +120,25 @@ func SummaryWith(p contract.CampaignProposal, code string, o SummaryOptions) str
 	if p.Followers {
 		label = "seguidores no Instagram (o anúncio leva a pessoa ao seu perfil)"
 	}
-	fmt.Fprintf(&b, "Objetivo: %s\n", label)
-	area := fmt.Sprintf("raio de %d km", p.Audience.RadiusKM)
-	if p.Audience.RadiusKM == 0 {
-		area = "somente a cidade (sem raio)"
+	if l := contract.GoalLabel[p.Goal]; l != "" {
+		label = l
 	}
-	fmt.Fprintf(&b, "Público: %d a %d anos, %s, %s\n", p.Audience.AgeMin, p.Audience.AgeMax, genders(p.Audience.Genders), area)
+	fmt.Fprintf(&b, "Objetivo: %s\n", label)
+	if p.Location != "" {
+		fmt.Fprintf(&b, "Onde: %s\n", p.Location)
+		fmt.Fprintf(&b, "Público: %d a %d anos, %s\n", p.Audience.AgeMin, p.Audience.AgeMax, genders(p.Audience.Genders))
+	} else {
+		area := fmt.Sprintf("raio de %d km", p.Audience.RadiusKM)
+		if p.Audience.RadiusKM == 0 {
+			area = "somente a cidade (sem raio)"
+		}
+		fmt.Fprintf(&b, "Público: %d a %d anos, %s, %s\n", p.Audience.AgeMin, p.Audience.AgeMax, genders(p.Audience.Genders), area)
+	}
 	if len(p.Audience.Interests) > 0 {
-		fmt.Fprintf(&b, "Interesses: %s\n", strings.Join(p.Audience.Interests, ", "))
+		fmt.Fprintf(&b, "Interesses da Meta: %s\n", strings.Join(p.Audience.Interests, ", "))
 	}
 	where := PlacementsText(p.Placements)
-	if p.Followers {
+	if p.Followers || p.Goal == contract.GoalDirect {
 		where = "só no Instagram (o perfil é no Instagram)"
 	}
 	fmt.Fprintf(&b, "Onde aparece: %s\n", where)

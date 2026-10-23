@@ -26,6 +26,7 @@ var fieldLabels = map[string]string{
 	"audience":         "o público",
 	"location":         "a cidade ou região",
 	"daily_budget_brl": "o orçamento por dia",
+	"link_url":         "o link do site",
 }
 
 var stageLabels = map[string]string{

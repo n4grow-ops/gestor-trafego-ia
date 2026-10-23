@@ -79,6 +79,12 @@ type message struct {
 	Audio    *media `json:"audio"`
 	Video    *media `json:"video"`
 	Document *media `json:"document"`
+	Location *struct {
+		Latitude  float64 `json:"latitude"`
+		Longitude float64 `json:"longitude"`
+		Name      string  `json:"name"`
+		Address   string  `json:"address"`
+	} `json:"location"`
 }
 
 func changes(body []byte) ([]change, error) {
@@ -165,6 +171,17 @@ func toInbound(m message, raw []byte) (whatsapp.Inbound, bool) {
 			case strings.HasPrefix(d.MimeType, "video/"):
 				in.Kind, in.Text = whatsapp.KindVideo, d.Caption
 			}
+		}
+	case "location":
+		// Pino mandado pelo clipe do WhatsApp: vira texto para a Mia usar como local da campanha.
+		in.Kind = whatsapp.KindOther
+		if l := m.Location; l != nil && (l.Latitude != 0 || l.Longitude != 0) {
+			in.Kind = whatsapp.KindText
+			in.Text = fmt.Sprintf("[localização enviada pelo WhatsApp: pino %.6f,%.6f", l.Latitude, l.Longitude)
+			if where := strings.TrimSpace(strings.Join([]string{l.Name, l.Address}, " ")); where != "" {
+				in.Text += " (" + where + ")"
+			}
+			in.Text += "]"
 		}
 	default:
 		in.Kind = whatsapp.KindOther

@@ -262,6 +262,7 @@ func (e *Engine) publishInput(ctx context.Context, ident store.Identity, conn st
 	var fields struct {
 		Offer    string `json:"offer"`
 		Location string `json:"location"`
+		LinkURL  string `json:"link_url"`
 	}
 	if len(data.Fields) > 0 {
 		if err := json.Unmarshal(data.Fields, &fields); err != nil {
@@ -277,6 +278,8 @@ func (e *Engine) publishInput(ctx context.Context, ident store.Identity, conn st
 		Objective:        prop.Objective,
 		LeadForm:         prop.LeadForm,
 		Followers:        prop.Followers,
+		Goal:             prop.Goal,
+		LinkURL:          strings.TrimSpace(fields.LinkURL),
 		InstagramUser:    conn.InstagramUsername,
 		FormPrivacyURL:   e.LeadPrivacyURL,
 		Form:             leadFormSpec(prop.Form),

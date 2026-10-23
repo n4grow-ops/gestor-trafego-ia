@@ -14,6 +14,7 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/manager"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/campaign"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/copylab"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/meta"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 )
 
@@ -249,17 +250,17 @@ func (e *Engine) propose(ctx context.Context, p ProposeJob) error {
 	if err != nil {
 		return e.escalate(ctx, ident, conv, err.Error(), msgProposalFailed)
 	}
-	// Campanha de formulário é pedido do cliente: o objetivo de leads vale mesmo que a organização
-	// tenha só mensagens na lista.
-	leadForm := contract.WantsLeadForm(b.ObjectiveHint) || b.LeadForm != nil
-	if leadForm && !slices.Contains(b.Constraints.AllowedObjectives, "OUTCOME_LEADS") {
-		b.Constraints.AllowedObjectives = append(slices.Clone(b.Constraints.AllowedObjectives), "OUTCOME_LEADS")
+	// O tipo de campanha é pedido do cliente: todos os tipos valem, qualquer que seja a lista da organização.
+	goal := contract.GoalFromHint(b.ObjectiveHint)
+	if b.LeadForm != nil {
+		goal = contract.GoalLeadForm
 	}
-	// Seguidores: visitas ao perfil do Instagram (objetivo de tráfego), também por pedido do cliente.
-	followers := !leadForm && contract.WantsFollowers(b.ObjectiveHint)
-	if followers && !slices.Contains(b.Constraints.AllowedObjectives, "OUTCOME_TRAFFIC") {
-		b.Constraints.AllowedObjectives = append(slices.Clone(b.Constraints.AllowedObjectives), "OUTCOME_TRAFFIC")
+	for _, o := range contract.AllObjectives {
+		if !slices.Contains(b.Constraints.AllowedObjectives, o) {
+			b.Constraints.AllowedObjectives = append(slices.Clone(b.Constraints.AllowedObjectives), o)
+		}
 	}
+	leadForm, followers := goal == contract.GoalLeadForm, goal == contract.GoalFollowers
 	b.Adjustment = p.Adjustment
 	b.CopyVariations = e.copyVariations(ctx, conv.ID, p.Adjustment)
 	if n := len(b.ClientCopies); n > 0 {
@@ -297,17 +298,35 @@ func (e *Engine) propose(ctx context.Context, p ProposeJob) error {
 	// Onde o anúncio aparece é escolha do cliente, não do Gestor.
 	prop.Placements = b.Placements
 	// Raio que o cliente escreveu no local vale acima do que o Gestor pôs (caso real: "Maravilha + 15km"
-	// virou só a cidade). Abaixo do mínimo da Meta fica o mínimo, e o resumo explica.
-	if r := contract.RadiusFromLocation(b.Location); r > 0 {
-		prop.Audience.RadiusKM = min(max(r, contract.MinRadiusKM), 80)
-		if r < contract.MinRadiusKM {
-			prop.Rationale = strings.TrimSpace(fmt.Sprintf("A Meta só aceita raio a partir de %d km em volta da cidade, então ficou %d km (você pediu %d). %s",
-				contract.MinRadiusKM, contract.MinRadiusKM, r, prop.Rationale))
+	// virou só a cidade). Com vários lugares, cada um leva o seu raio. Abaixo do mínimo da Meta fica o
+	// mínimo, e o resumo explica.
+	places := meta.ParsePlaces(b.Location)
+	explicit := false
+	for _, pl := range places {
+		explicit = explicit || (!pl.Pin && pl.RadiusKM > 0)
+	}
+	switch {
+	case len(places) == 1 && !places[0].Pin && places[0].RadiusKM > 0:
+		prop.Audience.RadiusKM = min(max(places[0].RadiusKM, contract.MinRadiusKM), 80)
+	case len(places) > 1 && explicit:
+		prop.Audience.RadiusKM = 0 // cada lugar com o raio que o cliente deu; sem raio = só a cidade
+	}
+	for _, pl := range places {
+		if !pl.Pin && pl.RadiusKM > 0 && pl.RadiusKM < contract.MinRadiusKM {
+			prop.Rationale = strings.TrimSpace(fmt.Sprintf("A Meta só aceita raio a partir de %d km em volta de cidade, então ficou %d km (você pediu %d). Pra área menor, me manda um pino (localização) com o raio que quiser. %s",
+				contract.MinRadiusKM, contract.MinRadiusKM, pl.RadiusKM, prop.Rationale))
+			break
 		}
+	}
+	if len(places) > 0 {
+		prop.Location = meta.PlacesText(places, prop.Audience.RadiusKM)
+	}
+	if goal != "" {
+		prop.Goal, prop.Objective = goal, contract.GoalObjective(goal)
 	}
 	if followers {
 		// Anúncio que leva ao perfil do Instagram: só aparece no Instagram.
-		prop.Objective, prop.Followers = "OUTCOME_TRAFFIC", true
+		prop.Followers = true
 	}
 	if leadForm {
 		prop.Objective, prop.LeadForm = "OUTCOME_LEADS", true

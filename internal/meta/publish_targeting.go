@@ -102,54 +102,104 @@ func (c *Client) searchGeo(ctx context.Context, token, q, kind string) ([]geoRes
 	return out, err
 }
 
-// geo resolve o texto do local: cidade (com raio) ou estado. Vazio ou "Brasil" = país inteiro.
-// Cidade pedida que a Meta não acha não vira estado nem país: volta erro pedindo a cidade ao cliente.
+// geo resolve o texto do local com quantos lugares o cliente quiser: cidades (cada uma com o seu raio),
+// estados e pinos. Vazio ou "Brasil" = país inteiro. Cidade pedida que a Meta não acha não vira estado
+// nem país: volta erro pedindo a cidade ao cliente.
 func (c *Client) geo(ctx context.Context, token, query string, radiusKM int) (map[string]any, []string, error) {
 	brasil := map[string]any{"countries": []string{"BR"}}
 	if strings.TrimSpace(query) == "" {
 		return brasil, []string{"sem local definido: anúncio para o Brasil inteiro"}, nil
 	}
-	if wholeCountry(query) {
-		return brasil, nil, nil
+	places := ParsePlaces(query)
+	if len(places) == 0 {
+		places = []Place{{Query: strings.TrimSpace(query)}}
 	}
+	var cities, regions, pins []any
+	var warnings []string
+	seen := map[string]bool{}
+	for _, pl := range places {
+		if pl.Pin {
+			r := pinRadius(pl.RadiusKM)
+			pin := map[string]any{"radius": r, "distance_unit": "kilometer"}
+			if pl.Address != "" {
+				pin["address_string"] = pl.Address
+			} else {
+				pin["latitude"], pin["longitude"] = pl.Lat, pl.Lng
+			}
+			pins = append(pins, pin)
+			continue
+		}
+		if wholeCountry(pl.Query) {
+			return brasil, nil, nil
+		}
+		g, isCity, err := c.place(ctx, token, pl.Query)
+		if err != nil {
+			return nil, nil, err
+		}
+		if seen[g.Key] {
+			continue
+		}
+		seen[g.Key] = true
+		if !isCity {
+			regions = append(regions, map[string]any{"key": g.Key})
+			continue
+		}
+		city := map[string]any{"key": g.Key}
+		own := pl.RadiusKM
+		if own == 0 {
+			own = radiusKM
+		}
+		if r := cityRadius(pl.RadiusKM, radiusKM); r > 0 {
+			if r != own {
+				warnings = append(warnings, fmt.Sprintf("raio ajustado de %d km para %d km em %s (limite da Meta)", own, r, pl.Query))
+			}
+			city["radius"], city["distance_unit"] = r, "kilometer"
+		}
+		cities = append(cities, city)
+	}
+	out := map[string]any{}
+	if len(cities) > 0 {
+		out["cities"] = cities
+	}
+	if len(regions) > 0 {
+		out["regions"] = regions
+	}
+	if len(pins) > 0 {
+		out["custom_locations"] = pins
+	}
+	return out, warnings, nil
+}
+
+// place acha uma cidade ("Chapecó, SC") ou, se o texto for só um estado, o estado.
+func (c *Client) place(ctx context.Context, token, query string) (geoResult, bool, error) {
 	place, state := splitPlace(query)
 	if place != "" {
 		cities, err := c.searchGeo(ctx, token, place, "city")
 		if err != nil {
-			return nil, nil, err // busca fora: o outbox tenta de novo, sem publicar com local errado
+			return geoResult{}, false, err // busca fora: o outbox tenta de novo, sem publicar com local errado
 		}
 		for _, g := range cities {
-			if state != "" && normPlace(g.Region) != normPlace(state) {
-				continue
+			if state == "" || normPlace(g.Region) == normPlace(state) {
+				return g, true, nil
 			}
-			var warnings []string
-			city := map[string]any{"key": g.Key}
-			if radiusKM > 0 {
-				r := min(max(radiusKM, minCityRadiusKM), maxCityRadiusKM)
-				if r != radiusKM {
-					warnings = append(warnings, fmt.Sprintf("raio ajustado de %d km para %d km (limite da Meta)", radiusKM, r))
-				}
-				city["radius"], city["distance_unit"] = r, "kilometer"
-			}
-			return map[string]any{"cities": []any{city}}, warnings, nil
 		}
 		name, isState := stateName(place)
 		if state != "" || !isState {
-			return nil, nil, &PublishError{Step: "targeting", Message: fmt.Sprintf("cidade %q não encontrada na Meta", query),
+			return geoResult{}, false, &PublishError{Step: "targeting", Message: fmt.Sprintf("cidade %q não encontrada na Meta", query),
 				UserMessage: fmt.Sprintf(cityNotFound, place)}
 		}
 		state = name // só o nome de um estado ("Santa Catarina")
 	}
 	regions, err := c.searchGeo(ctx, token, state, "region")
 	if err != nil {
-		return nil, nil, err
+		return geoResult{}, false, err
 	}
 	for _, g := range regions {
 		if normPlace(g.Name) == normPlace(state) {
-			return map[string]any{"regions": []any{map[string]any{"key": g.Key}}}, nil, nil
+			return g, false, nil
 		}
 	}
-	return nil, nil, &PublishError{Step: "targeting", Message: fmt.Sprintf("estado %q não encontrado na Meta", state),
+	return geoResult{}, false, &PublishError{Step: "targeting", Message: fmt.Sprintf("estado %q não encontrado na Meta", state),
 		UserMessage: fmt.Sprintf(cityNotFound, query)}
 }
 
@@ -244,7 +294,7 @@ func (c *Client) targeting(ctx context.Context, token string, in PublishInput) (
 				Name string `json:"name"`
 			} `json:"data"`
 		}
-		err := c.call(ctx, http.MethodGet, "/search", token, url.Values{"type": {"adinterest"}, "q": {name}, "limit": {"1"}}, &r)
+		err := c.call(ctx, http.MethodGet, "/search", token, url.Values{"type": {"adinterest"}, "q": {name}, "limit": {"1"}, "locale": {"pt_BR"}}, &r)
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return nil, nil, publishError("targeting", err)
 		}

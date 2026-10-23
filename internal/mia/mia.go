@@ -183,7 +183,7 @@ func (c Config) CampaignMissing(f contract.Fields) []string {
 			out = append(out, fl.Key)
 		}
 	}
-	return out
+	return append(out, f.GoalMissing()...)
 }
 
 // ProfileMissing lista os rótulos dos itens obrigatórios da ficha do negócio ainda vazios.

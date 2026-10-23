@@ -143,6 +143,7 @@ type plan struct {
 	link         string // destino do clique (site ou página) quando não é WhatsApp
 	leadForm     bool   // formulário instantâneo da Meta (o anúncio leva o lead_gen_form_id)
 	followers    bool   // visitas ao perfil do Instagram (o link é o perfil)
+	direct       bool   // conversa no Direct do Instagram
 	formID       string // preenchido na publicação, depois de criar o formulário
 }
 
@@ -160,11 +161,37 @@ func planFor(in PublishInput) (plan, []string, error) {
 		link = "https://www.facebook.com/" + in.PageID
 	}
 	traffic := plan{objective: "OUTCOME_TRAFFIC", optimization: "LINK_CLICKS", destination: "WEBSITE", link: link}
-	if in.Followers {
+	profile := "https://www.instagram.com/" + url.PathEscape(strings.TrimPrefix(strings.TrimSpace(in.InstagramUser), "@")) + "/"
+	if in.Followers || in.Goal == "seguidores" {
 		// Seguidores: tráfego com destino no perfil do Instagram, otimizado para visitas ao perfil.
-		profile := "https://www.instagram.com/" + url.PathEscape(strings.TrimPrefix(strings.TrimSpace(in.InstagramUser), "@")) + "/"
 		return plan{objective: "OUTCOME_TRAFFIC", optimization: "VISIT_INSTAGRAM_PROFILE", destination: "INSTAGRAM_PROFILE",
 			link: profile, followers: true}, nil, nil
+	}
+	pageWhatsApp := in.WhatsAppNumber != "" || in.PageWhatsApp
+	switch in.Goal {
+	case "whatsapp":
+		wa.objective = "OUTCOME_ENGAGEMENT"
+		return wa, nil, nil
+	case "direct":
+		return plan{objective: "OUTCOME_ENGAGEMENT", optimization: "CONVERSATIONS", destination: "INSTAGRAM_DIRECT", link: profile, direct: true}, nil, nil
+	case "engajamento":
+		// Curtidas, comentários e compartilhamentos no próprio anúncio.
+		return plan{objective: "OUTCOME_ENGAGEMENT", optimization: "POST_ENGAGEMENT", destination: "ON_POST", link: link}, nil, nil
+	case "formulario":
+		return plan{objective: "OUTCOME_LEADS", optimization: "LEAD_GENERATION", destination: "ON_AD", leadForm: true, link: leadLink(in)}, nil, nil
+	case "site":
+		return traffic, nil, nil
+	case "alcance":
+		// Alcance: mostra o anúncio para o máximo de pessoas; sem destino de conversão.
+		return plan{objective: "OUTCOME_AWARENESS", optimization: "REACH", link: link}, nil, nil
+	case "vendas":
+		// Vendas pela conversa no WhatsApp. Vendas no site exige o pixel da Meta: sem WhatsApp, vai como cliques no site.
+		if pageWhatsApp {
+			wa.objective = "OUTCOME_SALES"
+			return wa, nil, nil
+		}
+		warnings = append(warnings, "vendas sem WhatsApp na Página: publicado como cliques para o site")
+		return traffic, warnings, nil
 	}
 	switch in.Objective {
 	case "OUTCOME_ENGAGEMENT":
@@ -280,7 +307,10 @@ func (c *Client) publish(ctx context.Context, token string, in PublishInput) (Pu
 		"name": {in.Name + " - público"}, "campaign_id": {res.CampaignID}, "status": {"PAUSED"},
 		"daily_budget": {fmt.Sprint(in.DailyBudgetCents)}, "billing_event": {"IMPRESSIONS"},
 		"optimization_goal": {p.optimization}, "bid_strategy": {"LOWEST_COST_WITHOUT_CAP"},
-		"destination_type": {p.destination}, "promoted_object": {jsonParam(promoted)}, "targeting": {jsonParam(targeting)},
+		"promoted_object": {jsonParam(promoted)}, "targeting": {jsonParam(targeting)},
+	}
+	if p.destination != "" {
+		adset.Set("destination_type", p.destination)
 	}
 	if !in.StartTime.IsZero() && in.StartTime.After(time.Now()) {
 		adset.Set("start_time", in.StartTime.UTC().Format(time.RFC3339))
@@ -369,10 +399,19 @@ func validateInput(acct string, in PublishInput) error {
 	if len(in.Copies) == 0 {
 		miss = append(miss, "textos")
 	}
-	if in.Followers && (strings.TrimSpace(in.InstagramActorID) == "" || strings.TrimSpace(in.InstagramUser) == "") {
-		return &PublishError{Step: "campaign", Message: "campanha de seguidores sem conta do Instagram na conexão", ClientSide: true,
-			UserMessage: clientFix("a campanha de seguidores leva a pessoa ao seu perfil do Instagram, mas a sua Página do Facebook não tem conta do Instagram ligada.", "",
+	if (in.Followers || in.Goal == "seguidores" || in.Goal == "direct") && (strings.TrimSpace(in.InstagramActorID) == "" || strings.TrimSpace(in.InstagramUser) == "") {
+		what := "a campanha de seguidores leva a pessoa ao seu perfil do Instagram"
+		if in.Goal == "direct" {
+			what = "a campanha de Direct abre conversa no seu Instagram"
+		}
+		return &PublishError{Step: "campaign", Message: "campanha de " + in.Goal + " sem conta do Instagram na conexão", ClientSide: true,
+			UserMessage: clientFix(what+", mas a sua Página do Facebook não tem conta do Instagram ligada.", "",
 				"no Instagram, vá em Configurações → Central de Contas e ligue o Instagram à sua Página; depois me escreva *conectar* pra eu atualizar a conexão e *tenta de novo*.")}
+	}
+	if in.Goal == "site" && strings.TrimSpace(in.LinkURL) == "" {
+		return &PublishError{Step: "campaign", Message: "campanha para o site sem link", ClientSide: true,
+			UserMessage: clientFix("a campanha leva a pessoa ao seu site, mas eu não tenho o link dele.", "",
+				"me manda o link do site (ex.: https://seusite.com.br) e depois *tenta de novo*.")}
 	}
 	if len(miss) == 0 {
 		return nil
@@ -623,6 +662,9 @@ func callToAction(p plan, cp PublishCopy, video bool) map[string]any {
 	}
 	if p.followers {
 		return map[string]any{"type": "VIEW_INSTAGRAM_PROFILE", "value": map[string]any{"link": p.link}}
+	}
+	if p.direct {
+		return map[string]any{"type": "INSTAGRAM_MESSAGE", "value": map[string]any{"app_destination": "INSTAGRAM_DIRECT", "link": p.link}}
 	}
 	if p.leadForm {
 		t := cp.CTA

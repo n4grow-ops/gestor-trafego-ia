@@ -36,6 +36,7 @@ type PublishInput struct {
 	Objective        string        // OUTCOME_ENGAGEMENT | OUTCOME_LEADS | OUTCOME_TRAFFIC
 	LeadForm         bool          // com OUTCOME_LEADS: formulário instantâneo em vez de WhatsApp
 	Followers        bool          // com OUTCOME_TRAFFIC: visitas ao perfil do Instagram (seguidores)
+	Goal             string        // tipo de campanha (contract.Goal*); vazio = decide por Objective/LeadForm/Followers
 	InstagramUser    string        // usuário do Instagram (sem @), para o link do perfil
 	FormPrivacyURL   string        // política de privacidade do formulário (a Meta exige)
 	Form             *LeadFormSpec // como o cliente montou o formulário; nil = nome, telefone e e-mail

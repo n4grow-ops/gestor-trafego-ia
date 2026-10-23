@@ -150,3 +150,11 @@ func TestParseFlowReply(t *testing.T) {
 		t.Fatalf("botão: %+v", in)
 	}
 }
+
+// Pino mandado pelo clipe do WhatsApp vira texto com as coordenadas (local da campanha).
+func TestParseLocationPin(t *testing.T) {
+	in, ok, err := c.ParseWebhook(msg(`{"from":"5511999998888","id":"W7","type":"location","location":{"latitude":-26.761234,"longitude":-53.173456,"name":"Loja","address":"Rua XV, 100"}}`))
+	if err != nil || !ok || in.Kind != whatsapp.KindText || in.Text != "[localização enviada pelo WhatsApp: pino -26.761234,-53.173456 (Loja Rua XV, 100)]" {
+		t.Fatalf("in=%+v ok=%v err=%v", in, ok, err)
+	}
+}

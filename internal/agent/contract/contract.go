@@ -48,6 +48,8 @@ type Fields struct {
 	Location       *string  `json:"location,omitempty"`
 	DailyBudgetBRL *float64 `json:"daily_budget_brl,omitempty"`
 	ObjectiveHint  *string  `json:"objective_hint,omitempty"`
+	// LinkURL: link do site para onde o anúncio leva (campanha para o site, ou destino do formulário).
+	LinkURL *string  `json:"link_url,omitempty"`
 	Media          []string `json:"media,omitempty"`
 	// Placements: onde o anúncio aparece, só quando o cliente pediu ("feed", "stories", "reels").
 	// Vazio = automático (a Meta distribui).
@@ -148,6 +150,9 @@ func (f Fields) Merge(o Fields) Fields {
 	if !blank(o.ObjectiveHint) {
 		out.ObjectiveHint = o.ObjectiveHint
 	}
+	if !blank(o.LinkURL) {
+		out.LinkURL = o.LinkURL
+	}
 	if positive(o.DailyBudgetBRL) {
 		out.DailyBudgetBRL = o.DailyBudgetBRL
 	}
@@ -166,7 +171,7 @@ func (f Fields) Merge(o Fields) Fields {
 
 // HasData diz se algum campo foi de fato informado.
 func (f Fields) HasData() bool {
-	return !blank(f.Offer) || !blank(f.Audience) || !blank(f.Location) || !blank(f.ObjectiveHint) ||
+	return !blank(f.Offer) || !blank(f.Audience) || !blank(f.Location) || !blank(f.ObjectiveHint) || !blank(f.LinkURL) ||
 		positive(f.DailyBudgetBRL) || len(f.Media) > 0 || len(NormalizePlacements(f.Placements)) > 0 || f.LeadForm != nil ||
 		len(CleanCopies(f.Copies)) > 0
 }
@@ -186,7 +191,15 @@ func (f Fields) Missing() []string {
 	if !positive(f.DailyBudgetBRL) {
 		m = append(m, "daily_budget_brl")
 	}
-	return m
+	return append(m, f.GoalMissing()...)
+}
+
+// GoalMissing é o que o tipo de campanha pede a mais: campanha para o site precisa do link.
+func (f Fields) GoalMissing() []string {
+	if f.ObjectiveHint != nil && GoalFromHint(*f.ObjectiveHint) == GoalSite && blank(f.LinkURL) {
+		return []string{"link_url"}
+	}
+	return nil
 }
 
 // AttendantTurn é a saída do Atendente a cada mensagem do cliente.
@@ -232,6 +245,7 @@ type Briefing struct {
 	Location       string      `json:"location"`
 	DailyBudgetBRL float64     `json:"daily_budget_brl"`
 	ObjectiveHint  string      `json:"objective_hint,omitempty"`
+	LinkURL        string      `json:"link_url,omitempty"`
 	Media          []string    `json:"media,omitempty"`
 	Placements     []string    `json:"placements,omitempty"` // pedido do cliente; vazio = automático
 	LeadForm       *LeadForm   `json:"lead_form,omitempty"`  // formulário que o cliente montou; nil = não falou
@@ -260,6 +274,9 @@ func NewBriefing(orgID int64, f Fields, c Constraints) (Briefing, error) {
 	}
 	if f.ObjectiveHint != nil {
 		b.ObjectiveHint = *f.ObjectiveHint
+	}
+	if f.LinkURL != nil {
+		b.LinkURL = strings.TrimSpace(*f.LinkURL)
 	}
 	if f.LeadForm != nil {
 		lf := f.LeadForm.Normalize()
@@ -301,6 +318,10 @@ type CampaignProposal struct {
 	// Followers: o cliente pediu seguidores (o sistema copia do briefing; objetivo vira OUTCOME_TRAFFIC
 	// com destino no perfil do Instagram).
 	Followers bool `json:"followers,omitempty"`
+	// Goal: tipo de campanha que o cliente pediu (GoalWhatsApp, GoalSite...). Vazio = proposta antiga.
+	Goal string `json:"goal,omitempty"`
+	// Location: onde o anúncio aparece, já em português ("Maravilha + 17 km; Chapecó (só a cidade)").
+	Location string `json:"location,omitempty"`
 	// Form: como o formulário fica (copiado do briefing, já normalizado). Nil com LeadForm = padrão.
 	Form *LeadForm `json:"form,omitempty"`
 }

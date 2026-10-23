@@ -277,3 +277,15 @@ func TestWantsLeadForm(t *testing.T) {
 		}
 	}
 }
+
+func TestGoalFromHint(t *testing.T) {
+	for hint, want := range map[string]string{
+		"seguidores": contract.GoalFollowers, "formulário": contract.GoalLeadForm, "engajamento": contract.GoalEngagement,
+		"site": contract.GoalSite, "vendas": contract.GoalSales, "alcance": contract.GoalReach, "direct": contract.GoalDirect,
+		"mensagens no WhatsApp": contract.GoalWhatsApp, "": "", "OUTCOME_TRAFFIC": contract.GoalSite,
+	} {
+		if got := contract.GoalFromHint(hint); got != want {
+			t.Errorf("GoalFromHint(%q) = %q, quer %q", hint, got, want)
+		}
+	}
+}
