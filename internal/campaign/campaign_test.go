@@ -178,3 +178,12 @@ func TestSummaryShowsAngleOnlyWithManyCopies(t *testing.T) {
 		t.Errorf("1 variação não deve mostrar ângulo:\n%s", s)
 	}
 }
+
+func TestSummaryFollowers(t *testing.T) {
+	p := proposal()
+	p.Objective, p.Followers = "OUTCOME_TRAFFIC", true
+	s := campaign.Summary(p, "000000")
+	if !strings.Contains(s, "Objetivo: seguidores no Instagram") || !strings.Contains(s, "Onde aparece: só no Instagram") {
+		t.Errorf("resumo de seguidores:\n%s", s)
+	}
+}

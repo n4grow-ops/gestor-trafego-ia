@@ -255,6 +255,11 @@ func (e *Engine) propose(ctx context.Context, p ProposeJob) error {
 	if leadForm && !slices.Contains(b.Constraints.AllowedObjectives, "OUTCOME_LEADS") {
 		b.Constraints.AllowedObjectives = append(slices.Clone(b.Constraints.AllowedObjectives), "OUTCOME_LEADS")
 	}
+	// Seguidores: visitas ao perfil do Instagram (objetivo de tráfego), também por pedido do cliente.
+	followers := !leadForm && contract.WantsFollowers(b.ObjectiveHint)
+	if followers && !slices.Contains(b.Constraints.AllowedObjectives, "OUTCOME_TRAFFIC") {
+		b.Constraints.AllowedObjectives = append(slices.Clone(b.Constraints.AllowedObjectives), "OUTCOME_TRAFFIC")
+	}
 	b.Adjustment = p.Adjustment
 	b.CopyVariations = e.copyVariations(ctx, conv.ID, p.Adjustment)
 	if n := len(b.ClientCopies); n > 0 {
@@ -291,6 +296,19 @@ func (e *Engine) propose(ctx context.Context, p ProposeJob) error {
 
 	// Onde o anúncio aparece é escolha do cliente, não do Gestor.
 	prop.Placements = b.Placements
+	// Raio que o cliente escreveu no local vale acima do que o Gestor pôs (caso real: "Maravilha + 15km"
+	// virou só a cidade). Abaixo do mínimo da Meta fica o mínimo, e o resumo explica.
+	if r := contract.RadiusFromLocation(b.Location); r > 0 {
+		prop.Audience.RadiusKM = min(max(r, contract.MinRadiusKM), 80)
+		if r < contract.MinRadiusKM {
+			prop.Rationale = strings.TrimSpace(fmt.Sprintf("A Meta só aceita raio a partir de %d km em volta da cidade, então ficou %d km (você pediu %d). %s",
+				contract.MinRadiusKM, contract.MinRadiusKM, r, prop.Rationale))
+		}
+	}
+	if followers {
+		// Anúncio que leva ao perfil do Instagram: só aparece no Instagram.
+		prop.Objective, prop.Followers = "OUTCOME_TRAFFIC", true
+	}
 	if leadForm {
 		prop.Objective, prop.LeadForm = "OUTCOME_LEADS", true
 		// O formulário é do cliente (perguntas, textos, tela final): o Gestor não mexe.

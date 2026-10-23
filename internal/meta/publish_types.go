@@ -35,6 +35,8 @@ type PublishInput struct {
 	Name             string        // terminando em "#p<id>", a campanha de tentativa anterior é procurada e apagada antes
 	Objective        string        // OUTCOME_ENGAGEMENT | OUTCOME_LEADS | OUTCOME_TRAFFIC
 	LeadForm         bool          // com OUTCOME_LEADS: formulário instantâneo em vez de WhatsApp
+	Followers        bool          // com OUTCOME_TRAFFIC: visitas ao perfil do Instagram (seguidores)
+	InstagramUser    string        // usuário do Instagram (sem @), para o link do perfil
 	FormPrivacyURL   string        // política de privacidade do formulário (a Meta exige)
 	Form             *LeadFormSpec // como o cliente montou o formulário; nil = nome, telefone e e-mail
 	DailyBudgetCents int64         // na moeda da conta

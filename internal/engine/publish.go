@@ -276,6 +276,8 @@ func (e *Engine) publishInput(ctx context.Context, ident store.Identity, conn st
 		Name:             campaignName(data, e.now(), pubID),
 		Objective:        prop.Objective,
 		LeadForm:         prop.LeadForm,
+		Followers:        prop.Followers,
+		InstagramUser:    conn.InstagramUsername,
 		FormPrivacyURL:   e.LeadPrivacyURL,
 		Form:             leadFormSpec(prop.Form),
 		DailyBudgetCents: int64(math.Round(prop.DailyBudgetBRL * 100)),

@@ -211,10 +211,21 @@ func TestProposalRadius(t *testing.T) {
 			t.Errorf("raio %d: err = %v", r, err)
 		}
 	}
+	// caso real: "Maravilha + 15 km" saía sem raio; o mais perto do pedido que a Meta aceita é 17 km
 	p.Audience.RadiusKM = 10
 	p.Normalize()
-	if p.Audience.RadiusKM != 0 {
-		t.Errorf("raio pequeno devia virar só a cidade: %d", p.Audience.RadiusKM)
+	if p.Audience.RadiusKM != contract.MinRadiusKM {
+		t.Errorf("raio pequeno devia virar o mínimo da Meta: %d", p.Audience.RadiusKM)
+	}
+	for loc, want := range map[string]int{"Maravilha + 15km": 15, "Chapecó, raio de 30 km": 30, "Maravilha": 0, "Joinville 20 quilômetros": 20, "só a cidade": 0} {
+		if got := contract.RadiusFromLocation(loc); got != want {
+			t.Errorf("RadiusFromLocation(%q) = %d, quer %d", loc, got, want)
+		}
+	}
+	for hint, want := range map[string]bool{"seguidores": true, "ganhar seguidores no Instagram": true, "formulário": false, "mensagens": false} {
+		if contract.WantsFollowers(hint) != want {
+			t.Errorf("WantsFollowers(%q) != %v", hint, want)
+		}
 	}
 }
 

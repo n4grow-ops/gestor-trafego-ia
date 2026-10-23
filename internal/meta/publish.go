@@ -142,6 +142,7 @@ type plan struct {
 	whatsapp     bool
 	link         string // destino do clique (site ou página) quando não é WhatsApp
 	leadForm     bool   // formulário instantâneo da Meta (o anúncio leva o lead_gen_form_id)
+	followers    bool   // visitas ao perfil do Instagram (o link é o perfil)
 	formID       string // preenchido na publicação, depois de criar o formulário
 }
 
@@ -159,6 +160,12 @@ func planFor(in PublishInput) (plan, []string, error) {
 		link = "https://www.facebook.com/" + in.PageID
 	}
 	traffic := plan{objective: "OUTCOME_TRAFFIC", optimization: "LINK_CLICKS", destination: "WEBSITE", link: link}
+	if in.Followers {
+		// Seguidores: tráfego com destino no perfil do Instagram, otimizado para visitas ao perfil.
+		profile := "https://www.instagram.com/" + url.PathEscape(strings.TrimPrefix(strings.TrimSpace(in.InstagramUser), "@")) + "/"
+		return plan{objective: "OUTCOME_TRAFFIC", optimization: "VISIT_INSTAGRAM_PROFILE", destination: "INSTAGRAM_PROFILE",
+			link: profile, followers: true}, nil, nil
+	}
 	switch in.Objective {
 	case "OUTCOME_ENGAGEMENT":
 		// Conversas no WhatsApp: a Página precisa ter WhatsApp Business vinculado.
@@ -361,6 +368,11 @@ func validateInput(acct string, in PublishInput) error {
 	}
 	if len(in.Copies) == 0 {
 		miss = append(miss, "textos")
+	}
+	if in.Followers && (strings.TrimSpace(in.InstagramActorID) == "" || strings.TrimSpace(in.InstagramUser) == "") {
+		return &PublishError{Step: "campaign", Message: "campanha de seguidores sem conta do Instagram na conexão", ClientSide: true,
+			UserMessage: clientFix("a campanha de seguidores leva a pessoa ao seu perfil do Instagram, mas a sua Página do Facebook não tem conta do Instagram ligada.", "",
+				"no Instagram, vá em Configurações → Central de Contas e ligue o Instagram à sua Página; depois me escreva *conectar* pra eu atualizar a conexão e *tenta de novo*.")}
 	}
 	if len(miss) == 0 {
 		return nil
@@ -608,6 +620,9 @@ func callToAction(p plan, cp PublishCopy, video bool) map[string]any {
 			value["link"] = whatsAppLink
 		}
 		return map[string]any{"type": "WHATSAPP_MESSAGE", "value": value}
+	}
+	if p.followers {
+		return map[string]any{"type": "VIEW_INSTAGRAM_PROFILE", "value": map[string]any{"link": p.link}}
 	}
 	if p.leadForm {
 		t := cp.CTA

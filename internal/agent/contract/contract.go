@@ -5,7 +5,9 @@ package contract
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -74,6 +76,30 @@ func WantsLeadForm(hint string) bool {
 		}
 	}
 	return false
+}
+
+// WantsFollowers diz se o cliente pediu campanha para ganhar seguidores (visitas ao perfil do Instagram).
+func WantsFollowers(hint string) bool {
+	h := strings.ToLower(hint)
+	for _, w := range []string{"seguidor", "seguir", "follower", "perfil do instagram", "perfil no instagram", "visitas ao perfil"} {
+		if strings.Contains(h, w) {
+			return true
+		}
+	}
+	return false
+}
+
+// radiusRe acha o raio pedido no texto do local ("raio de 15 km", "+ 15km", "15 quilômetros").
+var radiusRe = regexp.MustCompile(`(?i)(\d{1,3})\s*(km|quil[oô]metros?)\b`)
+
+// RadiusFromLocation lê o raio em km escrito no local da campanha; 0 = não pediu raio.
+func RadiusFromLocation(loc string) int {
+	m := radiusRe.FindStringSubmatch(loc)
+	if m == nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(m[1])
+	return n
 }
 
 // NormalizePlacements deixa só os posicionamentos conhecidos, sem repetição e em ordem fixa.
@@ -272,6 +298,9 @@ type CampaignProposal struct {
 	Placements []string `json:"placements,omitempty"`
 	// LeadForm: o cliente pediu formulário (o sistema copia do briefing; objetivo vira OUTCOME_LEADS).
 	LeadForm bool `json:"lead_form,omitempty"`
+	// Followers: o cliente pediu seguidores (o sistema copia do briefing; objetivo vira OUTCOME_TRAFFIC
+	// com destino no perfil do Instagram).
+	Followers bool `json:"followers,omitempty"`
 	// Form: como o formulário fica (copiado do briefing, já normalizado). Nil com LeadForm = padrão.
 	Form *LeadForm `json:"form,omitempty"`
 }
@@ -280,10 +309,10 @@ type CampaignProposal struct {
 const MinRadiusKM = 17
 
 // Normalize ajusta o que a Meta não aceita do jeito mais fiel ao pedido: raio menor que o mínimo vira
-// só a cidade (um raio pequeno fica mais perto da cidade do que de 17 km em volta).
+// o mínimo (caso real: "Maravilha + 15 km" saía só a cidade, sem raio nenhum).
 func (p *CampaignProposal) Normalize() {
 	if p.Audience.RadiusKM > 0 && p.Audience.RadiusKM < MinRadiusKM {
-		p.Audience.RadiusKM = 0
+		p.Audience.RadiusKM = MinRadiusKM
 	}
 }
 

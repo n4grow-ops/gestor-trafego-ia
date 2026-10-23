@@ -117,6 +117,9 @@ func SummaryWith(p contract.CampaignProposal, code string, o SummaryOptions) str
 	if p.LeadForm {
 		label = "contatos por formulário (a pessoa preenche um formulário na própria Meta)"
 	}
+	if p.Followers {
+		label = "seguidores no Instagram (o anúncio leva a pessoa ao seu perfil)"
+	}
 	fmt.Fprintf(&b, "Objetivo: %s\n", label)
 	area := fmt.Sprintf("raio de %d km", p.Audience.RadiusKM)
 	if p.Audience.RadiusKM == 0 {
@@ -126,7 +129,11 @@ func SummaryWith(p contract.CampaignProposal, code string, o SummaryOptions) str
 	if len(p.Audience.Interests) > 0 {
 		fmt.Fprintf(&b, "Interesses: %s\n", strings.Join(p.Audience.Interests, ", "))
 	}
-	fmt.Fprintf(&b, "Onde aparece: %s\n", PlacementsText(p.Placements))
+	where := PlacementsText(p.Placements)
+	if p.Followers {
+		where = "só no Instagram (o perfil é no Instagram)"
+	}
+	fmt.Fprintf(&b, "Onde aparece: %s\n", where)
 	fmt.Fprintf(&b, "Investimento: %s por dia, por %d dias (total de até %s)\n",
 		BRL(p.DailyBudgetBRL), p.DurationDays, BRL(p.DailyBudgetBRL*float64(p.DurationDays)))
 	for i, c := range p.Copies {

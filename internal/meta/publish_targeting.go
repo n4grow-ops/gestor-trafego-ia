@@ -174,6 +174,17 @@ func placements(t map[string]any, pl []string) {
 	t["facebook_positions"], t["instagram_positions"] = fb, ig
 }
 
+// instagramOnly deixa o conjunto só no Instagram (anúncio que leva ao perfil do Instagram), mantendo os
+// lugares que o cliente escolheu; sem escolha, Feed, Stories, Reels e Explorar.
+func instagramOnly(t map[string]any) {
+	ig, _ := t["instagram_positions"].([]string)
+	if len(ig) == 0 {
+		ig = []string{"stream", "story", "reels", "explore"}
+	}
+	delete(t, "facebook_positions")
+	t["publisher_platforms"], t["instagram_positions"] = []string{"instagram"}, ig
+}
+
 // targeting monta o público: local, idade, gênero e interesses. O Advantage+ de público fica desligado
 // (respeita o público dado). Posicionamentos ficam automáticos, a não ser que o cliente tenha escolhido.
 func (c *Client) targeting(ctx context.Context, token string, in PublishInput) (map[string]any, []string, error) {
@@ -197,6 +208,9 @@ func (c *Client) targeting(ctx context.Context, token string, in PublishInput) (
 	t := map[string]any{"geo_locations": geo, "age_min": ageMin, "age_max": ageMax,
 		"targeting_automation": map[string]any{"advantage_audience": 0}}
 	placements(t, in.Placements)
+	if in.Followers {
+		instagramOnly(t)
+	}
 
 	var genders []int
 	seen := map[int]bool{}
