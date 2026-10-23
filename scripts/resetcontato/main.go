@@ -5,6 +5,7 @@
 //
 //	DATABASE_URL=... go run ./scripts/resetcontato 5511999998888          (simulação)
 //	DATABASE_URL=... go run ./scripts/resetcontato 5511999998888 -apply   (apaga)
+//	... 5511999998888 -apply -sem-pagamento  (zera também cadastro completo que nunca pagou: conta de teste)
 package main
 
 import (
@@ -12,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/db"
@@ -32,7 +34,8 @@ func main() {
 	if len(phone) == 13 && strings.HasPrefix(phone, "55") { // também sem o nono dígito
 		phones = append(phones, phone[:4]+phone[5:])
 	}
-	apply := len(os.Args) > 2 && os.Args[2] == "-apply"
+	apply := slices.Contains(os.Args[2:], "-apply")
+	unpaidOK := slices.Contains(os.Args[2:], "-sem-pagamento")
 	ctx := context.Background()
 	pool, err := db.Connect(ctx, os.Getenv("DATABASE_URL"))
 	if err != nil {
@@ -40,7 +43,7 @@ func main() {
 	}
 	defer pool.Close()
 
-	rep, others, err := store.New(pool).ResetContacts(ctx, phones, apply)
+	rep, others, err := store.New(pool).ResetContactsWith(ctx, phones, apply, unpaidOK)
 	if errors.Is(err, store.ErrRealClient) {
 		fmt.Println("telefones:", phones, "organizações:", rep.OrgIDs)
 		fmt.Println("ABORTADO: cliente real (pagamento registrado ou plano pago); só contas de teste são zeradas")

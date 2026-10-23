@@ -102,6 +102,20 @@ func (s *Store) ResetOrganization(ctx context.Context, orgID int64, apply bool, 
 // others > 0 quando essas organizações têm outros telefones (não apaga nada). Também recusa
 // cliente real (ErrRealClient).
 func (s *Store) ResetContacts(ctx context.Context, phones []string, apply bool) (rep ResetReport, others int, err error) {
+	return s.ResetContactsWith(ctx, phones, apply, false)
+}
+
+// paidClient diz se alguma das organizações tem pagamento registrado (cliente que já pagou).
+func paidClient(ctx context.Context, tx pgx.Tx, orgIDs []int64) (bool, error) {
+	var paid bool
+	err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM payments p JOIN subscriptions s ON s.id = p.subscription_id
+		WHERE s.organization_id = ANY($1))`, orgIDs).Scan(&paid)
+	return paid, err
+}
+
+// ResetContactsWith é o ResetContacts; unpaidOK zera também cadastro completo em plano pago que nunca
+// pagou (conta de teste da equipe). Com qualquer pagamento registrado continua recusando.
+func (s *Store) ResetContactsWith(ctx context.Context, phones []string, apply, unpaidOK bool) (rep ResetReport, others int, err error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return rep, 0, err
@@ -123,7 +137,11 @@ func (s *Store) ResetContacts(ctx context.Context, phones []string, apply bool) 
 	if others > 0 {
 		return ResetReport{OrgIDs: orgIDs, Phones: phones}, others, nil
 	}
-	if real, err := realClient(ctx, tx, orgIDs); err != nil {
+	check := realClient
+	if unpaidOK {
+		check = paidClient
+	}
+	if real, err := check(ctx, tx, orgIDs); err != nil {
 		return rep, 0, err
 	} else if real {
 		return ResetReport{OrgIDs: orgIDs, Phones: phones}, 0, ErrRealClient
