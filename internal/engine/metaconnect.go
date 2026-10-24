@@ -87,7 +87,21 @@ func (e *Engine) metaStatus(ctx context.Context, orgID int64) (string, error) {
 	if err != nil || !ok {
 		return "não conectada", err
 	}
-	return fmt.Sprintf("conectada: %s · Página %s", c.AdAccountName, c.PageName), nil
+	return fmt.Sprintf("conectada: %s · Página %s · %s", c.AdAccountName, c.PageName, whatsAppFact(c)), nil
+}
+
+// whatsAppFact diz à Mia o que se sabe do WhatsApp da conexão. Sem número lido, ela não pode citar nenhum
+// (caso real: inventou "554999999999" quando o cliente perguntou qual número estava cadastrado).
+func whatsAppFact(c store.MetaConnection) string {
+	switch {
+	case len(c.WhatsAppNumbers) == 1:
+		return "número de WhatsApp: " + c.WhatsAppNumbers[0]
+	case len(c.WhatsAppNumbers) > 1:
+		return "números de WhatsApp (o cliente tem mais de um; cite todos e pergunte qual usar): " + strings.Join(c.WhatsAppNumbers, ", ")
+	case c.PageWhatsApp:
+		return "a Página tem WhatsApp vinculado, mas a Meta não informa o número: não cite número nenhum; se o cliente perguntar, diga que a Meta não libera esse dado e peça pra ele conferir na Página do Facebook (Sobre → Contato) ou te dizer o número"
+	}
+	return "a Meta não informa o número de WhatsApp da Página: não cite número nenhum; se o cliente perguntar, diga que a Meta não libera esse dado e peça pra ele conferir na Página do Facebook (Sobre → Contato) ou te dizer o número"
 }
 
 // MetaSummary é o que a confirmação da conexão mostra.

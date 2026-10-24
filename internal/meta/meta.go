@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -46,6 +47,9 @@ type AdAccount struct {
 	BusinessID    string `json:"business_id"`
 	Status        int    `json:"status"`
 	DisableReason int    `json:"disable_reason"`
+	// WhatsAppNumbers são os números das contas de WhatsApp Business do negócio da conta. Só vêm com a
+	// permissão whatsapp_business_management; sem ela, vazio.
+	WhatsAppNumbers []string `json:"whatsapp_numbers,omitempty"`
 }
 
 type Page struct {
@@ -135,6 +139,10 @@ func (c *Client) Assets(ctx context.Context, token string) (Assets, error) {
 		"fields": {"id,name,access_token,instagram_business_account{id,username}"}}), &pages); err != nil {
 		return a, err
 	}
+	numbers := c.businessWhatsApp(ctx, token, a.AdAccounts)
+	for i := range a.AdAccounts {
+		a.AdAccounts[i].WhatsAppNumbers = numbers[a.AdAccounts[i].BusinessID]
+	}
 	a.Pages = make([]Page, len(pages.Data))
 	// WhatsApp de cada Página em paralelo (até 8 por vez): quem tem muitas Páginas não estoura o prazo do retorno.
 	var wg sync.WaitGroup
@@ -152,6 +160,42 @@ func (c *Client) Assets(ctx context.Context, token string) (Assets, error) {
 	}
 	wg.Wait()
 	return a, nil
+}
+
+// businessWhatsApp lê os números das contas de WhatsApp Business (próprias e de clientes) de cada negócio
+// das contas de anúncios. Erro (sem a permissão whatsapp_business_management) só deixa o negócio sem números.
+func (c *Client) businessWhatsApp(ctx context.Context, token string, accounts []AdAccount) map[string][]string {
+	out := map[string][]string{}
+	for _, acc := range accounts {
+		biz := acc.BusinessID
+		if _, done := out[biz]; done || biz == "" {
+			continue
+		}
+		out[biz] = nil
+		for _, edge := range []string{"/owned_whatsapp_business_accounts", "/client_whatsapp_business_accounts"} {
+			var r struct {
+				Data []struct {
+					Phones struct {
+						Data []struct {
+							Number string `json:"display_phone_number"`
+						} `json:"data"`
+					} `json:"phone_numbers"`
+				} `json:"data"`
+			}
+			if err := c.get(ctx, "/"+url.PathEscape(biz)+edge, c.auth(token, url.Values{"limit": {"25"},
+				"fields": {"phone_numbers{display_phone_number}"}}), &r); err != nil {
+				continue
+			}
+			for _, w := range r.Data {
+				for _, p := range w.Phones.Data {
+					if n := strings.TrimSpace(p.Number); n != "" && !slices.Contains(out[biz], n) {
+						out[biz] = append(out[biz], n)
+					}
+				}
+			}
+		}
+	}
+	return out
 }
 
 // pageWhatsApp lê o WhatsApp vinculado à Página. Os campos exigem PPCA/PPMA com token de usuário; com o token

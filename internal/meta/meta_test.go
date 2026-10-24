@@ -100,6 +100,12 @@ func graph(t *testing.T) *httptest.Server {
 			w.Write([]byte(`{"id":"P4","has_whatsapp_business_number":true}`))
 		case "/v23.0/P5":
 			w.Write([]byte(`{"id":"P5"}`))
+		case "/v23.0/B1/owned_whatsapp_business_accounts":
+			// dois números numa conta de WhatsApp Business; o segundo repete na lista de clientes
+			w.Write([]byte(`{"data":[{"id":"W1","phone_numbers":{"data":[{"display_phone_number":"+55 49 99999-1111"},{"display_phone_number":"+55 49 98888-2222"}]}}]}`))
+		case "/v23.0/B1/client_whatsapp_business_accounts":
+			denied() // sem whatsapp_business_management: só fica sem os números
+
 		default:
 			t.Errorf("caminho inesperado %s", r.URL.Path)
 			w.WriteHeader(404)
@@ -127,6 +133,9 @@ func TestExchangeCodeAndAssets(t *testing.T) {
 	}
 	if a.UserID != "U1" || len(a.AdAccounts) != 1 || a.AdAccounts[0].BusinessID != "B1" || a.AdAccounts[0].Currency != "BRL" || a.AdAccounts[0].Status != 1 {
 		t.Fatalf("contas = %+v", a)
+	}
+	if got := a.AdAccounts[0].WhatsAppNumbers; len(got) != 2 || got[0] != "+55 49 99999-1111" || got[1] != "+55 49 98888-2222" {
+		t.Fatalf("números do negócio = %v", got)
 	}
 	// I3: o número da Página é guardado para o promoted_object (não o do membro do chat)
 	if len(a.Pages) != 5 || a.Pages[0].InstagramUsername != "loja" || !a.Pages[0].WhatsApp || a.Pages[0].WhatsAppUnknown ||

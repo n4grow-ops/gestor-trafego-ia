@@ -387,7 +387,7 @@ func TestPublishAfterPreviewWhenConnected(t *testing.T) {
 		t.Errorf("criativos = %d", len(in.Creatives))
 	case in.WhatsAppNumber != "":
 		t.Errorf("página sem WhatsApp não leva número: %q", in.WhatsAppNumber)
-	case !strings.HasPrefix(in.Name, "Pizzaria Boa · ") || !strings.HasSuffix(in.Name, "22/09/2026 · #p1"):
+	case in.Name != "[CA] - CAMP WPP - MASCULINO E FEMININO - 25-55 - CAMPINAS +20KM - AUTOMÁTICO · #p1":
 		t.Errorf("nome = %q", in.Name)
 	}
 	if p := pubs.latest(); p.Status != "paused" || p.CampaignID != "C1" {
@@ -835,6 +835,35 @@ func TestActivateAsksWhichCampaign(t *testing.T) {
 	h.say("ativar")
 	if pubs.status(1) != "active" || !slices.Equal(pub.statuses, []string{"C2:ACTIVE", "C1:ACTIVE"}) {
 		t.Fatalf("ativou = %v", pub.statuses)
+	}
+}
+
+// Caso real (Oficina N, 24/10): "1. Campanha 2 / 2. Campanha 3" e o cliente mandou ATIVAR 3 quatro vezes.
+// Com número no nome, o número do nome manda; a resposta só com "3" à pergunta também vale.
+func TestActivateNumberInProjectName(t *testing.T) {
+	h, pubs, pub := newPublishHarness(t, "owner")
+	h.connectMeta()
+	h.seedPubs(pubs,
+		store.Publication{Status: "paused", CampaignID: "C1", ProjectName: "Campanha 2"},
+		store.Publication{Status: "paused", CampaignID: "C2", ProjectName: "Campanha 3"},
+		store.Publication{Status: "paused", CampaignID: "C3", ProjectName: "Campanha 4"})
+	h.say("Pode ativar")
+	msg := h.wa.last().Text
+	if len(pub.statuses) != 0 || strings.Contains(msg, "1. ") || !strings.Contains(msg, "• Campanha 3") || !strings.Contains(msg, "ATIVAR Campanha 4") {
+		t.Fatalf("pergunta = %q %v", msg, pub.statuses)
+	}
+	h.say("3")
+	if pubs.status(2) != "active" || !slices.Equal(pub.statuses, []string{"C2:ACTIVE"}) {
+		t.Fatalf("resposta só com o número ativou = %v (%q)", pub.statuses, h.wa.last().Text)
+	}
+	h.say("ATIVAR 2")
+	if pubs.status(1) != "active" || !slices.Equal(pub.statuses, []string{"C2:ACTIVE", "C1:ACTIVE"}) {
+		t.Fatalf("ATIVAR 2 = %v", pub.statuses)
+	}
+	// "3" solto sem a pergunta antes não liga nada
+	h.say("3")
+	if len(pub.statuses) != 2 {
+		t.Fatalf("número solto ativou = %v", pub.statuses)
 	}
 }
 

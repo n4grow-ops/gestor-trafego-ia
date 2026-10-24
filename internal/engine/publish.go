@@ -274,7 +274,6 @@ func (e *Engine) publishInput(ctx context.Context, ident store.Identity, conn st
 		AdAccountID:      conn.AdAccountID,
 		PageID:           conn.PageID,
 		InstagramActorID: conn.InstagramID,
-		Name:             campaignName(data, e.now(), pubID),
 		Objective:        prop.Objective,
 		LeadForm:         prop.LeadForm,
 		Followers:        prop.Followers,
@@ -293,6 +292,11 @@ func (e *Engine) publishInput(ctx context.Context, ident store.Identity, conn st
 		Placements:       contract.NormalizePlacements(prop.Placements),
 		Copies:           e.finalCopies(ctx, ident.OrgID, data, prop, fields.Offer),
 	}
+	city := ""
+	if ident.Profile.City != nil {
+		city = *ident.Profile.City
+	}
+	in.Name = campaignName(in, city, pubID)
 	// Só o número da própria Página (opcional na Meta). O telefone de quem conversa com a Mia não serve:
 	// a Meta recusa número que não é o vinculado à Página.
 	if conn.PageWhatsApp {
@@ -395,15 +399,10 @@ func (e *Engine) askPublishMedia(ctx context.Context, conv store.Conversation, d
 	return e.send(ctx, conv, msgPublishNeedMedia)
 }
 
-// campaignName: "<organização> · <projeto> · <data> · #p<publicação>". A marca no fim deixa a nova tentativa
-// achar (e apagar) a campanha que uma tentativa anterior deixou na conta.
-func campaignName(d store.PublishData, now time.Time, pubID int64) string {
-	parts := []string{strings.TrimSpace(d.OrgName)}
-	if p := strings.TrimSpace(d.ProjectName); p != "" {
-		parts = append(parts, p)
-	}
-	parts = append(parts, now.Format("02/01/2006"), fmt.Sprintf("#p%d", pubID))
-	return strings.Join(slices.DeleteFunc(parts, func(s string) bool { return s == "" }), " · ")
+// campaignName é o nome padrão ("[MA] - CAMP ENG - FEMININO - 35+ - MARAVILHA +40KM - STORIES E FEED") com a
+// marca "#p<publicação>" no fim: ela deixa a nova tentativa achar (e apagar) a campanha que uma anterior deixou na conta.
+func campaignName(in meta.PublishInput, city string, pubID int64) string {
+	return fmt.Sprintf("%s · #p%d", meta.ConventionName(in, city), pubID)
 }
 
 // copiesList mostra os textos dos anúncios em poucas linhas: headline em negrito e o texto embaixo.
@@ -681,7 +680,11 @@ func parseCampaignCommand(s string) (campaignCmd, string) {
 func (e *Engine) campaignCommand(ctx context.Context, ident store.Identity, conv store.Conversation, text string) (bool, error) {
 	cmd, arg := parseCampaignCommand(text)
 	if cmd == cmdCampaignNone {
-		return false, nil
+		// resposta à pergunta "qual eu coloco no ar?": "3", "Campanha 3" ou o nome, sem o ATIVAR
+		if arg = pickReply(text); arg == "" || !e.askedWhichPaused(ctx, conv.ID) {
+			return false, nil
+		}
+		cmd = cmdActivate
 	}
 	last, err := e.pubs().LatestPublication(ctx, ident.OrgID)
 	found := err == nil
@@ -726,7 +729,7 @@ func (e *Engine) campaignCommand(ctx context.Context, ident store.Identity, conv
 		return true, e.send(ctx, conv, msgCampaignNotAllowed)
 	}
 	if ask {
-		return true, e.send(ctx, conv, fmt.Sprintf(msgPickCampaign, listCampaigns(paused)))
+		return true, e.send(ctx, conv, pickCampaignQuestion(paused))
 	}
 	if len(targets) == 0 {
 		switch {
@@ -853,7 +856,17 @@ func pickPaused(paused []store.Publication, arg string) (pick store.Publication,
 		return store.Publication{}, false, true
 	}
 	if n, err := strconv.Atoi(arg); err == nil {
-		if n >= 1 && n <= len(paused) {
+		// o número que está no nome vale antes da posição na lista ("ATIVAR 3" = *Campanha 3*)
+		var byName []store.Publication
+		for _, p := range paused {
+			if slices.Contains(strings.Fields(normalizeName(p.ProjectName)), arg) {
+				byName = append(byName, p)
+			}
+		}
+		if len(byName) == 1 {
+			return byName[0], true, true
+		}
+		if n >= 1 && n <= len(paused) && !namesHaveNumbers(paused) {
 			return paused[n-1], true, true
 		}
 		return store.Publication{}, false, len(paused) > 0
@@ -879,17 +892,70 @@ func normalizeName(s string) string {
 	return strings.Join(strings.Fields(nameAccents.Replace(strings.ToLower(s))), " ")
 }
 
-// listCampaigns numera as campanhas pausadas pelo nome do projeto (ou a data de criação).
-func listCampaigns(list []store.Publication) string {
-	lines := make([]string, 0, len(list))
-	for i, p := range list {
-		name := strings.TrimSpace(p.ProjectName)
-		if name == "" {
-			name = "Campanha de " + p.CreatedAt.Format("02/01")
-		}
-		lines = append(lines, fmt.Sprintf("%d. %s", i+1, name))
+// campaignLabel é o nome do projeto da campanha (ou a data de criação).
+func campaignLabel(p store.Publication) string {
+	if name := strings.TrimSpace(p.ProjectName); name != "" {
+		return name
 	}
-	return strings.Join(lines, "\n")
+	return "Campanha de " + p.CreatedAt.Format("02/01")
+}
+
+// namesHaveNumbers: algum nome tem número solto ("Campanha 2"). Aí a lista sai sem numeração, senão
+// "2. Campanha 3" confunde (caso real: o cliente mandou ATIVAR 3 quatro vezes).
+func namesHaveNumbers(list []store.Publication) bool {
+	for _, p := range list {
+		for _, w := range strings.Fields(campaignLabel(p)) {
+			if _, err := strconv.Atoi(w); err == nil {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// pickCampaignQuestion pergunta qual pausada ligar: numerada quando os nomes não têm número; com
+// número no nome, lista pelo nome e o exemplo usa um deles.
+func pickCampaignQuestion(list []store.Publication) string {
+	lines := make([]string, 0, len(list))
+	if namesHaveNumbers(list) {
+		for _, p := range list {
+			lines = append(lines, "• "+campaignLabel(p))
+		}
+		return fmt.Sprintf(msgPickCampaignByName, campaignLabel(list[len(list)-1]), strings.Join(lines, "\n"))
+	}
+	for i, p := range list {
+		lines = append(lines, fmt.Sprintf("%d. %s", i+1, campaignLabel(p)))
+	}
+	return fmt.Sprintf(msgPickCampaign, strings.Join(lines, "\n"))
+}
+
+// pickReply limpa a resposta curta à pergunta de qual campanha ligar ("3", "a 3", "Campanha 3").
+// Vazio = texto longo demais para ser só a escolha.
+func pickReply(text string) string {
+	s := normalizeName(strings.TrimFunc(strings.ReplaceAll(text, "*", ""), func(r rune) bool {
+		return unicode.IsSpace(r) || unicode.IsPunct(r) || unicode.IsSymbol(r)
+	}))
+	for _, f := range []string{"a ", "o ", "numero ", "opcao "} {
+		s = strings.TrimPrefix(s, f)
+	}
+	if s == "" || utf8.RuneCountInString(s) > 40 || len(strings.Fields(s)) > 5 {
+		return ""
+	}
+	return s
+}
+
+// askedWhichPaused: a última mensagem da Mia antes desta foi a pergunta de qual pausada ligar.
+func (e *Engine) askedWhichPaused(ctx context.Context, convID int64) bool {
+	msgs, err := e.Store.RecentMessages(ctx, convID, 4)
+	if err != nil {
+		return false
+	}
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Direction == "out" {
+			return strings.HasPrefix(msgs[i].Body, msgPickCampaignLead)
+		}
+	}
+	return false
 }
 
 // retryPublish publica de novo o projeto pronto (ou o que falhou por último).

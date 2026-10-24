@@ -146,9 +146,9 @@ func (s *Store) CompleteMeta(ctx context.Context, ch MetaChoice) (int64, error) 
 	if _, err := tx.Exec(ctx, `UPDATE meta_connections SET status = 'active', connected_at = now(), candidates = '{}',
 			business_id = nullif($2, ''), ad_account_id = $3, ad_account_name = $4, currency = $5, timezone_name = $6, account_status = $7,
 			page_id = $8, page_name = $9, instagram_id = nullif($10, ''), instagram_username = nullif($11, ''), page_whatsapp = $12,
-			page_whatsapp_number = $13
+			page_whatsapp_number = $13, whatsapp_numbers = $14
 		WHERE id = $1`, ch.ConnectionID, a.BusinessID, a.ID, a.Name, a.Currency, a.Timezone, a.Status,
-		p.ID, p.Name, p.InstagramID, p.InstagramUsername, p.WhatsApp, strings.TrimSpace(p.WhatsAppNumber)); err != nil {
+		p.ID, p.Name, p.InstagramID, p.InstagramUsername, p.WhatsApp, strings.TrimSpace(p.WhatsAppNumber), whatsAppNumbers(p, a)); err != nil {
 		return 0, err
 	}
 	var convID int64
@@ -178,6 +178,30 @@ type MetaConnection struct {
 	PageWhatsApp      bool
 	// PageWhatsAppNumber é o número do WhatsApp da Página (vazio em conexões antigas ou sem permissão).
 	PageWhatsAppNumber string
+	// WhatsAppNumbers: todos os números achados (o da Página primeiro, depois os do negócio). Vazio = a
+	// Meta não informou nenhum.
+	WhatsAppNumbers []string
+}
+
+// whatsAppNumbers junta o número da Página e os do negócio da conta, sem repetir (comparando os dígitos).
+func whatsAppNumbers(p meta.Page, a meta.AdAccount) []string {
+	out := []string{}
+	seen := map[string]bool{}
+	for _, n := range append([]string{p.WhatsAppNumber}, a.WhatsAppNumbers...) {
+		n = strings.TrimSpace(n)
+		key := strings.Map(func(r rune) rune {
+			if r >= '0' && r <= '9' {
+				return r
+			}
+			return -1
+		}, n)
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, n)
+	}
+	return out
 }
 
 // ActiveMeta devolve a conexão ativa da organização, se houver.
@@ -185,10 +209,10 @@ func (s *Store) ActiveMeta(ctx context.Context, orgID int64) (MetaConnection, bo
 	var c MetaConnection
 	err := s.pool.QueryRow(ctx, `SELECT id, ad_account_id, coalesce(ad_account_name, ''), coalesce(currency, ''), page_id, coalesce(page_name, ''),
 			coalesce(instagram_id, ''), coalesce(instagram_username, ''), page_whatsapp,
-			page_whatsapp_number
+			page_whatsapp_number, whatsapp_numbers
 		FROM meta_connections WHERE organization_id = $1 AND status = 'active'`, orgID).
 		Scan(&c.ID, &c.AdAccountID, &c.AdAccountName, &c.Currency, &c.PageID, &c.PageName, &c.InstagramID, &c.InstagramUsername, &c.PageWhatsApp,
-			&c.PageWhatsAppNumber)
+			&c.PageWhatsAppNumber, &c.WhatsAppNumbers)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return MetaConnection{}, false, nil
 	}
