@@ -459,7 +459,7 @@ func TestPublishOwnPostUsesInstagramMedia(t *testing.T) {
 	if len(in.Creatives) != 1 || in.Creatives[0].InstagramMediaID != "1789" || in.InstagramActorID != "IG1" || len(in.Creatives[0].Data) != 0 {
 		t.Fatalf("criativos = %+v", in.Creatives)
 	}
-	if strings.Contains(h.lastClient(), "Os textos que vão no ar") || !strings.Contains(h.lastClient(), "post do Instagram") {
+	if strings.Contains(h.lastClient(), "Os textos que vão no ar") || !strings.Contains(h.lastClient(), "post como está") {
 		t.Fatalf("mensagem = %q", h.lastClient())
 	}
 

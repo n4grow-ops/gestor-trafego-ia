@@ -364,26 +364,33 @@ func usableCreatives(list []store.Creative) []store.Creative {
 	return out
 }
 
-// ownPosts: se todos os anúncios são posts da conta do Instagram conectada, um criativo por post
-// (o carrossel vira um anúncio só). Qualquer outro anúncio na lista = nil (sobe os arquivos).
+// ownPosts: se todos os anúncios são posts das contas conectadas (Instagram ou Página do Facebook), um
+// criativo por post (o carrossel vira um anúncio só). Qualquer outro anúncio na lista = nil (sobe os arquivos).
 func ownPosts(list []store.Creative) []meta.PublishCreative {
 	var out []meta.PublishCreative
 	seen := map[string]bool{}
 	for _, c := range list {
-		if c.Origin != store.OriginInstagramOwn || c.IGMediaID == "" {
+		pc := meta.PublishCreative{Kind: c.Kind, Mime: c.Mime, Placement: c.Placement}
+		key := ""
+		switch {
+		case c.Origin == store.OriginInstagramOwn && c.IGMediaID != "":
+			pc.InstagramMediaID, key = c.IGMediaID, "ig:"+c.IGMediaID
+		case c.Origin == store.OriginFacebookOwn && c.FBPostID != "":
+			pc.FacebookPostID, key = c.FBPostID, "fb:"+c.FBPostID
+		default:
 			return nil
 		}
-		if seen[c.IGMediaID] {
+		if seen[key] {
 			continue
 		}
-		seen[c.IGMediaID] = true
-		out = append(out, meta.PublishCreative{Kind: c.Kind, Mime: c.Mime, Placement: c.Placement, InstagramMediaID: c.IGMediaID})
+		seen[key] = true
+		out = append(out, pc)
 	}
 	return out
 }
 
 func fromInstagramPost(in meta.PublishInput) bool {
-	return len(in.Creatives) > 0 && in.Creatives[0].InstagramMediaID != ""
+	return len(in.Creatives) > 0 && (in.Creatives[0].InstagramMediaID != "" || in.Creatives[0].FacebookPostID != "")
 }
 
 // askPublishMedia: só sobrou post público sem confirmação. A conversa volta para a etapa dos anúncios.

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -58,6 +59,7 @@ type Creative struct {
 	// Origin: upload (WhatsApp), instagram_own (post da conta conectada) ou instagram_public. Vazio = upload.
 	Origin    string
 	IGMediaID string // id do post na Graph API (só instagram_own)
+	FBPostID  string // id do post da Página, <página>_<post> (só facebook_own)
 	// RightsPending: post público sem o cliente confirmar que pode usar; não vai para a Meta.
 	RightsPending bool
 	SourceURL     string // link do post
@@ -71,17 +73,18 @@ const (
 	OriginUpload          = "upload"
 	OriginInstagramOwn    = "instagram_own"
 	OriginInstagramPublic = "instagram_public"
+	OriginFacebookOwn     = "facebook_own"
 )
 
 const creativeCols = `id, organization_id, draft_id, project_id, kind, storage_path, mime, size_bytes,
 	coalesce(width, 0), coalesce(height, 0), coalesce(duration_ms, 0), format, placement,
-	origin, ig_media_id, NOT rights_confirmed, source_url, source_caption`
+	origin, ig_media_id, fb_post_id, NOT rights_confirmed, source_url, source_caption`
 
 func scanCreative(r pgx.Row) (Creative, error) {
 	var c Creative
 	err := r.Scan(&c.ID, &c.OrgID, &c.DraftID, &c.ProjectID, &c.Kind, &c.Path, &c.Mime, &c.Size,
 		&c.Width, &c.Height, &c.DurationMS, &c.Format, &c.Placement,
-		&c.Origin, &c.IGMediaID, &c.RightsPending, &c.SourceURL, &c.SourceCaption)
+		&c.Origin, &c.IGMediaID, &c.FBPostID, &c.RightsPending, &c.SourceURL, &c.SourceCaption)
 	return c, err
 }
 
@@ -98,10 +101,10 @@ func (s *Store) AddCreative(ctx context.Context, c Creative) (int64, error) {
 	var id int64
 	err := s.pool.QueryRow(ctx, `INSERT INTO creatives (organization_id, draft_id, project_id, kind, storage_path, mime, size_bytes,
 			width, height, duration_ms, format, placement, origin, ig_media_id, rights_confirmed, source_url, source_caption,
-			source_position)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, nullif($8, 0), nullif($9, 0), nullif($10, 0), $11, $12, $13, $14, $15, $16, $17, $18) RETURNING id`,
+			source_position, fb_post_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, nullif($8, 0), nullif($9, 0), nullif($10, 0), $11, $12, $13, $14, $15, $16, $17, $18, $19) RETURNING id`,
 		c.OrgID, c.DraftID, c.ProjectID, c.Kind, c.Path, c.Mime, c.Size, c.Width, c.Height, c.DurationMS, c.Format, c.Placement,
-		c.Origin, c.IGMediaID, !c.RightsPending, c.SourceURL, c.SourceCaption, c.SourcePosition).Scan(&id)
+		c.Origin, c.IGMediaID, !c.RightsPending, c.SourceURL, c.SourceCaption, c.SourcePosition, c.FBPostID).Scan(&id)
 	return id, err
 }
 
@@ -179,4 +182,44 @@ func (s *Store) PreviewData(ctx context.Context, draftID int64) (PreviewData, er
 		p.Copy = prop.Copies[0]
 	}
 	return p, nil
+}
+
+// PostChoice é um post recente oferecido ao cliente para virar anúncio.
+type PostChoice struct {
+	Source    string `json:"source"` // instagram | facebook
+	ID        string `json:"id"`
+	Permalink string `json:"permalink"`
+}
+
+// PostOffer é a última lista de posts mostrada no rascunho, na ordem (o número que o cliente responde).
+type PostOffer struct {
+	At    time.Time    `json:"at"`
+	Items []PostChoice `json:"items"`
+}
+
+// SetPostOffer guarda a lista de posts mostrada ao cliente.
+func (s *Store) SetPostOffer(ctx context.Context, draftID int64, o PostOffer) error {
+	raw, err := json.Marshal(o)
+	if err != nil {
+		return fmt.Errorf("store: %w", err)
+	}
+	_, err = s.pool.Exec(ctx, `UPDATE campaign_drafts SET post_choices = $2 WHERE id = $1`, draftID, raw)
+	return err
+}
+
+// PostOffer devolve a última lista de posts mostrada no rascunho (sem itens = nenhuma).
+func (s *Store) PostOffer(ctx context.Context, draftID int64) (PostOffer, error) {
+	var raw []byte
+	err := s.pool.QueryRow(ctx, `SELECT post_choices FROM campaign_drafts WHERE id = $1`, draftID).Scan(&raw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return PostOffer{}, ErrNotFound
+	}
+	if err != nil {
+		return PostOffer{}, err
+	}
+	var o PostOffer
+	if json.Unmarshal(raw, &o) != nil {
+		return PostOffer{}, nil // valor antigo ou estranho: nenhuma lista
+	}
+	return o, nil
 }

@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Posts da conta do Instagram do cliente (a vinculada à Página da conexão). Pede instagram_basic
@@ -31,6 +32,7 @@ type IGMedia struct {
 	ThumbnailURL string
 	Caption      string
 	Children     []IGChild
+	Created      time.Time // só na lista dos recentes
 }
 
 // IGChild é um item do carrossel.

@@ -329,26 +329,38 @@ func (c *Client) publish(ctx context.Context, token string, in PublishInput) (Pu
 		m, cp := media[pr[0]], in.Copies[pr[1]]
 		label := fmt.Sprintf("%s - anúncio %d", in.Name, len(res.AdIDs)+1)
 		var params url.Values
-		if m.igMediaID == "" {
+		var withoutCTA url.Values // post da Página: a Meta pode recusar o botão em post pronto
+		switch {
+		case m.igMediaID == "" && m.fbPostID == "":
 			params = url.Values{"name": {label}, "object_story_spec": {jsonParam(storySpec(in, p, m, cp))}}
-		} else {
-			// post do Instagram já tem legenda: um anúncio por post, sem combinar com os textos
-			if usedPost[pr[0]] {
-				continue
-			}
+		case usedPost[pr[0]]:
+			// post já tem legenda: um anúncio por post, sem combinar com os textos
+			continue
+		case m.igMediaID != "":
 			usedPost[pr[0]] = true
 			params = url.Values{"name": {label}, "object_id": {in.PageID}, "instagram_user_id": {in.InstagramActorID},
 				"source_instagram_media_id": {m.igMediaID}, "call_to_action": {jsonParam(callToAction(p, cp, false))}}
+		default:
+			usedPost[pr[0]] = true
+			withoutCTA = url.Values{"name": {label}, "object_story_id": {m.fbPostID}}
+			if id := strings.TrimSpace(in.InstagramActorID); id != "" {
+				withoutCTA.Set("instagram_user_id", id) // o post da Página também aparece no Instagram
+			}
+			params = cloneValues(withoutCTA)
+			params.Set("call_to_action", jsonParam(callToAction(p, cp, false)))
 		}
-		created.ID = ""
 		// Advantage+ criativo vem desligado: o anúncio sai como o cliente mandou. Se a Meta recusar o
 		// campo (nomes de recursos mudam por versão), publica sem ele em vez de travar a campanha.
-		withSpec := cloneValues(params)
-		withSpec.Set("degrees_of_freedom_spec", jsonParam(creativeOptOut(m.videoID != "")))
-		err := c.call(ctx, http.MethodPost, act+"/adcreatives", token, withSpec, &created)
-		if err != nil {
+		attempts := []url.Values{withOptOut(params, m), params}
+		if withoutCTA != nil {
+			attempts = append(attempts, withOptOut(withoutCTA, m), withoutCTA)
+		}
+		var err error
+		for _, a := range attempts {
 			created.ID = ""
-			err = c.call(ctx, http.MethodPost, act+"/adcreatives", token, params, &created)
+			if err = c.call(ctx, http.MethodPost, act+"/adcreatives", token, a, &created); err == nil {
+				break
+			}
 		}
 		if err != nil {
 			return fail("creative", err)
@@ -439,6 +451,14 @@ type uploaded struct {
 	videoID   string
 	thumbURL  string
 	igMediaID string // post do Instagram usado como está
+	fbPostID  string // post da Página usado como está
+}
+
+// withOptOut é o criativo com o Advantage+ criativo desligado.
+func withOptOut(params url.Values, m uploaded) url.Values {
+	v := cloneValues(params)
+	v.Set("degrees_of_freedom_spec", jsonParam(creativeOptOut(m.videoID != "")))
+	return v
 }
 
 func (c *Client) uploadAll(ctx context.Context, token, act string, list []PublishCreative) ([]uploaded, error) {
@@ -449,6 +469,8 @@ func (c *Client) uploadAll(ctx context.Context, token, act string, list []Publis
 		switch {
 		case cr.InstagramMediaID != "":
 			u.igMediaID = cr.InstagramMediaID
+		case cr.FacebookPostID != "":
+			u.fbPostID = cr.FacebookPostID
 		default:
 			switch cr.Kind {
 			case "image":

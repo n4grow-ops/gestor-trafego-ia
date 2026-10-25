@@ -15,6 +15,8 @@ type PublishCreative struct {
 	// InstagramMediaID: post da conta do Instagram (InstagramActorID) usado como anúncio, sem upload.
 	// O anúncio leva a legenda, as curtidas e os comentários do post; Data e os textos ficam de fora.
 	InstagramMediaID string
+	// FacebookPostID: post da Página (<página>_<post>) usado como anúncio, sem upload, como o do Instagram.
+	FacebookPostID string
 }
 
 // PublishCopy é um texto de anúncio.

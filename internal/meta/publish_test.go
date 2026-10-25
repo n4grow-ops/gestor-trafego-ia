@@ -59,7 +59,7 @@ func (f *fakeGraph) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// as chamadas de formulário usam o token da Página, trocado pelo do usuário em GET /P1
 	use := tok
-	if strings.HasPrefix(x.Path, "/P1/leadgen_forms") {
+	if strings.HasPrefix(x.Path, "/P1/leadgen_forms") || x.Path == "/P1/published_posts" || strings.HasPrefix(x.Path, "/P1_") {
 		use = pageTok
 	}
 	if x.Form.Get("access_token") != use || x.Form.Get("appsecret_proof") != proof(use) {

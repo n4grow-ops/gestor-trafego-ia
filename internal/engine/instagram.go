@@ -37,6 +37,8 @@ type InstagramJob struct {
 	ConversationID int64  `json:"conversation_id"`
 	DraftID        int64  `json:"draft_id"`
 	Link           string `json:"link"`
+	// FacebookPostID: post da Página escolhido na lista dos recentes (Link é o permalink). Vazio = Instagram.
+	FacebookPostID string `json:"facebook_post_id,omitempty"`
 }
 
 // InstagramFetcher baixa o post e entrega os itens um a um ao sink. *instagram.Fetcher implementa; os
@@ -70,6 +72,9 @@ func (e *Engine) fetchInstagram(ctx context.Context, j InstagramJob) error {
 		return nil
 	}
 	link, ok := instagram.ParseLink(j.Link)
+	if j.FacebookPostID != "" {
+		link, ok = instagram.Link{URL: j.Link, Shortcode: "fb" + j.FacebookPostID[strings.LastIndex(j.FacebookPostID, "_")+1:]}, true
+	}
 	if !ok {
 		return nil
 	}
@@ -97,7 +102,13 @@ func (e *Engine) fetchInstagram(ctx context.Context, j InstagramJob) error {
 	budget, cancel := context.WithTimeout(ctx, e.instagramBudget())
 	defer cancel()
 	// A busca roda fora da trava da conversa: o cliente pode seguir mandando mensagens enquanto baixa.
-	post, origin, err := e.downloadInstagram(budget, ident, link, maxCreatives-n, f)
+	var post instagram.Post
+	var origin string
+	if j.FacebookPostID != "" {
+		post, origin, err = e.downloadFacebook(budget, ident, j.FacebookPostID, maxCreatives-n, f)
+	} else {
+		post, origin, err = e.downloadInstagram(budget, ident, link, maxCreatives-n, f)
+	}
 	if f.fatal != nil {
 		return f.fatal // banco fora: o outbox tenta de novo
 	}
@@ -264,8 +275,12 @@ func (f *igFetch) save(origin string, p instagram.Post, pos int, it instagram.It
 		f.skipped++
 		return nil
 	}
+	igMediaID, fbPostID := p.MediaID, ""
+	if origin == store.OriginFacebookOwn {
+		igMediaID, fbPostID = "", p.MediaID
+	}
 	mark := e.keepCreative(ctx, ident, conv.ID, d, creativeFile{data: it.Data, mime: it.Mime, kind: it.Kind,
-		name: fmt.Sprintf("ig%s%d", safeName(f.link.Shortcode), pos+1), origin: origin, igMediaID: p.MediaID,
+		name: fmt.Sprintf("ig%s%d", safeName(f.link.Shortcode), pos+1), origin: origin, igMediaID: igMediaID, fbPostID: fbPostID,
 		rightsPending: origin == store.OriginInstagramPublic, sourceURL: f.sourceURL(p), caption: p.Caption, position: &pos})
 	switch {
 	case strings.HasPrefix(mark, creativeWarned):
@@ -347,23 +362,32 @@ func (e *Engine) downloadInstagram(ctx context.Context, ident store.Identity, li
 
 // instagramAccount devolve o token do cliente e o Instagram vinculado à Página da conexão.
 func (e *Engine) instagramAccount(ctx context.Context, orgID int64) (string, string, bool) {
-	if e.MetaTokenKey == nil {
+	token, conn, ok := e.metaAccount(ctx, orgID)
+	if !ok || conn.InstagramID == "" {
 		return "", "", false
 	}
+	return token, conn.InstagramID, true
+}
+
+// metaAccount devolve o token aberto do cliente e a conexão Meta ativa.
+func (e *Engine) metaAccount(ctx context.Context, orgID int64) (string, store.MetaConnection, bool) {
+	if e.MetaTokenKey == nil {
+		return "", store.MetaConnection{}, false
+	}
 	conn, ok, err := e.Store.ActiveMeta(ctx, orgID)
-	if err != nil || !ok || conn.InstagramID == "" {
-		return "", "", false
+	if err != nil || !ok {
+		return "", store.MetaConnection{}, false
 	}
 	_, sealed, err := e.pubs().MetaTokenSealed(ctx, orgID)
 	if err != nil {
-		return "", "", false
+		return "", store.MetaConnection{}, false
 	}
 	token, err := e.MetaTokenKey.Open(sealed)
 	if err != nil {
 		e.Log.Error("token da meta não abre", "org_id", orgID, "erro", err)
-		return "", "", false
+		return "", store.MetaConnection{}, false
 	}
-	return string(token), conn.InstagramID, true
+	return string(token), conn, true
 }
 
 // instagramGaveUp: o job esgotou as tentativas (banco fora); o cliente não fica esperando.

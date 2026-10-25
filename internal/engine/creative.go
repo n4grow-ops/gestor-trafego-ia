@@ -109,6 +109,7 @@ type creativeFile struct {
 	name          string // parte do nome do arquivo no Storage
 	origin        string
 	igMediaID     string
+	fbPostID      string
 	rightsPending bool
 	sourceURL     string
 	caption       string
@@ -143,7 +144,7 @@ func (e *Engine) keepCreative(ctx context.Context, ident store.Identity, convID 
 	}
 	c := store.Creative{OrgID: ident.OrgID, DraftID: d.ID, ProjectID: d.ProjectID, Kind: kind, Mime: mime,
 		Size: int64(len(data)), Format: string(media.Other), Placement: string(media.Feed),
-		Origin: f.origin, IGMediaID: f.igMediaID, RightsPending: f.rightsPending, SourceURL: f.sourceURL, SourceCaption: f.caption,
+		Origin: f.origin, IGMediaID: f.igMediaID, FBPostID: f.fbPostID, RightsPending: f.rightsPending, SourceURL: f.sourceURL, SourceCaption: f.caption,
 		SourcePosition: f.position}
 	warning := ""
 	if mime == "" {
@@ -207,7 +208,7 @@ func (e *Engine) creativesTurn(ctx context.Context, conv store.Conversation, msg
 		return err
 	}
 	var parts, warnings, rejected []string
-	var received, failed, done, changed, noted, fetching bool
+	var received, failed, done, changed, noted, fetching, picked bool
 	for _, m := range msgs {
 		if ok, err := e.enqueueInstagram(ctx, conv, d.ID, m); err != nil {
 			return err
@@ -246,6 +247,25 @@ func (e *Engine) creativesTurn(ctx context.Context, conv store.Conversation, msg
 		default:
 			cmd := parseCreativeCommand(m)
 			if cmd.kind == cmdNone {
+				if picks, named := parsePostPick(m); picks != nil {
+					reply, ok, err := e.pickPosts(ctx, conv, d, picks, named)
+					if err != nil {
+						return err
+					}
+					if ok {
+						parts = append(parts, reply)
+						picked = true
+						continue
+					}
+				}
+				if !fetching && wantsPosts(m) { // com link, o post do link já está vindo
+					reply, err := e.offerPosts(ctx, conv, d)
+					if err != nil {
+						return err
+					}
+					parts = append(parts, reply)
+					continue
+				}
 				if !isCopyReference(m) {
 					continue
 				}
@@ -311,7 +331,7 @@ func (e *Engine) creativesTurn(ctx context.Context, conv store.Conversation, msg
 		parts = append(parts, msgCreativesNeedOne)
 	case received || changed || len(rejected) > 0:
 		parts = append(parts, creativesStatus(list))
-	case fetching: // o job responde quando o post chegar
+	case fetching || picked: // o job responde quando o post chegar
 	case noted && n == 0:
 		parts = append(parts, msgCopyNotedNeedMedia)
 	case noted:

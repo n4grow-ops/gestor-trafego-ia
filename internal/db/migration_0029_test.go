@@ -41,7 +41,7 @@ func TestMigration0029AppliesTwice(t *testing.T) {
 		t.Fatalf("criativo antigo: origin = %q ig_media_id = %q rights_confirmed = %v", origin, mediaID, rights)
 	}
 	var n int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM pg_constraint WHERE conname = 'creatives_origin_check'`).Scan(&n); err != nil || n != 1 {
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM pg_constraint WHERE conname = 'creatives_origin_check' AND conrelid = 'creatives'::regclass`).Scan(&n); err != nil || n != 1 {
 		t.Fatalf("trava da origem = %d (%v)", n, err)
 	}
 }
