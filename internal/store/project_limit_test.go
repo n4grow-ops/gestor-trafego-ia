@@ -34,4 +34,12 @@ func TestProjectLimitFromPlan(t *testing.T) {
 	if _, _, err := st.CreateOrReopenProject(ctx, ident.OrgID, "E", contract.Fields{}); err != nil {
 		t.Fatalf("com 2 arquivados: %v", err)
 	}
+	// Organização liberada: passa do limite do plano.
+	_, err = pool.Exec(ctx, `UPDATE organizations SET unlimited = true WHERE id = $1`, ident.OrgID)
+	must(t, err)
+	for _, n := range []string{"F", "G", "H"} {
+		if _, _, err := st.CreateOrReopenProject(ctx, ident.OrgID, n, contract.Fields{}); err != nil {
+			t.Fatalf("%s ilimitada: %v", n, err)
+		}
+	}
 }

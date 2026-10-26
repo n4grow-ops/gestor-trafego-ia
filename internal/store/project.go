@@ -58,7 +58,8 @@ func (e *ProjectLimitError) Error() string {
 }
 
 // checkProjectLimit barra projeto NOVO acima do max_projects do plano. Reabrir um existente sempre
-// vale; arquivados não contam; sem assinatura (cliente trazido pela equipe) não há limite.
+// vale; arquivados não contam; sem assinatura (cliente trazido pela equipe) ou organização liberada
+// (organizations.unlimited) não há limite.
 func (s *Store) checkProjectLimit(ctx context.Context, orgID int64, name string) error {
 	var exists bool
 	var max *int
@@ -66,7 +67,8 @@ func (s *Store) checkProjectLimit(ctx context.Context, orgID int64, name string)
 	err := s.pool.QueryRow(ctx, `SELECT
 		EXISTS (SELECT 1 FROM projects WHERE organization_id = $1 AND lower(name) = lower($2)),
 		(SELECT p.max_projects FROM subscriptions sub JOIN plans p ON p.code = sub.plan_code
-			WHERE sub.organization_id = $1 AND sub.status IN ('active', 'trialing')),
+			WHERE sub.organization_id = $1 AND sub.status IN ('active', 'trialing')
+			  AND NOT coalesce((SELECT unlimited FROM organizations WHERE id = $1), false)),
 		(SELECT count(*) FROM projects WHERE organization_id = $1 AND stage <> 'archived')`, orgID, name).Scan(&exists, &max, &active)
 	if err != nil {
 		return err

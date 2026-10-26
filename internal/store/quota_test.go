@@ -35,4 +35,12 @@ func TestCampaignQuota(t *testing.T) {
 	if !q.Edit || q.Blocked() {
 		t.Fatalf("ajuste de campanha existente = %+v", q)
 	}
+	// Organização liberada (só o Jonathan em produção): sem limite mesmo no Básico.
+	_, err = pool.Exec(ctx, `UPDATE organizations SET unlimited = true WHERE id = $1`, id.OrgID)
+	must(t, err)
+	q, err = st.CampaignQuota(ctx, id.OrgID, nil)
+	must(t, err)
+	if q.Max != 0 || q.Blocked() {
+		t.Fatalf("organização ilimitada = %+v", q)
+	}
 }
