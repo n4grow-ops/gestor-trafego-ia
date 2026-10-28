@@ -507,15 +507,9 @@ func TestAdminClientActions(t *testing.T) {
 	if r := e.do("POST", "/api/payments", admin, map[string]any{"org_id": e.orgID, "amount_cents": 9700, "method": "pix", "status": "paid", "date": "2026-10-05"}); r.code != http.StatusCreated {
 		t.Fatalf("pagamento = %d %s", r.code, r.raw)
 	}
-	// Cliente com pagamento é cliente real: não dá para zerar (nem a prévia).
-	if r := e.do("GET", "/api/clients/"+org+"/reset", admin, nil); r.code != http.StatusConflict || r.body["error"] != "cliente_real" {
+	// Cliente com pagamento também tem prévia (zerar vale para qualquer cliente).
+	if r := e.do("GET", "/api/clients/"+org+"/reset", admin, nil); r.code != 200 || r.body["applied"] != false {
 		t.Fatalf("prévia de zerar cliente real = %d %s", r.code, r.raw)
-	}
-	if r := e.do("POST", "/api/clients/"+org+"/reset", admin, map[string]string{"confirm": "ZERAR"}); r.code != http.StatusConflict || r.body["error"] != "cliente_real" {
-		t.Fatalf("zerar cliente real = %d %s", r.code, r.raw)
-	}
-	if r := e.do("GET", "/api/clients/"+org, admin, nil); r.code != 200 {
-		t.Fatalf("cliente real depois de recusar = %d", r.code)
 	}
 
 	// Conta de teste (sem pagamento): zera, e o registro vai junto.

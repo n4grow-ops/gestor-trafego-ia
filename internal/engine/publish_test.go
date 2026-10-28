@@ -1126,3 +1126,41 @@ func TestPreviewAndPublishShareFinalCopies(t *testing.T) {
 		t.Fatalf("copies = %+v", c)
 	}
 }
+
+// Caso real (Oficina N, 27/10): o mesmo projeto publicado duas vezes deixou duas "Campanha 3" pausadas e
+// "ATIVAR Campanha 3" voltava a pergunta sem parar. Vale a publicação mais nova do projeto.
+func TestActivateDuplicateProjectNames(t *testing.T) {
+	h, pubs, pub := newPublishHarness(t, "owner")
+	h.connectMeta()
+	p23, p24 := int64(23), int64(24)
+	h.seedPubs(pubs,
+		store.Publication{Status: "paused", CampaignID: "C1", ProjectID: &p23, ProjectName: "Campanha 2"},
+		store.Publication{Status: "paused", CampaignID: "C2", ProjectID: &p24, ProjectName: "Campanha 3"},
+		store.Publication{Status: "paused", CampaignID: "C3", ProjectID: &p24, ProjectName: "Campanha 3"})
+	h.say("ATIVAR")
+	if msg := h.wa.last().Text; strings.Count(msg, "Campanha 3") != 2 { // uma na lista, uma no exemplo
+		t.Fatalf("pergunta repetiu o projeto: %q", msg)
+	}
+	h.say("*ATIVAR Campanha 3*")
+	if pubs.status(3) != "active" || pubs.status(2) != "paused" || !slices.Equal(pub.statuses, []string{"C3:ACTIVE"}) {
+		t.Fatalf("ativou = %v (%q)", pub.statuses, h.wa.last().Text)
+	}
+}
+
+// ATIVAR sozinho logo depois de criar a campanha liga a que acabou de ser criada, mesmo com outras pausadas.
+func TestActivateJustPublished(t *testing.T) {
+	h, pubs, pub := newPublishHarness(t, "owner")
+	h.connectMeta()
+	h.seedPubs(pubs,
+		store.Publication{Status: "paused", CampaignID: "C1", ProjectName: "Pizza", CreatedAt: h.now.Add(-72 * time.Hour)},
+		store.Publication{Status: "paused", CampaignID: "C2", ProjectName: "Rodízio", CreatedAt: h.now.Add(-10 * time.Minute)})
+	h.say("ativa aí")
+	if pubs.status(2) != "active" || pubs.status(1) != "paused" || !slices.Equal(pub.statuses, []string{"C2:ACTIVE"}) {
+		t.Fatalf("ativou = %v (%q)", pub.statuses, h.wa.last().Text)
+	}
+	// a mais antiga continua precisando do nome ou número
+	h.say("ATIVAR")
+	if pubs.status(1) != "active" {
+		t.Fatalf("única pausada não ligou: %v", pub.statuses)
+	}
+}

@@ -514,7 +514,7 @@ async function askReset(btn) {
   if (!prev) return;
   const items = prev.steps.filter(s => s.rows > 0).map(s => `<li>${esc(TABLES[s.table] || s.table)}: ${num(s.rows)}</li>`).join('');
   $('#confirm-slot').innerHTML = `<div class="confirm" role="alertdialog" aria-label="Confirmar zerar contato">
-    <p><b>Zerar ${esc(c.name)}?</b> Apaga cadastro, conversa, projetos, assinatura e conexão Meta de ${esc(prev.phones.map(phone).join(', '))}. O número volta como contato novo. Não dá para desfazer.</p>
+    <p><b>Zerar ${esc(c.name)}?</b> Apaga cadastro, conversa, projetos, assinatura, pagamentos e conexão Meta de ${esc(prev.phones.map(phone).join(', '))}. O número volta como contato novo e refaz o cadastro do zero. Campanhas que já estão na Meta continuam lá (pause no Gerenciador se precisar). Não dá para desfazer.</p>
     <ul>${items}</ul>
     <div class="actions"><button class="btn sm ghost" type="button" data-reset-no>Cancelar</button><button class="btn sm danger solid" type="button" data-reset-yes>Zerar de vez</button></div></div>`;
   $('[data-reset-no]').focus();

@@ -668,6 +668,7 @@ func retryPhrase(s string) bool {
 func parseCampaignCommand(s string) (campaignCmd, string) {
 	s = strings.ToLower(strings.TrimFunc(s, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsPunct(r) || unicode.IsSymbol(r) }))
 	s = strings.Join(strings.Fields(strings.ReplaceAll(s, "*", "")), " ")
+	s = trimCommandFiller(s)
 	if cmd := campaignCommands[s]; cmd != cmdCampaignNone {
 		return cmd, ""
 	}
@@ -676,10 +677,63 @@ func parseCampaignCommand(s string) (campaignCmd, string) {
 	}
 	for _, prefix := range []string{"pode ativar a campanha ", "ativar a campanha ", "ativa a campanha ", "pode ativar ", "ativar ", "ativa "} {
 		if arg, ok := strings.CutPrefix(s, prefix); ok && strings.TrimSpace(arg) != "" && utf8.RuneCountInString(arg) <= 60 {
-			return cmdActivate, strings.TrimSpace(arg)
+			return cmdActivate, activateArg(arg)
+		}
+	}
+	// ordem invertida: "campanha 1 ativar", "a 3 pode ativar"
+	for _, suffix := range []string{" pode ativar", " ativar", " ativa"} {
+		if arg, ok := strings.CutSuffix(s, suffix); ok && strings.TrimSpace(arg) != "" && len(strings.Fields(arg)) <= 4 {
+			return cmdActivate, activateArg(strings.TrimSpace(arg))
 		}
 	}
 	return cmdCampaignNone, ""
+}
+
+// commandPrefixFiller e commandSuffixFiller: o que vem em volta do comando curto ("ativa aí",
+// "ok pode ativar agora", "ativar campanha 3 por favor").
+var (
+	commandPrefixFiller = []string{"ok ", "beleza ", "entao ", "então ", "agora ", "ja ", "já ", "pronto ", "sim "}
+	commandSuffixFiller = []string{" ai", " aí", " agora", " por favor", " pfv", " pf", " pra mim", " ja", " já", " entao", " então"}
+)
+
+func trimCommandFiller(s string) string {
+	for changed := true; changed; {
+		changed = false
+		for _, f := range commandPrefixFiller {
+			if rest, ok := strings.CutPrefix(s, f); ok && rest != "" {
+				s, changed = rest, true
+			}
+		}
+		for _, f := range commandSuffixFiller {
+			if rest, ok := strings.CutSuffix(s, f); ok && rest != "" {
+				s, changed = rest, true
+			}
+		}
+	}
+	return s
+}
+
+// activateNumberWords: número por extenso no complemento do ATIVAR ("ativar campanha um").
+var activateNumberWords = map[string]string{"um": "1", "uma": "1", "dois": "2", "duas": "2", "tres": "3", "três": "3", "quatro": "4",
+	"cinco": "5", "seis": "6", "sete": "7", "oito": "8", "nove": "9", "dez": "10"}
+
+// activateArg limpa o complemento: tira "a"/"o"/"numero" do começo e troca número por extenso.
+func activateArg(arg string) string {
+	words := strings.Fields(strings.Map(func(r rune) rune {
+		if unicode.IsPunct(r) || unicode.IsSymbol(r) {
+			return ' '
+		}
+		return r
+	}, arg))
+	for len(words) > 1 && (words[0] == "a" || words[0] == "o" || words[0] == "numero" || words[0] == "número" || words[0] == "n") {
+		words = words[1:]
+	}
+	for i, w := range words {
+		if d, ok := activateNumberWords[w]; ok {
+			words[i] = d
+		}
+	}
+	return strings.Join(words, " ")
 }
 
 // campaignCommand trata ATIVAR/PAUSAR/tentar de novo; handled = false segue o fluxo normal.
@@ -691,6 +745,7 @@ func (e *Engine) campaignCommand(ctx context.Context, ident store.Identity, conv
 		if arg = pickReply(text); arg == "" || !e.askedWhichPaused(ctx, conv.ID) {
 			return false, nil
 		}
+		arg = activateArg(arg)
 		cmd = cmdActivate
 	}
 	last, err := e.pubs().LatestPublication(ctx, ident.OrgID)
@@ -716,11 +771,17 @@ func (e *Engine) campaignCommand(ctx context.Context, ident store.Identity, conv
 	if err != nil {
 		return true, err
 	}
+	// O mesmo projeto publicado de novo fica uma vez só na escolha: vale a publicação mais nova
+	// (caso real, Oficina N 27/10: duas "Campanha 3" e a Mia perguntava qual sem parar).
+	paused = latestPerProject(paused)
 	// Alvo do comando: no PAUSAR, todas no ar; no ATIVAR, a pausada escolhida.
 	var targets []store.Publication
 	ask := false
 	if cmd == cmdPause {
 		targets = active
+	} else if p, ok := justPublished(paused, last, arg, e.now()); ok {
+		// ATIVAR logo depois do "Criei a campanha, pausada": liga a que acabou de ser criada.
+		targets = []store.Publication{p}
 	} else {
 		pick, ok, handled := pickPaused(paused, arg)
 		if !handled {
@@ -870,8 +931,8 @@ func pickPaused(paused []store.Publication, arg string) (pick store.Publication,
 				byName = append(byName, p)
 			}
 		}
-		if len(byName) == 1 {
-			return byName[0], true, true
+		if len(byName) > 0 {
+			return byName[len(byName)-1], true, true // nomes repetidos: a mais nova
 		}
 		if n >= 1 && n <= len(paused) && !namesHaveNumbers(paused) {
 			return paused[n-1], true, true
@@ -886,10 +947,46 @@ func pickPaused(paused []store.Publication, arg string) (pick store.Publication,
 			match = append(match, p)
 		}
 	}
-	if len(match) == 1 {
-		return match[0], true, true
+	if len(match) > 0 {
+		return match[len(match)-1], true, true // nomes repetidos: a mais nova
 	}
-	return store.Publication{}, false, len(match) > 1
+	return store.Publication{}, false, false
+}
+
+// justPublishedWindow: por quanto tempo o ATIVAR sem complemento liga a campanha recém-criada.
+const justPublishedWindow = 24 * time.Hour
+
+// justPublished: ATIVAR sem complemento e a publicação mais recente está pausada, nunca foi ligada e
+// foi criada há pouco. É a que a Mia acabou de mandar ativar.
+func justPublished(paused []store.Publication, last store.Publication, arg string, now time.Time) (store.Publication, bool) {
+	if arg != "" || last.Status != "paused" || last.ActivatedAt != nil || last.CreatedAt.IsZero() ||
+		now.Sub(last.CreatedAt) > justPublishedWindow {
+		return store.Publication{}, false
+	}
+	for _, p := range paused {
+		if p.ID == last.ID {
+			return p, true
+		}
+	}
+	return store.Publication{}, false
+}
+
+// latestPerProject deixa só a publicação mais nova de cada projeto (a lista vem da mais antiga para a
+// mais nova). Sem projeto, cada uma conta sozinha.
+func latestPerProject(list []store.Publication) []store.Publication {
+	newest := map[int64]int64{}
+	for _, p := range list {
+		if p.ProjectID != nil {
+			newest[*p.ProjectID] = p.ID
+		}
+	}
+	out := make([]store.Publication, 0, len(list))
+	for _, p := range list {
+		if p.ProjectID == nil || newest[*p.ProjectID] == p.ID {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 var nameAccents = strings.NewReplacer("á", "a", "à", "a", "â", "a", "ã", "a", "é", "e", "ê", "e", "í", "i",

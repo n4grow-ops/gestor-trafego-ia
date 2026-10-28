@@ -212,23 +212,18 @@ func TestResetOrganization(t *testing.T) {
 	st, f := seedClients(t)
 	audit := resetAudit("dono@meuanuncio.io")
 
-	// Cliente real (cadastro completo com assinatura paga): não zera, nem na simulação.
-	if _, err := st.ResetOrganization(ctx, f.ready.OrgID, false, audit); !errors.Is(err, store.ErrRealClient) {
-		t.Fatalf("simular cliente real: %v", err)
-	}
-	if _, err := st.ResetOrganization(ctx, f.ready.OrgID, true, audit); !errors.Is(err, store.ErrRealClient) {
-		t.Fatalf("zerar cliente real: %v", err)
-	}
-	// Qualquer pagamento registrado também recusa (o pagamento nunca é apagado).
+	// Cliente real (pagamento registrado) também zera: o administrador decide no painel.
 	_, err := f.pool.Exec(ctx, `INSERT INTO subscriptions (organization_id, plan_code, status) VALUES ($1, 'free', 'active')`, f.stuck.OrgID)
 	must(t, err)
 	_, err = st.RecordManualPayment(ctx, store.ManualPayment{OrgID: f.stuck.OrgID, AmountCents: 100, Method: "pix", Status: "pending", Date: time.Now()})
 	must(t, err)
-	if _, err := st.ResetOrganization(ctx, f.stuck.OrgID, true, audit); !errors.Is(err, store.ErrRealClient) {
-		t.Fatalf("zerar com pagamento: %v", err)
+	paid, err := st.ResetOrganization(ctx, f.stuck.OrgID, true, audit)
+	must(t, err)
+	if !paid.Applied || paid.Rows("payments") != 1 || paid.Rows("subscriptions") != 1 {
+		t.Fatalf("zerar com pagamento = %+v", paid)
 	}
-	if _, err := st.ClientDetail(ctx, f.ready.OrgID); err != nil {
-		t.Fatalf("cliente real apagado: %v", err)
+	if _, err := st.ClientDetail(ctx, f.stuck.OrgID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("cliente com pagamento continua: %v", err)
 	}
 
 	// Conta de teste (plano grátis, sem pagamento): zera.
@@ -261,11 +256,6 @@ func TestResetOrganization(t *testing.T) {
 	if !rep.Applied || rep.Rows("meta_connections") != 1 || rep.Rows("subscriptions") != 1 {
 		t.Fatalf("zerar = %+v", rep)
 	}
-	for _, s := range rep.Steps {
-		if s.Table == "payments" {
-			t.Fatalf("zerar mexeu em pagamentos: %+v", rep)
-		}
-	}
 	log, err := st.AdminLog(ctx, store.AdminLogFilter{ActorEmail: "dono@meuanuncio.io"})
 	must(t, err)
 	if len(log) == 0 || log[0].Action != "client_reset" || !strings.Contains(string(log[0].Data), "5511900000002") {
@@ -278,7 +268,7 @@ func TestResetOrganization(t *testing.T) {
 		t.Fatalf("telefone continua: %v", err)
 	}
 	// Os outros clientes ficam.
-	if res, _ := st.Clients(ctx, store.ClientFilter{Stage: -1}); len(res.Clients) != 3 {
+	if res, _ := st.Clients(ctx, store.ClientFilter{Stage: -1}); len(res.Clients) != 2 {
 		t.Fatalf("sobraram %d", len(res.Clients))
 	}
 	if _, err := st.ResetOrganization(ctx, f.ready.OrgID, true, audit); !errors.Is(err, store.ErrNotFound) {

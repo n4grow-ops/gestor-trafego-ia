@@ -18,3 +18,15 @@ func TestParseCampaignCommandRetryPhrases(t *testing.T) {
 		}
 	}
 }
+
+func TestParseCampaignCommandActivateWording(t *testing.T) {
+	for in, want := range map[string]string{"ativa aí": "", "Ativa ai!": "", "ok pode ativar agora": "", "ativar campanha um": "campanha 1",
+		"Campanha um, ativar": "campanha 1", "ativa a 3": "3", "ativar a campanha dois por favor": "2", "ATIVAR Campanha 3": "campanha 3"} {
+		if cmd, arg := parseCampaignCommand(in); cmd != cmdActivate || arg != want {
+			t.Errorf("%q = %v %q, quer ativar %q", in, cmd, arg, want)
+		}
+	}
+	if cmd, _ := parseCampaignCommand("pausa aí"); cmd != cmdPause {
+		t.Error("pausa aí não pausou")
+	}
+}
