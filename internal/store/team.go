@@ -180,8 +180,8 @@ func (s *Store) RemoveTeamMember(ctx context.Context, id int64) error {
 // SetTeamMemberAlerts grava o WhatsApp da pessoa e se ela recebe os avisos da equipe. O número
 // fica só com dígitos (10 a 15); vazio só vale com os avisos desligados.
 func (s *Store) SetTeamMemberAlerts(ctx context.Context, id int64, whatsappNum string, receives bool) (TeamMember, error) {
-	d := whatsapp.Digits(whatsappNum)
-	if d != "" && (len(d) < 10 || len(d) > 15) {
+	d := whatsapp.WithCountry(whatsappNum)
+	if d != "" && (len(d) < 12 || len(d) > 15) {
 		return TeamMember{}, fmt.Errorf("%w: whatsapp", ErrInvalidInput)
 	}
 	if d == "" && receives {
@@ -198,7 +198,20 @@ func (s *Store) TeamAlertPhones(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, pgx.RowTo[string])
+	phones, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, err
+	}
+	// Números salvos antes do 55 automático: corrige na leitura, sem repetir.
+	out := make([]string, 0, len(phones))
+	seen := map[string]bool{}
+	for _, p := range phones {
+		if p = whatsapp.WithCountry(p); !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	return out, nil
 }
 
 func (s *Store) TouchTeamLogin(ctx context.Context, id int64) error {

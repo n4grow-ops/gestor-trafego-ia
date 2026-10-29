@@ -194,7 +194,7 @@ func teamPhones(v string) []string {
 	var out []string
 	seen := map[string]bool{}
 	for _, s := range splitList(v) {
-		d := whatsapp.Digits(s)
+		d := whatsapp.WithCountry(s)
 		if len(d) < 10 || len(d) > 15 || seen[d] {
 			continue
 		}

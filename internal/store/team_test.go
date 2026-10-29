@@ -141,6 +141,10 @@ func TestTeamAlertPhones(t *testing.T) {
 	if err != nil || m.WhatsApp != "5511988887777" || !m.ReceivesAlerts {
 		t.Fatalf("ana: %+v %v", m, err)
 	}
+	// Só DDD + número: ganha o 55, senão a Meta manda para +1.
+	if m, err := st.SetTeamMemberAlerts(ctx, ana.ID, "(11) 98888-7777", true); err != nil || m.WhatsApp != "5511988887777" {
+		t.Fatalf("sem 55: %+v %v", m, err)
+	}
 	// Número guardado, mas sem receber avisos.
 	if _, err := st.SetTeamMemberAlerts(ctx, bia.ID, "5511977776666", false); err != nil {
 		t.Fatal(err)

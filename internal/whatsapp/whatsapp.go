@@ -123,3 +123,13 @@ func NormalizePhone(s string) (string, error) {
 // Digits só remove o que não é dígito, sem mexer no nono dígito. Usado para destinos
 // que precisam casar com o número exatamente como está registrado no WhatsApp.
 func Digits(s string) string { return nonDigits.ReplaceAllString(s, "") }
+
+// WithCountry põe o 55 no número digitado só com DDD + número (10 ou 11 dígitos). Sem isso a
+// Meta lê "11 9…" como +1 e a mensagem some sem erro.
+func WithCountry(s string) string {
+	d := Digits(s)
+	if len(d) == 10 || len(d) == 11 {
+		return "55" + d
+	}
+	return d
+}

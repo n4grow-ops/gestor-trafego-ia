@@ -5,6 +5,7 @@ import (
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/engine"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp"
 )
 
 // Avisos da equipe: o WhatsApp de cada pessoa e se ela recebe os avisos (atendimento humano,
@@ -75,7 +76,8 @@ func (a *Admin) testTeamAlert(w http.ResponseWriter, r *http.Request, m store.Te
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "muitas_tentativas"})
 		return
 	}
-	job := engine.TeamTestJob(a.ChatIDForPhone(target.WhatsApp), target.WhatsApp)
+	phone := whatsapp.WithCountry(target.WhatsApp)
+	job := engine.TeamTestJob(a.ChatIDForPhone(phone), phone)
 	if err := a.Store.Enqueue(r.Context(), job); a.storeError(w, err) {
 		return
 	}
