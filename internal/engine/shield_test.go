@@ -115,10 +115,24 @@ func TestShieldApprovalListsPointsToFix(t *testing.T) {
 	sp.biz = "not_verified"
 	h.say("SIM " + h.reachApproval())
 	msg := h.lastClient()
-	for _, want := range []string{"dois pontos para resolver", "Pagamento", "Verificação do Business", "Como resolver"} {
+	for _, want := range []string{"um ponto para resolver", "Pagamento", "Como resolver"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("resumo sem %q: %q", want, msg)
 		}
+	}
+	// verificação do Business não vai para a conversa (fica só no painel)
+	if strings.Contains(msg, "Verificação do Business") {
+		t.Errorf("resumo com a verificação do Business: %q", msg)
+	}
+}
+
+// Só a verificação do Business pendente: a Mia diz que está tudo certo.
+func TestShieldApprovalIgnoresBusinessVerification(t *testing.T) {
+	h, _, sp := newShieldHarness(t)
+	sp.biz = "not_verified"
+	h.say("SIM " + h.reachApproval())
+	if msg := h.lastClient(); strings.Contains(msg, "Business") || !strings.Contains(msg, "tudo certo") {
+		t.Fatalf("aprovação = %q", msg)
 	}
 }
 
@@ -158,7 +172,7 @@ func TestShieldBlocksPublishUntilFixed(t *testing.T) {
 	}
 }
 
-// Atenção não bloqueia: publica e acrescenta o aviso na mensagem; moeda segue com a recusa antiga.
+// Atenção não bloqueia: publica normalmente; a verificação do Business não entra na mensagem.
 func TestShieldAttentionDoesNotBlockButIsMentioned(t *testing.T) {
 	h, pubs, sp := newShieldHarness(t)
 	sp.biz = "not_verified"
@@ -168,7 +182,7 @@ func TestShieldAttentionDoesNotBlockButIsMentioned(t *testing.T) {
 	if sp.calls() != 1 || pubs.latest().Status != "paused" {
 		t.Fatalf("calls=%d status=%s", sp.calls(), pubs.latest().Status)
 	}
-	if msg := h.lastClient(); !strings.Contains(msg, "Prontinho") || !strings.Contains(msg, "Verificação do Business") {
+	if msg := h.lastClient(); !strings.Contains(msg, "Prontinho") || strings.Contains(msg, "Verificação do Business") {
 		t.Fatalf("mensagem = %q", msg)
 	}
 }

@@ -345,7 +345,9 @@ func TestSummaryCountsPoints(t *testing.T) {
 	g.set("/act_9", account(1, 0, "BRL", ""))
 	g.set("/B1", `{"verification_status":"not_verified"}`)
 	s := shield.Check(context.Background(), c, input()).Summary()
-	if !strings.Contains(s, "dois pontos para resolver") || !strings.Contains(s, "Pagamento") || !strings.Contains(s, "Como resolver") {
+	// a verificação do Business não conta para o cliente (fica só no painel)
+	if !strings.Contains(s, "um ponto para resolver") || !strings.Contains(s, "Pagamento") || !strings.Contains(s, "Como resolver") ||
+		strings.Contains(s, "Business") {
 		t.Fatalf("resumo = %q", s)
 	}
 }

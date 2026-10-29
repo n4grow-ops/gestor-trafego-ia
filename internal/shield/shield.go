@@ -101,8 +101,9 @@ func (r Report) Without(keys ...string) Report {
 var countWords = map[int]string{1: "um ponto", 2: "dois pontos", 3: "três pontos"}
 
 // Summary é o resumo curto para a Mia mandar: "tudo certo" ou "dois pontos para resolver: ...".
+// A verificação do Business fica fora da conversa (não impede publicar; o painel continua mostrando).
 func (r Report) Summary() string {
-	ps := r.Problems()
+	ps := r.Without(KeyBusiness).Problems()
 	if len(ps) == 0 {
 		return "✅ Conferi a sua conta de anúncios na Meta e está tudo certo para publicar."
 	}

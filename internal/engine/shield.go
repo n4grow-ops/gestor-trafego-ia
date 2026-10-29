@@ -117,9 +117,10 @@ func (e *Engine) shieldApprovalNote(ctx context.Context, orgID int64, dailyBRL f
 }
 
 // shieldPublishNotes: os pontos de atenção para a mensagem de publicação. Pagamento e limite ficam de fora
-// (o texto de saldo da publicação já cobre) e moeda também (a publicação recusa sozinha).
+// (o texto de saldo da publicação já cobre), moeda também (a publicação recusa sozinha) e a verificação do
+// Business (não impede publicar; fica só no painel).
 func shieldPublishNotes(rep shield.Report) string {
-	only := rep.Without(shield.KeyPayment, shield.KeyCap, shield.KeyCurrency)
+	only := rep.Without(shield.KeyPayment, shield.KeyCap, shield.KeyCurrency, shield.KeyBusiness)
 	if len(only.Problems()) == 0 {
 		return ""
 	}
