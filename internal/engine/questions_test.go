@@ -121,3 +121,44 @@ func TestEarlyInstagramLinkImportedOnApproval(t *testing.T) {
 		t.Fatalf("criativos = %d", h.creatives())
 	}
 }
+
+// Caso real (30/10): o cliente respondeu "vou deixar sem data" e a Mia não gravou a duração; a proposta
+// nunca saía e a Mia prometia o especialista. Agora "sem data" responde a duração e a campanha fica contínua.
+func TestNoEndDateAnswersDuration(t *testing.T) {
+	h := newHarness(t, "owner")
+	h.att.Rewrite = nil
+	h.att.Responses = []string{turnOffer, turnRest,
+		`{"intent":"provide_info","fields":{"objective_hint":"engajamento","interests":"nenhum"},"reply":"Quantos dias?"}`,
+		`{"intent":"provide_info","fields":{"placements":["feed","stories"],"ads_count":1},"reply":"Ótimo! Vou pedir para o especialista montar a sua proposta."}`}
+	h.say("quero anunciar pizza")
+	h.say("famílias em Campinas, 50 por dia")
+	h.say("engajamento, sem interesses")
+	h.mgr.Responses = []string{validProposal}
+	h.say("não vou definir dias, vou deixar sem data. feed e stories, 1 anúncio")
+	if c := h.conv(); c.State != store.StateAwaitingProposal {
+		t.Fatalf("\"sem data\" não respondeu a duração: estado = %s", c.State)
+	}
+	h.runJobs()
+	var days int
+	h.must(h.pool.QueryRow(t.Context(), `SELECT (proposal->>'duration_days')::int FROM campaign_drafts`).Scan(&days))
+	if days != 0 {
+		t.Fatalf("campanha sem data de fim saiu com %d dias", days)
+	}
+	if s := h.wa.last().Text; !strings.Contains(s, "sem data de fim") {
+		t.Errorf("resumo não diz que é contínua:\n%s", s)
+	}
+}
+
+// Com dado faltando, a promessa "vou pedir para o especialista" vira a pergunta do que falta.
+func TestPromiseWithoutRequestBecomesQuestion(t *testing.T) {
+	h := newHarness(t, "owner")
+	h.att.Rewrite = nil
+	h.att.Responses = []string{turnOffer, turnRest,
+		`{"intent":"provide_info","fields":{"objective_hint":"engajamento"},"reply":"Agora vou pedir para o especialista montar a sua proposta. Em breve você recebe."}`}
+	h.say("quero anunciar pizza")
+	h.say("famílias em Campinas, 50 por dia")
+	h.say("engajamento")
+	if got := h.wa.last().Text; strings.Contains(got, "Em breve") || !strings.Contains(got, "ainda preciso saber") {
+		t.Fatalf("prometeu proposta sem pedir: %q", got)
+	}
+}

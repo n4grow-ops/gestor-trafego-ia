@@ -142,8 +142,12 @@ func SummaryWith(p contract.CampaignProposal, code string, o SummaryOptions) str
 		where = "só no Instagram (o perfil é no Instagram)"
 	}
 	fmt.Fprintf(&b, "Onde aparece: %s\n", where)
-	fmt.Fprintf(&b, "Investimento: %s por dia, por %d dias (total de até %s)\n",
-		BRL(p.DailyBudgetBRL), p.DurationDays, BRL(p.DailyBudgetBRL*float64(p.DurationDays)))
+	if p.DurationDays > 0 {
+		fmt.Fprintf(&b, "Investimento: %s por dia, por %d dias (total de até %s)\n",
+			BRL(p.DailyBudgetBRL), p.DurationDays, BRL(p.DailyBudgetBRL*float64(p.DurationDays)))
+	} else {
+		fmt.Fprintf(&b, "Investimento: %s por dia, sem data de fim (fica ativa até você pausar)\n", BRL(p.DailyBudgetBRL))
+	}
 	for i, c := range p.Copies {
 		label := ""
 		if a := copylab.AngleLabel[c.Angle]; a != "" && len(p.Copies) > 1 {

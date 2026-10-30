@@ -63,6 +63,8 @@ type Fields struct {
 	Interests *string `json:"interests,omitempty"`
 	// DurationDays: quantos dias o anúncio fica ativo, como o cliente disse.
 	DurationDays *float64 `json:"duration_days,omitempty"`
+	// NoEnd: o cliente não quer data de fim ("sem data", "contínua"). Vale como resposta da duração.
+	NoEnd bool `json:"no_end,omitempty"`
 	// AdsCount: quantos anúncios (variações de texto) o cliente quer, de 1 a 5.
 	AdsCount *float64 `json:"ads_count,omitempty"`
 }
@@ -215,7 +217,9 @@ func (f Fields) Merge(o Fields) Fields {
 		out.Interests = o.Interests
 	}
 	if positive(o.DurationDays) {
-		out.DurationDays = o.DurationDays
+		out.DurationDays, out.NoEnd = o.DurationDays, false
+	} else if o.NoEnd {
+		out.DurationDays, out.NoEnd = nil, true
 	}
 	if positive(o.AdsCount) {
 		out.AdsCount = o.AdsCount
@@ -232,7 +236,7 @@ func (f Fields) HasData() bool {
 	return !blank(f.Offer) || !blank(f.Audience) || !blank(f.Location) || !blank(f.ObjectiveHint) || !blank(f.LinkURL) ||
 		positive(f.DailyBudgetBRL) || len(f.Media) > 0 || len(NormalizePlacements(f.Placements)) > 0 || f.LeadForm != nil ||
 		len(CleanCopies(f.Copies)) > 0 || wantsAutoPlacement(f.Placements) || !blank(f.Interests) ||
-		positive(f.DurationDays) || positive(f.AdsCount)
+		positive(f.DurationDays) || f.NoEnd || positive(f.AdsCount)
 }
 
 // Missing lista os campos obrigatórios que faltam, em ordem fixa.
@@ -316,6 +320,8 @@ type Briefing struct {
 	CopyVariations int `json:"copy_variations,omitempty"`
 	// DurationDays: dias que o cliente pediu. 0 = não disse (o Gestor usa 7).
 	DurationDays int `json:"duration_days,omitempty"`
+	// NoEnd: o cliente não quer data de fim; a proposta sai com duration_days 0 (contínua).
+	NoEnd bool `json:"no_end,omitempty"`
 	// Interests: interesses que o cliente aceitou (o Gestor usa exatamente estes). NoInterests: ele não quer
 	// interesses. Os dois vazios = não respondeu (o Gestor traduz o público).
 	Interests   []string `json:"interests,omitempty"`
@@ -350,6 +356,8 @@ func NewBriefing(orgID int64, f Fields, c Constraints) (Briefing, error) {
 	b.ClientCopies = CleanCopies(f.Copies)
 	if f.DurationDays != nil && *f.DurationDays >= 1 {
 		b.DurationDays = min(int(*f.DurationDays), 90)
+	} else if f.NoEnd {
+		b.NoEnd = true
 	}
 	if f.AdsCount != nil && *f.AdsCount >= 1 {
 		b.CopyVariations = min(int(*f.AdsCount), MaxCopies)

@@ -499,7 +499,7 @@ function drawerTab(n) {
     return `<div>${c.projects.map(p => { const f = p.fields || {}; const dr = p.draft;
       return `<div class="proj"><div class="proj-top"><b>${esc(p.name)}</b><span class="chip ${p.stage === 'ready' ? 'ok' : p.stage.startsWith('awaiting') ? 'warn' : 'info'}">${esc(PROJECT_STAGE[p.stage] || p.stage)}</span></div>
         <small>${esc([f.offer, f.audience, f.location].filter(Boolean).join(' · ') || 'dados em coleta')}${f.daily_budget_brl ? ' · ' + brl(f.daily_budget_brl * 100) + '/dia' : ''}</small>
-        ${dr ? `<small>Proposta: ${brl(dr.daily_budget_brl * 100)}/dia · ${dr.duration_days} dias · ${esc(dr.objective.replace('OUTCOME_', '').toLowerCase())} · <b>${dr.status === 'approved' ? 'aprovada em ' + esc(dt(dr.approved_at)) : esc(dr.status)}</b></small>` : ''}
+        ${dr ? `<small>Proposta: ${brl(dr.daily_budget_brl * 100)}/dia · ${dr.duration_days > 0 ? dr.duration_days + ' dias' : 'sem data de fim'} · ${esc(dr.objective.replace('OUTCOME_', '').toLowerCase())} · <b>${dr.status === 'approved' ? 'aprovada em ' + esc(dt(dr.approved_at)) : esc(dr.status)}</b></small>` : ''}
         <small>${p.creatives} anúncio(s) recebido(s) · atualizado ${ago(p.updated_at)} atrás</small>
         ${(p.media || []).length ? `<div class="pm-grid">${p.media.map(projectMedia).join('')}</div>` : ''}
         ${projectActions(p)}</div>`; }).join('')}</div>`;

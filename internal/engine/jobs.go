@@ -301,8 +301,11 @@ func (e *Engine) propose(ctx context.Context, p ProposeJob) error {
 
 	// Onde o anúncio aparece, por quantos dias e com quais interesses é escolha do cliente, não do Gestor.
 	prop.Placements = b.Placements
-	if b.DurationDays > 0 {
+	switch {
+	case b.DurationDays > 0:
 		prop.DurationDays = b.DurationDays
+	case b.NoEnd:
+		prop.DurationDays = 0 // contínua: a Meta não recebe data de fim
 	}
 	switch {
 	case len(b.Interests) > 0:

@@ -294,8 +294,12 @@ func (e *Engine) projectStatus(ctx context.Context, ident store.Identity, conv s
 		return err
 	}
 	if ok {
-		fmt.Fprintf(&b, "\nÚltima proposta: %s por dia, %d dias — %s",
-			campaign.BRL(d.Proposal.DailyBudgetBRL), d.Proposal.DurationDays, draftLabels[d.Status])
+		days := "sem data de fim"
+		if d.Proposal.DurationDays > 0 {
+			days = fmt.Sprintf("%d dias", d.Proposal.DurationDays)
+		}
+		fmt.Fprintf(&b, "\nÚltima proposta: %s por dia, %s — %s",
+			campaign.BRL(d.Proposal.DailyBudgetBRL), days, draftLabels[d.Status])
 		if d.ApprovedAt != nil {
 			fmt.Fprintf(&b, " em %s", d.ApprovedAt.In(saoPaulo).Format("02/01"))
 		}

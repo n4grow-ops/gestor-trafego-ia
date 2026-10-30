@@ -177,6 +177,7 @@ func (c Config) ordered(group string) []Field {
 // Os campos core entram sempre: a proposta não sai sem eles.
 func (c Config) CampaignMissing(f contract.Fields) []string {
 	have := fieldValues(f)
+	have["duration_days"] = have["duration_days"] || f.NoEnd // "sem data de fim" também responde a duração
 	var out []string
 	for _, fl := range c.ordered(GroupCampaign) {
 		if (fl.Required || fl.Core) && !have[fl.Key] {

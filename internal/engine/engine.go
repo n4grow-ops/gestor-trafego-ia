@@ -533,6 +533,11 @@ func (e *Engine) converse(ctx context.Context, ident store.Identity, conv store.
 	}
 
 	merged := campaignFields(ident.Profile, conv.Fields, turn.Fields)
+	if merged.DurationDays == nil && !merged.NoEnd && noEndRe.MatchString(text) {
+		// Caso real: "vou deixar sem data" e a IA não gravou nada; a proposta nunca saía.
+		noteAction(ctx, "duração sem data de fim reconhecida pelo sistema")
+		merged.NoEnd = true
+	}
 	campaignTalk := turn.Intent == contract.IntentCreateCampaign || turn.Intent == contract.IntentProvideInfo || turn.Fields.HasData()
 	if campaignTalk {
 		if err := e.ensureProject(ctx, ident, &conv, turn.Project, projects); err != nil {
@@ -616,7 +621,7 @@ func (e *Engine) needsMeta(ctx context.Context, ident store.Identity) (bool, err
 }
 
 // promiseRe acha a resposta da IA que anuncia a proposta ("o especialista vai montar", "chega em instantes").
-var promiseRe = regexp.MustCompile(`(?i)especialista\s+(vai|já|ja|está|esta)\b|proposta.{0,80}(instantes|a caminho|já já|ja ja|chega)|(instantes|a caminho).{0,80}proposta`)
+var promiseRe = regexp.MustCompile(`(?i)especialista\s+(vai|já|ja|está|esta)\b|(pedir|pedi|passar|passei|mandar|mandei|enviar|enviei)\s+(para|pro|ao)\s+(o\s+)?especialista|proposta.{0,80}(instantes|a caminho|já já|ja ja|chega|em breve|receber)|(instantes|a caminho|em breve).{0,80}proposta`)
 
 // speakNoPromise fala a resposta da IA, menos quando ela promete a proposta sem o sistema ter pedido: o
 // cliente ficaria esperando algo que nunca chega. Aí a resposta vira a pergunta do que falta.
@@ -833,6 +838,8 @@ var (
 	adjustTermRe = regexp.MustCompile(`(?i)\b(idade|faixa|anos|raio|km|or[cç]amento|reais|r\$|p[uú]blico|homens?|mulheres?|masculino|feminino|feed|stories|reels|cidade|regi[aã]o|bairro|texto|t[ií]tulo|headline|objetivo|dias|dura[cç][aã]o|interesses?|valor|investimento)\b`)
 	adjustVerbRe = regexp.MustCompile(`(?i)\b(alter\w*|mud\w*|troc\w*|ajust\w*|coloc\w*|bot\w*|aument\w*|diminu\w*|reduz\w*|tir\w*|remov\w*|quero|prefiro|deix\w*|fa[cç]a|faz|s[oó]|somente|apenas|sem|em vez|corrig\w*|inclu\w*|adicion\w*)\b`)
 	adjustAgeRe  = regexp.MustCompile(`(?i)\b\d{2}\s*(a|até|ate|-)\s*\d{2}\s*anos\b`)
+	// noEndRe: o cliente não quer data de fim na campanha ("vou deixar sem data", "contínua").
+	noEndRe = regexp.MustCompile(`(?i)\bsem\s+(data|prazo|fim|t[eé]rmino|limite\s+de\s+dias)|cont[ií]nu[ao]|indeterminad|at[eé]\s+eu\s+(pausar|parar|desligar|cancelar)|n[aã]o\s+(vou\s+|quero\s+)?(definir|colocar|p[oô]r|ter)\s+(os\s+|uma?\s+)?(dias|data|prazo)`)
 )
 
 // looksLikeAdjustment diz se a mensagem pede mudança na proposta ("altere a idade para 40 a 56").
