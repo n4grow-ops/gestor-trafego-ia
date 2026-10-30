@@ -159,6 +159,8 @@ type Engine struct {
 	TeamGroup     TeamGroupSender
 	TeamGroupJID  string
 	AdminURL      string
+	// Mailer manda os avisos por e-mail aos administradores (ex.: Meta bloqueou o número). nil = sem e-mail.
+	Mailer Mailer
 	// Testador automático do app da Meta. MetaAppID monta o link de Funções no aviso à equipe.
 	MetaAppID string
 	// AppTesters lê os testadores do app (Graph API); nil = leitura a cada 5 min desligada.

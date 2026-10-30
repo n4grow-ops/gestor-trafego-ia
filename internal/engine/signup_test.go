@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/engine"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 )
 
 const signupBase = "https://cadastro.teste/c"
@@ -128,5 +129,31 @@ func TestWelcomeJobIsHumanText(t *testing.T) {
 	if spec.Kind != engine.JobSend || !ok || !s.Human || s.Voice || s.ConversationID != 7 || !strings.Contains(all, "Ana") ||
 		!strings.Contains(all, "ana@mail.com") || !strings.Contains(all, "o que a sua empresa faz") || strings.Contains(all, "anunciar primeiro") {
 		t.Fatalf("boas-vindas = %+v", spec)
+	}
+}
+
+// Zerar campanhas no painel: o cadastro fica, então a conversa nova segue com a Mia sem pedir cadastro.
+func TestResetCampaignsKeepsClientRegistered(t *testing.T) {
+	h := newSignupHarness(t)
+	h.complete()
+	h.reachApproval()
+	org := h.count(`SELECT organization_id FROM members LIMIT 1`)
+	rep, err := h.st.ResetCampaigns(ctx, int64(org), true, store.AdminAction{ActorEmail: "dono@meuanuncio.io", Action: "client_reset_campaigns",
+		TargetType: "organization", TargetID: "1"})
+	h.must(err)
+	if rep.Rows("conversations") != 1 || rep.Rows("campaign_drafts") == 0 {
+		t.Fatalf("zerar = %+v", rep)
+	}
+	calls := h.att.Calls()
+	h.att.Responses = append(h.att.Responses, turnOffer)
+	h.say("oi, quero anunciar de novo")
+	if h.att.Calls() == calls {
+		t.Fatal("cliente cadastrado não voltou a conversar com a IA")
+	}
+	if strings.Contains(h.wa.last().Text, signupBase) || h.count(`SELECT count(*) FROM signup_links`) != 0 {
+		t.Fatalf("pediu cadastro de novo: %q", h.wa.last().Text)
+	}
+	if n := h.count(`SELECT count(*) FROM conversations`); n != 1 {
+		t.Fatalf("conversas = %d", n)
 	}
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/engine"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/instagram"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/llm"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/mail"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/meta"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/mia"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/secretbox"
@@ -197,6 +198,13 @@ func run(log *slog.Logger) error {
 	if err := eng.EnsureDailyReport(ctx); err != nil {
 		log.Error("falha ao agendar relatório diário", "erro", err)
 	}
+	// Situação do número na Meta (pagamento, bloqueio): grava para o painel e avisa por e-mail.
+	if cfg.ResendAPIKey != "" {
+		eng.Mailer = mail.NewResend(cfg.ResendAPIKey, cfg.AlertEmailFrom)
+	}
+	if err := eng.EnsureWAHealth(ctx); err != nil {
+		log.Error("falha ao agendar a leitura da situação do WhatsApp", "erro", err)
+	}
 	if err := eng.EnsureTesterPoll(ctx); err != nil {
 		log.Error("falha ao agendar leitura dos testadores", "erro", err)
 	}
@@ -206,7 +214,7 @@ func run(log *slog.Logger) error {
 		"anuncios", eng.Storage != nil, "relatorio", eng.ReportPhone != "", "conexao_meta", eng.MetaConnectBaseURL != "",
 		"publicacao_meta", eng.Publisher != nil && eng.MetaTokenKey != nil,
 		"equipe_numeros", len(eng.TeamPhones), "equipe_grupo", eng.TeamGroup != nil,
-		"testador_auto", eng.AppTesters != nil, "post_instagram", eng.Instagram != nil)
+		"testador_auto", eng.AppTesters != nil, "email_avisos", eng.Mailer != nil, "post_instagram", eng.Instagram != nil)
 	return w.Run(ctx)
 }
 

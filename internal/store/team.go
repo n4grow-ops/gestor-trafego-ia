@@ -214,6 +214,15 @@ func (s *Store) TeamAlertPhones(ctx context.Context) ([]string, error) {
 	return out, nil
 }
 
+// AdminAlertEmails são os e-mails dos administradores ativos (avisos por e-mail).
+func (s *Store) AdminAlertEmails(ctx context.Context) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT email FROM team_members WHERE active AND role = $1 ORDER BY id`, RoleAdmin)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
+}
+
 func (s *Store) TouchTeamLogin(ctx context.Context, id int64) error {
 	_, err := s.pool.Exec(ctx, `UPDATE team_members SET last_login_at = now() WHERE id = $1`, id)
 	return err

@@ -512,6 +512,17 @@ func TestAdminClientActions(t *testing.T) {
 		t.Fatalf("prévia de zerar cliente real = %d %s", r.code, r.raw)
 	}
 
+	// Zerar campanhas: cadastro e pagamento ficam, registro com a ação própria.
+	if r := e.do("POST", "/api/clients/"+org+"/reset?escopo=campanhas", admin, map[string]string{"confirm": "ZERAR"}); r.code != 200 || r.body["applied"] != true {
+		t.Fatalf("zerar campanhas = %d %s", r.code, r.raw)
+	}
+	if r := e.do("GET", "/api/clients/"+org, admin, nil); r.code != 200 {
+		t.Fatalf("cliente depois de zerar campanhas = %d", r.code)
+	}
+	if clog, _ := e.st.AdminLog(ctx, store.AdminLogFilter{TargetType: "organization", TargetID: org}); len(clog) == 0 || clog[0].Action != "client_reset_campaigns" {
+		t.Fatalf("registro do zerar campanhas = %+v", clog)
+	}
+
 	// Conta de teste (sem pagamento): zera, e o registro vai junto.
 	testOrg, err := e.st.CreateOrganization(ctx, "Contato teste", "", 50, []string{"OUTCOME_ENGAGEMENT"})
 	if err != nil {
@@ -547,7 +558,7 @@ func TestAdminClientActions(t *testing.T) {
 	for _, l := range log {
 		actions = append(actions, l.Action)
 	}
-	if strings.Join(actions, ",") != "payment_record,client_signup_link" {
+	if strings.Join(actions, ",") != "client_reset_campaigns,payment_record,client_signup_link" {
 		t.Fatalf("ações registradas = %v", actions)
 	}
 }

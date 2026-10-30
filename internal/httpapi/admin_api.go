@@ -163,12 +163,21 @@ func (a *Admin) setBlocked(blocked bool) staffHandler {
 	}
 }
 
+// resetFunc: ?escopo=campanhas apaga só campanhas e conversa (cadastro fica); sem escopo, o cliente inteiro.
+func (a *Admin) resetFunc(r *http.Request) (func(context.Context, int64, bool, store.AdminAction) (store.ResetReport, error), string) {
+	if r.URL.Query().Get("escopo") == "campanhas" {
+		return a.Store.ResetCampaigns, "client_reset_campaigns"
+	}
+	return a.Store.ResetOrganization, "client_reset"
+}
+
 func (a *Admin) resetPreview(w http.ResponseWriter, r *http.Request, m store.TeamMember, _ adminSession) {
 	id, ok := pathID(w, r)
 	if !ok {
 		return
 	}
-	rep, err := a.Store.ResetOrganization(r.Context(), id, false, store.AdminAction{})
+	run, _ := a.resetFunc(r)
+	rep, err := run(r.Context(), id, false, store.AdminAction{})
 	if a.storeError(w, err) {
 		return
 	}
@@ -195,8 +204,9 @@ func (a *Admin) reset(w http.ResponseWriter, r *http.Request, m store.TeamMember
 		return
 	}
 	// O registro é gravado na mesma transação: se não gravar, não zera.
-	rep, err := a.Store.ResetOrganization(r.Context(), id, true, store.AdminAction{ActorID: m.ID, ActorEmail: m.Email,
-		Action: "client_reset", TargetType: "organization", TargetID: orgTarget(id), TargetLabel: row.Name, IP: clientIP(r)})
+	run, action := a.resetFunc(r)
+	rep, err := run(r.Context(), id, true, store.AdminAction{ActorID: m.ID, ActorEmail: m.Email,
+		Action: action, TargetType: "organization", TargetID: orgTarget(id), TargetLabel: row.Name, IP: clientIP(r)})
 	if a.storeError(w, err) {
 		return
 	}

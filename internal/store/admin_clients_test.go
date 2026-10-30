@@ -291,3 +291,50 @@ func TestResetContactsRefusesRealClient(t *testing.T) {
 		t.Fatalf("número de teste: %+v %d %v", rep, others, err)
 	}
 }
+
+func TestResetCampaignsKeepsRegistration(t *testing.T) {
+	st, f := seedClients(t)
+	audit := resetAudit("dono@meuanuncio.io")
+	audit.Action = "client_reset_campaigns"
+	_, err := f.pool.Exec(ctx, `INSERT INTO creatives (organization_id, draft_id, kind, storage_path, mime, size_bytes)
+		SELECT organization_id, id, 'image', 'x.jpg', 'image/jpeg', 10 FROM campaign_drafts WHERE organization_id = $1`, f.ready.OrgID)
+	must(t, err)
+	count := func(sql string) int {
+		t.Helper()
+		var n int
+		must(t, f.pool.QueryRow(ctx, sql, f.ready.OrgID).Scan(&n))
+		return n
+	}
+	subs := count(`SELECT count(*) FROM subscriptions WHERE organization_id = $1`)
+
+	rep, err := st.ResetCampaigns(ctx, f.ready.OrgID, true, audit)
+	must(t, err)
+	if !rep.Applied || rep.Rows("campaign_drafts") == 0 || rep.Rows("creatives") != 1 || rep.Rows("conversations") != 1 || rep.Rows("projects") == 0 {
+		t.Fatalf("zerar campanhas = %+v", rep)
+	}
+	// Cadastro, telefone, plano e conexão Meta continuam.
+	if _, err := st.ClientDetail(ctx, f.ready.OrgID); err != nil {
+		t.Fatalf("cadastro sumiu: %v", err)
+	}
+	if _, err := st.FindIdentity(ctx, "openwa", "5511900000002"); err != nil {
+		t.Fatalf("telefone sumiu: %v", err)
+	}
+	if n := count(`SELECT count(*) FROM meta_connections WHERE organization_id = $1`); n != 1 {
+		t.Fatalf("conexão Meta = %d", n)
+	}
+	if n := count(`SELECT count(*) FROM subscriptions WHERE organization_id = $1`); n != subs {
+		t.Fatalf("assinatura = %d, antes %d", n, subs)
+	}
+	if n := count(`SELECT count(*) FROM campaign_drafts WHERE organization_id = $1`) + count(`SELECT count(*) FROM projects WHERE organization_id = $1`); n != 0 {
+		t.Fatalf("sobrou campanha: %d", n)
+	}
+	log, err := st.AdminLog(ctx, store.AdminLogFilter{ActorEmail: "dono@meuanuncio.io"})
+	must(t, err)
+	if len(log) == 0 || log[0].Action != "client_reset_campaigns" {
+		t.Fatalf("registro = %+v", log)
+	}
+	// De novo: nada a apagar, sem erro.
+	if rep, err := st.ResetCampaigns(ctx, f.ready.OrgID, true, audit); err != nil || rep.Rows("conversations") != 0 {
+		t.Fatalf("de novo: %+v %v", rep, err)
+	}
+}

@@ -55,6 +55,20 @@ func realClient(ctx context.Context, tx pgx.Tx, orgIDs []int64) (bool, error) {
 // transação: sem registro, nada é apagado. Arquivos de anúncios no Storage e campanhas na Meta não
 // são apagados.
 func (s *Store) ResetOrganization(ctx context.Context, orgID int64, apply bool, audit AdminAction) (ResetReport, error) {
+	return s.resetOrg(ctx, orgID, apply, audit, resetOrganizations)
+}
+
+// ResetCampaigns apaga só o trabalho de campanha do cliente (projetos, propostas, anúncios, publicações
+// guardadas, conversa e o histórico de mensagens) e mantém o cadastro: organização, pessoas,
+// telefones, consentimento, plano, pagamentos, conexão Meta e preferências. Na próxima mensagem a Mia
+// recomeça a conversa com o cliente já cadastrado. Mesma simulação e registro do ResetOrganization.
+// Campanhas na Meta e arquivos no Storage não são apagados.
+func (s *Store) ResetCampaigns(ctx context.Context, orgID int64, apply bool, audit AdminAction) (ResetReport, error) {
+	return s.resetOrg(ctx, orgID, apply, audit, resetCampaignData)
+}
+
+func (s *Store) resetOrg(ctx context.Context, orgID int64, apply bool, audit AdminAction,
+	run func(context.Context, pgx.Tx, []int64, []string) (ResetReport, error)) (ResetReport, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return ResetReport{}, err
@@ -76,7 +90,7 @@ func (s *Store) ResetOrganization(ctx context.Context, orgID int64, apply bool, 
 	if err != nil {
 		return ResetReport{}, err
 	}
-	rep, err := resetOrganizations(ctx, tx, []int64{orgID}, phones)
+	rep, err := run(ctx, tx, []int64{orgID}, phones)
 	if err != nil {
 		return rep, err
 	}
@@ -151,6 +165,33 @@ func (s *Store) ResetContactsWith(ctx context.Context, phones []string, apply, u
 	}
 	rep.Applied = true
 	return rep, 0, nil
+}
+
+// resetCampaignData apaga o trabalho de campanha e a conversa das organizações, sem tocar no cadastro.
+func resetCampaignData(ctx context.Context, tx pgx.Tx, orgIDs []int64, phones []string) (ResetReport, error) {
+	rep := ResetReport{OrgIDs: orgIDs, Phones: phones}
+	idents := `SELECT w.id FROM whatsapp_identities w JOIN members m ON m.id = w.member_id WHERE m.organization_id = ANY($1)`
+	conv := `SELECT c.id FROM conversations c WHERE c.identity_id IN (` + idents + `)`
+	steps := []struct{ table, sql string }{
+		{"outbox_jobs", `DELETE FROM outbox_jobs WHERE status = 'pending' AND (payload->>'conversation_id') ~ '^[0-9]+$'
+			AND (payload->>'conversation_id')::bigint IN (` + conv + `)`},
+		{"tester_requests", `UPDATE tester_requests SET conversation_id = NULL WHERE conversation_id IN (` + conv + `)`},
+		{"meta_publications", `DELETE FROM meta_publications WHERE organization_id = ANY($1)`},
+		{"creatives", `DELETE FROM creatives WHERE organization_id = ANY($1)`},
+		{"approval_codes", `DELETE FROM approval_codes WHERE draft_id IN (SELECT id FROM campaign_drafts WHERE organization_id = ANY($1))`},
+		{"campaign_drafts", `DELETE FROM campaign_drafts WHERE organization_id = ANY($1)`},
+		{"messages", `DELETE FROM messages WHERE conversation_id IN (` + conv + `)`},
+		{"conversations", `DELETE FROM conversations WHERE id IN (` + conv + `)`},
+		{"projects", `DELETE FROM projects WHERE organization_id = ANY($1)`},
+	}
+	for _, st := range steps {
+		tag, err := tx.Exec(ctx, st.sql, orgIDs)
+		if err != nil {
+			return rep, fmt.Errorf("store: zerar campanhas %s: %w", st.table, err)
+		}
+		rep.Steps = append(rep.Steps, ResetStep{Table: st.table, Rows: tag.RowsAffected()})
+	}
+	return rep, nil
 }
 
 func resetOrganizations(ctx context.Context, tx pgx.Tx, orgIDs []int64, phones []string) (ResetReport, error) {

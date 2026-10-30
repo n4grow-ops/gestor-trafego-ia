@@ -125,7 +125,7 @@ const ACTIONS = {
   llm_failed: ['Falha na IA', 'err', 'alert'],
   login: ['Entrou no painel', 'info', 'out'], logout: ['Saiu do painel', 'info', 'out'],
   client_block: ['Bloqueou o cliente', 'warn', 'lock'], client_unblock: ['Desbloqueou o cliente', 'ok', 'unlock'],
-  client_signup_link: ['Reenviou o link de cadastro', 'info', 'link'], client_reset: ['Zerou o contato', 'err', 'trash'],
+  client_signup_link: ['Reenviou o link de cadastro', 'info', 'link'], client_reset: ['Apagou o cliente', 'err', 'trash'], client_reset_campaigns: ['Zerou campanhas e conversa', 'warn', 'trash'],
   conversation_takeover: ['Assumiu a conversa', 'warn', 'hand'], conversation_release: ['Devolveu a conversa à IA', 'ok', 'bot'],
   conversation_send: ['Respondeu pelo painel', 'info', 'send'], payment_record: ['Registrou pagamento', 'ok', 'money'],
   team_add: ['Adicionou à equipe', 'info', 'user-plus'], team_remove: ['Removeu da equipe', 'warn', 'trash'],
@@ -217,12 +217,17 @@ function enterApp() {
 $('#logout').addEventListener('click', async () => { try { await api('POST', '/logout'); } catch { /* sai mesmo assim */ } showLogin('Você saiu do painel.', false); });
 
 /* ===================== status do topo ===================== */
+// Linha 'meta-envio': situação do número na Meta (pagamento, bloqueio), lida pelo worker a cada 15 min.
+const META_SEND = 'meta-envio';
+const botStatus = (list, provider) => { const l = (list || []).filter(w => w.Provider !== META_SEND); return l.find(w => w.Provider === provider) || l[0]; };
+const metaStatus = list => (list || []).find(w => w.Provider === META_SEND);
+const metaBlockedAlert = m => m && !m.Connected ? `<div class="alert">${icon('alert', 'ico')}<p><b>A Meta está bloqueando as mensagens que o bot inicia</b> desde ${esc(dt(m.UpdatedAt))}: avisos da equipe, lembretes e modelos não chegam. Respostas a quem escreveu nas últimas 24 h continuam saindo.${m.Reason ? '<br>Motivo: ' + esc(m.Reason) + (m.Code ? ' (código ' + m.Code + ')' : '') + '.' : ''}</p><a class="btn sm" href="https://business.facebook.com/settings/whatsapp-business-accounts" target="_blank" rel="noopener">Abrir na Meta</a></div>` : '';
 function setPulse(health, inbox) {
   if (health) {
     state.health = health;
-    const wa = (health.whatsapp || []).find(w => w.Provider === health.provider) || (health.whatsapp || [])[0];
-    $('#dot-wa').className = 'dot ' + (!wa ? 'off' : wa.Connected ? '' : 'err');
-    $('#pill-wa').title = !wa ? 'Sem aviso de conexão do provedor ainda' : wa.Connected ? 'Conectado' : 'Desconectado';
+    const wa = botStatus(health.whatsapp, health.provider), metaSend = metaStatus(health.whatsapp);
+    $('#dot-wa').className = 'dot ' + (!wa ? 'off' : !wa.Connected ? 'err' : metaSend && !metaSend.Connected ? 'warn' : '');
+    $('#pill-wa').title = !wa ? 'Sem aviso de conexão do provedor ainda' : !wa.Connected ? 'Desconectado' : metaSend && !metaSend.Connected ? 'Conectado, mas a Meta bloqueia os avisos que o bot inicia' : 'Conectado';
     const w = health.worker || {};
     const late = w.oldest_pending_at && (Date.now() - new Date(w.oldest_pending_at)) > 2 * 60000;
     $('#dot-worker').className = 'dot ' + (!health.db_ok ? 'err' : late ? 'err' : w.failed_last_24h ? 'warn' : '');
@@ -281,7 +286,7 @@ views.visao = async view => {
   const d = await api('GET', '/overview?days=' + state.days);
   const ov = d.overview, h = d.health, s = ov.series;
   setPulse(h, ov.inbox);
-  const wa = (h.whatsapp || []).find(w => w.Provider === h.provider) || (h.whatsapp || [])[0];
+  const wa = botStatus(h.whatsapp, h.provider), metaSend = metaStatus(h.whatsapp);
   const hour = new Date().getHours();
   const hello = (hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite') + ', ' + state.me.name.split(' ')[0];
   const sliceN = arr => arr.slice(-Math.max(state.days, 7));
@@ -298,6 +303,7 @@ views.visao = async view => {
   funnel.forEach((f, i) => { if (i && funnel[i - 1].count && f.count <= funnel[i - 1].count) { const p = f.count / funnel[i - 1].count; if (!worst || p < worst.p) worst = { i, p }; } });
   const alerts = [];
   if (wa && !wa.Connected) alerts.push(`<div class="alert">${icon('alert', 'ico')}<p><b>O WhatsApp do bot está desconectado</b> desde ${esc(dt(wa.UpdatedAt))}${wa.Reason ? ' (' + esc(wa.Reason) + ')' : ''}. Clientes não recebem respostas.</p><a class="btn sm" href="#/whatsapp">Ver WhatsApp</a></div>`);
+  if (metaBlockedAlert(metaSend)) alerts.push(metaBlockedAlert(metaSend));
   if (ov.inbox.unassigned) alerts.push(`<div class="alert warn">${icon('hand', 'ico')}<p><b>${ov.inbox.unassigned} ${ov.inbox.unassigned > 1 ? 'clientes pediram' : 'cliente pediu'} atendimento humano</b> e ninguém assumiu ainda.</p><a class="btn sm warn" href="#/conversas" data-conv-filter="humano">Atender agora</a></div>`);
   if (!h.db_ok) alerts.push(`<div class="alert">${icon('db', 'ico')}<p><b>Banco sem resposta.</b> Os números abaixo podem estar desatualizados.</p></div>`);
   const w = h.worker || {};
@@ -441,7 +447,8 @@ function renderDrawer(tab) {
       ${c.registration === 'pending' && state.me.signup_enabled ? `<button class="btn sm" type="button" data-signup="${c.org_id}">${icon('link')}Reenviar cadastro</button>` : ''}
       ${c.conversation_id ? `<button class="btn sm" type="button" data-goto-conv="${c.conversation_id}">${icon('chat')}Abrir conversa</button>` : ''}
       ${c.status === 'blocked' ? `<button class="btn sm" type="button" data-block="unblock">${icon('unlock')}Desbloquear</button>` : `<button class="btn sm" type="button" data-block="block">${icon('lock')}Bloquear</button>`}
-      ${admin ? `<button class="btn sm danger" type="button" data-reset-ask>${icon('trash')}Zerar contato</button>` : ''}
+      ${admin ? `<button class="btn sm danger" type="button" data-reset-ask="campanhas" title="Apaga projetos, campanhas e conversa. O cadastro e a conexão Meta ficam.">${icon('trash')}Zerar campanhas</button>
+      <button class="btn sm danger" type="button" data-reset-ask="tudo" title="Apaga o cliente inteiro. O número refaz o cadastro do zero.">${icon('trash')}Apagar cliente</button>` : ''}
       <div id="confirm-slot" class="full"></div>
     </div>`;
 }
@@ -508,15 +515,20 @@ function closeDrawer() {
   $('#drawer-backdrop').classList.remove('on');
   state.drawer = null;
 }
-async function askReset(btn) {
+const resetPath = (c, scope) => '/clients/' + c.org_id + '/reset' + (scope === 'campanhas' ? '?escopo=campanhas' : '');
+async function askReset(btn, scope) {
   const c = state.drawer;
-  const prev = await act(btn, () => api('GET', '/clients/' + c.org_id + '/reset'));
+  const prev = await act(btn, () => api('GET', resetPath(c, scope)));
   if (!prev) return;
   const items = prev.steps.filter(s => s.rows > 0).map(s => `<li>${esc(TABLES[s.table] || s.table)}: ${num(s.rows)}</li>`).join('');
-  $('#confirm-slot').innerHTML = `<div class="confirm" role="alertdialog" aria-label="Confirmar zerar contato">
-    <p><b>Zerar ${esc(c.name)}?</b> Apaga cadastro, conversa, projetos, assinatura, pagamentos e conexão Meta de ${esc(prev.phones.map(phone).join(', '))}. O número volta como contato novo e refaz o cadastro do zero. Campanhas que já estão na Meta continuam lá (pause no Gerenciador se precisar). Não dá para desfazer.</p>
+  const camp = scope === 'campanhas';
+  const what = camp
+    ? `<p><b>Zerar campanhas de ${esc(c.name)}?</b> Apaga projetos, propostas, anúncios, publicações guardadas e a conversa com o histórico de mensagens. O cadastro, o plano, os pagamentos e a conexão Meta continuam: na próxima mensagem a Mia recomeça já com o cliente cadastrado. Campanhas que já estão na Meta continuam lá (pause no Gerenciador se precisar). Não dá para desfazer.</p>`
+    : `<p><b>Apagar ${esc(c.name)}?</b> Apaga cadastro, conversa, projetos, assinatura, pagamentos e conexão Meta de ${esc(prev.phones.map(phone).join(', '))}. O número volta como contato novo e refaz o cadastro do zero. Campanhas que já estão na Meta continuam lá (pause no Gerenciador se precisar). Não dá para desfazer.</p>`;
+  $('#confirm-slot').innerHTML = `<div class="confirm" role="alertdialog" aria-label="${camp ? 'Confirmar zerar campanhas' : 'Confirmar apagar cliente'}">
+    ${what}
     <ul>${items}</ul>
-    <div class="actions"><button class="btn sm ghost" type="button" data-reset-no>Cancelar</button><button class="btn sm danger solid" type="button" data-reset-yes>Zerar de vez</button></div></div>`;
+    <div class="actions"><button class="btn sm ghost" type="button" data-reset-no>Cancelar</button><button class="btn sm danger solid" type="button" data-reset-yes="${camp ? 'campanhas' : 'tudo'}">${camp ? 'Zerar campanhas' : 'Apagar de vez'}</button></div></div>`;
   $('[data-reset-no]').focus();
 }
 
@@ -723,19 +735,21 @@ async function savePayment(e) {
 /* ---------- WhatsApp ---------- */
 views.whatsapp = async view => {
   const d = await api('GET', '/whatsapp');
-  const st = d.stats, wa = st.statuses.find(s => s.Provider === d.provider) || st.statuses[0];
+  const st = d.stats, wa = botStatus(st.statuses, d.provider), metaSend = metaStatus(st.statuses);
   const cls = !wa ? 'unknown' : wa.Connected ? '' : 'down';
   const max = Math.max(1, ...st.days.map(x => x.in + x.out));
   const wd = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
   view.innerHTML = `<div class="page">
     <div class="page-head"><div><h1>WhatsApp do bot</h1><p>Número que atende todos os clientes</p></div></div>
+    ${metaBlockedAlert(metaSend)}
     <div class="wa-grid">
       <section class="panel"><div class="wa-state ${cls}"><span class="big-ico">${icon(!wa ? 'clock' : wa.Connected ? 'wa' : 'alert', 'ico')}</span>
         <div><h2>${!wa ? 'Sem aviso ainda' : wa.Connected ? 'Conectado' : 'Desconectado'}</h2><p>${!wa ? 'O provedor ainda não mandou aviso de conexão para este servidor.' : (wa.Connected ? 'Desde ' : 'Caiu em ') + esc(dt(wa.UpdatedAt)) + (wa.Reason ? ' · ' + esc(wa.Reason) : '') + (wa.Code ? ' · código ' + wa.Code : '')}</p></div></div>
         <div class="panel-body"><dl class="kv">
           <dt>Número do bot</dt><dd class="num">${d.bot_number ? esc(phone(d.bot_number)) : '<span class="faint">BOT_WHATSAPP_NUMBER vazio</span>'}</dd>
           <dt>Provedor</dt><dd>${esc(d.provider)}${d.window_limited ? ' · Cloud API (janela de 24 h)' : ''}</dd>
-          ${st.statuses.filter(s => s !== wa).map(s => `<dt>${esc(s.Provider)}</dt><dd>${s.Connected ? 'conectado' : 'desconectado'} · ${esc(dt(s.UpdatedAt))}</dd>`).join('')}
+          ${metaSend ? `<dt>Avisos pela Meta</dt><dd>${metaSend.Connected ? '<span class="chip ok">liberados</span>' : '<span class="chip warn">bloqueados</span>'} · ${esc(dt(metaSend.UpdatedAt))}</dd>` : ''}
+          ${st.statuses.filter(s => s !== wa && s !== metaSend).map(s => `<dt>${esc(s.Provider)}</dt><dd>${s.Connected ? 'conectado' : 'desconectado'} · ${esc(dt(s.UpdatedAt))}</dd>`).join('')}
           <dt>Falhas em 24 h</dt><dd>${st.failed.length ? `<span class="chip warn">${st.failed.length} envio(s)</span>` : '<span class="chip ok">nenhuma</span>'}</dd></dl>
           ${wa && !wa.Connected ? '<p class="muted small">Para reconectar, abra o painel do provedor (Wame ou WAHA) e leia o QR com o celular do bot. O estado aqui muda sozinho quando o aviso de conexão chegar.</p>' : ''}</div></section>
       <section class="panel"><div class="panel-head"><h2>Mensagens por dia</h2><span class="legend"><span><i class="l-rev"></i>enviadas</span><span><i class="l-in"></i>recebidas</span></span></div>
@@ -1025,12 +1039,13 @@ document.addEventListener('click', async e => {
     if (ok) { toast(ds.block === 'block' ? c.name + ' bloqueado: o bot para de responder.' : c.name + ' desbloqueado.', ds.block === 'block' ? 'warn' : 'ok', ds.block === 'block' ? 'lock' : 'unlock'); state.drawer.status = ok.status; renderDrawer(0); if (state.route === 'clientes') rerender(); }
     return;
   }
-  if (ds.resetAsk !== undefined) { askReset(t); return; }
+  if (ds.resetAsk !== undefined) { askReset(t, ds.resetAsk); return; }
   if (ds.resetNo !== undefined) { $('#confirm-slot').innerHTML = ''; return; }
   if (ds.resetYes !== undefined) {
     const c = state.drawer;
-    const ok = await act(t, () => api('POST', '/clients/' + c.org_id + '/reset', { confirm: 'ZERAR' }));
-    if (ok) { closeDrawer(); toast(c.name + ' zerado. O número volta como contato novo.', 'warn', 'trash'); rerender(); }
+    const camp = ds.resetYes === 'campanhas';
+    const ok = await act(t, () => api('POST', resetPath(c, ds.resetYes), { confirm: 'ZERAR' }));
+    if (ok) { closeDrawer(); toast(camp ? c.name + ': campanhas e conversa zeradas. O cadastro continua.' : c.name + ' apagado. O número volta como contato novo.', 'warn', 'trash'); rerender(); }
     return;
   }
   if (ds.takeover !== undefined) {

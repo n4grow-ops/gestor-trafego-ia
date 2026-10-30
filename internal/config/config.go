@@ -38,6 +38,10 @@ type Config struct {
 	TeamGroupWameKey   string
 	TeamGroupWameToken string
 
+	// E-mail de aviso aos administradores (Resend). Sem chave, não manda e-mail.
+	ResendAPIKey   string
+	AlertEmailFrom string
+
 	// Cadastro automático de número novo.
 	AutoSignup       bool
 	SignupMaxBudget  float64
@@ -172,6 +176,9 @@ func Load(getenv func(string) string) Config {
 		TeamGroupJID:       groupJID(getenv("TEAM_GROUP_JID")),
 		TeamGroupWameKey:   strings.TrimSpace(getenv("TEAM_GROUP_WAME_KEY")),
 		TeamGroupWameToken: strings.TrimSpace(getenv("TEAM_GROUP_WAME_TOKEN")),
+
+		ResendAPIKey:   strings.TrimSpace(getenv("RESEND_API_KEY")),
+		AlertEmailFrom: orDefault(strings.TrimSpace(getenv("ALERT_EMAIL_FROM")), "meu anúncio.io <avisos@meuanuncio.io>"),
 	}
 }
 
