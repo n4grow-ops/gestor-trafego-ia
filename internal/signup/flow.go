@@ -181,7 +181,7 @@ func FlowJSON(termsURL, privacyURL string) ([]byte, error) {
 			),
 			screen("CONCLUIR", "Concluir", true,
 				text("referral_source", "Como conheceu a gente? (opcional)", false, "text"),
-				obj{"type": "TextBody", "text": "Você começa no plano Free, sem custo."},
+				obj{"type": "TextBody", "text": "Depois de concluir, você escolhe o seu plano aqui no WhatsApp."},
 				obj{"type": "EmbeddedLink", "text": "Ler os Termos de Uso", "on-click-action": obj{"name": "open_url", "url": termsURL}},
 				obj{"type": "EmbeddedLink", "text": "Ler a Política de Privacidade", "on-click-action": obj{"name": "open_url", "url": privacyURL}},
 				obj{"type": "OptIn", "name": "accept_terms", "label": "Li e aceito os Termos e a Política de Privacidade", "required": true},
