@@ -85,7 +85,7 @@ func run(log *slog.Logger) error {
 		reg := &httpapi.Signup{
 			Store: st, Auth: signup.NewSupabaseAuth(cfg.SupabaseURL, cfg.SupabasePublishableKey), CNPJ: signup.NewBrasilAPI(),
 			SupabaseURL: cfg.SupabaseURL, SupabaseKey: cfg.SupabasePublishableKey, BotNumber: cfg.BotWhatsAppNumber,
-			TermsVersion: termsVersion, Log: log, Limiter: httpapi.NewLimiter(), Mia: miaCache,
+			TermsVersion: termsVersion, Log: log, Limiter: httpapi.NewLimiter(), Mia: miaCache, Billing: cfg.AsaasEnabled(),
 		}
 		if cfg.BotWhatsAppNumber == "" {
 			log.Warn("BOT_WHATSAPP_NUMBER vazio: o botão de voltar ao WhatsApp fica sem número")
@@ -104,6 +104,11 @@ func run(log *slog.Logger) error {
 		}
 		routes = append(routes, mc.Register)
 	}
+	// Webhook do Asaas: sem ASAAS_WEBHOOK_TOKEN responde 503 (desligado).
+	routes = append(routes, (&httpapi.AsaasWebhook{Store: st, Token: cfg.AsaasWebhookToken, Log: log}).Register)
+	if cfg.AsaasEnabled() && cfg.AsaasWebhookToken == "" {
+		log.Warn("ASAAS_API_KEY sem ASAAS_WEBHOOK_TOKEN: o pagamento não libera ninguém (webhook desligado)")
+	}
 	adminMode := cfg.AdminMode()
 	if adminMode != "" {
 		admin, err := newAdmin(ctx, cfg, st, pool, wa, log, miaCache)
@@ -115,7 +120,7 @@ func run(log *slog.Logger) error {
 		log.Warn("painel desligado: falta ADMIN_SESSION_KEY (32+ caracteres) com SUPABASE_URL e SUPABASE_PUBLISHABLE_KEY")
 	}
 	log.Info("api configurada", "cadastro", cfg.SignupEnabled(), "conexao_meta", cfg.MetaConnectEnabled(),
-		"painel", adminMode, "painel_host", cfg.AdminHost)
+		"painel", adminMode, "painel_host", cfg.AdminHost, "cobranca", cfg.AsaasEnabled(), "webhook_asaas", cfg.AsaasWebhookToken != "")
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           httpapi.WithAdminHost(cfg.AdminHost, httpapi.NewMux(pool, webhook, routes...)),

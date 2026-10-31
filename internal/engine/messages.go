@@ -168,4 +168,20 @@ const (
 	msgTeamTesterOutside     = "🧪 Testador: %s, mas o cliente está fora da janela de 24 h — %s (%s), WhatsApp %s. ID/usuário: %s. Mande o link de conexão pelo painel/WhatsApp."
 
 	msgSignupOwner = "Oi! Antes de começar, o cadastro da conta precisa ser feito pelo responsável. Pede pra ele mandar uma mensagem aqui, que eu envio o link."
+
+	// Cobrança (Asaas): só Pix e cartão, assinatura mensal.
+	msgPlanNone       = "Você ainda não tem um plano ativo. Pra liberar a Mia, escolha um dos planos:"
+	msgPlanPick       = "Agora é só escolher o seu plano pra liberar a Mia:"
+	msgPlanReply      = "Responda com o número do plano."
+	msgPlanChosen     = "Ótimo, plano *%s* (%s/mês). Você prefere pagar por *Pix* ou *cartão*?"
+	msgPlanCheckout   = "Aqui está o link pra pagar o plano *%s* por %s:\n%s\n\nAssim que o pagamento confirmar, eu libero tudo por aqui."
+	msgPlanStillOpen  = "Seu link de pagamento continua aqui:\n%s\n\nAssim que o pagamento confirmar, eu libero o sistema. Se quiser trocar de plano, é só me dizer o nome dele (%s)."
+	msgPlanLinkSoon   = "Estou gerando o seu link de pagamento, ele sai em instantes. Se não chegar, a nossa equipe já foi avisada e vai te ajudar por aqui."
+	msgPlanPaid       = "Pagamento confirmado ✅ Seu plano *%s* está liberado!\n\nPra deixar seus anúncios certeiros, preciso conhecer bem o seu negócio. Pra começar: o que a sua empresa faz? Me conta os principais produtos ou serviços."
+	msgWelcomePlans   = "Cadastro concluído, %s! (e-mail %s; se não foi você, é só avisar aqui.)"
+	msgPlanOverdue    = "Sua mensalidade do meu anúncio venceu. Pague pelo link pra não travar a criação de campanhas novas:\n%s\n\nAs campanhas que já estão no ar seguem rodando."
+	msgPlanOverdueNL  = "Sua mensalidade do meu anúncio venceu. Me chama aqui que eu te mando o link pra pagar. As campanhas que já estão no ar seguem rodando."
+	msgPlanPastDue    = "Sua mensalidade está em atraso, então não consigo criar campanha nova agora. Assim que o pagamento confirmar, eu libero na hora. As campanhas que já estão no ar continuam rodando."
+	msgPlanPastDueURL = "Sua mensalidade está em atraso, então não consigo criar campanha nova agora. Pague pelo link e eu libero assim que confirmar:\n%s\n\nAs campanhas que já estão no ar continuam rodando."
+	msgTeamBilling    = "falha no Asaas ao gerar a cobrança do plano %s (%s): %s"
 )

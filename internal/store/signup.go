@@ -124,6 +124,9 @@ type Registration struct {
 	UserAgent       string
 	// Welcome monta a mensagem de boas-vindas no WhatsApp, enfileirada na mesma transação.
 	Welcome func(convID int64, chatID, fullName, email string) JobSpec
+	// Pending: cobrança ligada; a assinatura nasce pending e só libera quando o pagamento confirma.
+	// Assinatura já liberada (cliente trazido pela equipe) fica como está.
+	Pending bool
 }
 
 type RegistrationResult struct {
@@ -216,9 +219,13 @@ func (s *Store) CompleteRegistration(ctx context.Context, r Registration) (Regis
 			return RegistrationResult{}, fmt.Errorf("store: aceite: %w", err)
 		}
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO subscriptions (organization_id, plan_code, status) VALUES ($1, $2, 'active')
-		ON CONFLICT (organization_id) DO UPDATE SET plan_code = excluded.plan_code, status = 'active', updated_at = now()`,
-		res.OrgID, r.PlanCode); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO subscriptions (organization_id, plan_code, status)
+		VALUES ($1, $2, CASE WHEN $3 THEN 'pending' ELSE 'active' END)
+		ON CONFLICT (organization_id) DO UPDATE SET
+			plan_code = CASE WHEN $3 AND subscriptions.status IN ('active', 'trialing', 'past_due') THEN subscriptions.plan_code ELSE excluded.plan_code END,
+			status = CASE WHEN NOT $3 THEN 'active' WHEN subscriptions.status IN ('active', 'trialing', 'past_due') THEN subscriptions.status ELSE 'pending' END,
+			updated_at = now()`,
+		res.OrgID, r.PlanCode, r.Pending); err != nil {
 		return RegistrationResult{}, fmt.Errorf("store: assinatura: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `UPDATE signup_links SET used_at = now() WHERE id = $1`, linkID); err != nil {

@@ -45,6 +45,8 @@ type Signup struct {
 	Log          *slog.Logger
 	Limiter      *Limiter   // nil = sem limite (só em testes)
 	Mia          *mia.Cache // texto das boas-vindas; nil = padrão
+	// Billing: cobrança pelo Asaas ligada; a assinatura nasce pending e os planos vão depois das boas-vindas.
+	Billing bool
 }
 
 func (s *Signup) Register(mux *http.ServeMux) {
@@ -214,11 +216,20 @@ func (s *Signup) submit(w http.ResponseWriter, r *http.Request) {
 	if body.Plan == "" {
 		body.Plan = "free"
 	}
-	_, err = s.Store.CompleteRegistration(r.Context(), store.Registration{
+	reg := store.Registration{
 		TokenHash: signup.HashToken(r.PathValue("token")), AuthUserID: user.ID, Email: user.Email,
 		EmailVerifiedAt: user.VerifiedAt, Form: form, PlanCode: body.Plan, TermsVersion: s.TermsVersion,
 		IP: clientIP(r), UserAgent: truncate(r.UserAgent(), 300), Welcome: engine.WelcomeJobFor(s.Mia.Get(r.Context())),
-	})
+	}
+	if s.Billing {
+		plans, err := s.Store.Plans(r.Context())
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		reg.Pending, reg.Welcome = true, engine.WelcomeWithPlansFor(s.Mia.Get(r.Context()), plans)
+	}
+	_, err = s.Store.CompleteRegistration(r.Context(), reg)
 	if errors.Is(err, store.ErrNotOwner) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "somente_responsavel"})
 		return

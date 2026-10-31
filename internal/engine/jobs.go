@@ -101,6 +101,8 @@ func (e *Engine) HandleJob(ctx context.Context, job store.Job) error {
 		return e.testerPoll(ctx)
 	case JobWAHealth:
 		return e.waHealth(ctx)
+	case JobBillingNotify:
+		return e.billingNotify(ctx, job.Payload)
 	case JobTesterResolve:
 		return e.testerResolve(ctx, job.Payload)
 	case JobCreativesPreview:

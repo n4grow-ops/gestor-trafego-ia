@@ -70,10 +70,19 @@ func (e *Engine) signupFlowAnswer(ctx context.Context, ident store.Identity, con
 	if err != nil {
 		return err
 	}
-	_, err = e.Store.CompleteRegistration(ctx, store.Registration{
+	reg := store.Registration{
 		TokenHash: signup.HashToken(sub.Token), Email: sub.Email, Form: form, PlanCode: "free",
 		TermsVersion: e.TermsVersion, UserAgent: "whatsapp-flow", Welcome: WelcomeJobFor(e.miaConfig(ctx)),
-	})
+	}
+	// Cobrança ligada: a assinatura nasce pending e a lista de planos sai logo depois das boas-vindas.
+	if e.Billing != nil {
+		plans, err := e.Store.Plans(ctx)
+		if err != nil {
+			return err
+		}
+		reg.Pending, reg.Welcome = true, WelcomeWithPlansFor(e.miaConfig(ctx), plans)
+	}
+	_, err = e.Store.CompleteRegistration(ctx, reg)
 	switch {
 	case errors.Is(err, store.ErrAlreadyRegistered):
 		return e.send(ctx, conv, msgSignupDone)

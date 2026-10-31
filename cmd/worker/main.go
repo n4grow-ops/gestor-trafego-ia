@@ -13,6 +13,7 @@ import (
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/attendant"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/manager"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/billing/asaas"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/config"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/copylab"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/db"
@@ -202,6 +203,10 @@ func run(log *slog.Logger) error {
 	if cfg.ResendAPIKey != "" {
 		eng.Mailer = mail.NewResend(cfg.ResendAPIKey, cfg.AlertEmailFrom)
 	}
+	// Cobrança pelo Asaas: sem chave, o cadastro ativa o plano Free como antes.
+	if cfg.AsaasEnabled() {
+		eng.Billing = asaas.New(cfg.AsaasAPIKey, cfg.AsaasEnv)
+	}
 	if err := eng.EnsureWAHealth(ctx); err != nil {
 		log.Error("falha ao agendar a leitura da situação do WhatsApp", "erro", err)
 	}
@@ -214,7 +219,7 @@ func run(log *slog.Logger) error {
 		"anuncios", eng.Storage != nil, "relatorio", eng.ReportPhone != "", "conexao_meta", eng.MetaConnectBaseURL != "",
 		"publicacao_meta", eng.Publisher != nil && eng.MetaTokenKey != nil,
 		"equipe_numeros", len(eng.TeamPhones), "equipe_grupo", eng.TeamGroup != nil,
-		"testador_auto", eng.AppTesters != nil, "email_avisos", eng.Mailer != nil, "post_instagram", eng.Instagram != nil)
+		"testador_auto", eng.AppTesters != nil, "email_avisos", eng.Mailer != nil, "cobranca", cfg.AsaasEnabled(), "asaas_env", cfg.AsaasEnv, "post_instagram", eng.Instagram != nil)
 	return w.Run(ctx)
 }
 

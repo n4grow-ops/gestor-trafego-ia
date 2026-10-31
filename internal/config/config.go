@@ -42,6 +42,12 @@ type Config struct {
 	ResendAPIKey   string
 	AlertEmailFrom string
 
+	// Cobrança pelo Asaas (assinatura mensal, Pix e cartão). Sem chave, nada muda: o cadastro ativa o
+	// plano Free. AsaasEnv: sandbox (padrão) ou producao. O token confere o webhook (/webhooks/asaas).
+	AsaasAPIKey       string
+	AsaasEnv          string
+	AsaasWebhookToken string
+
 	// Cadastro automático de número novo.
 	AutoSignup       bool
 	SignupMaxBudget  float64
@@ -113,6 +119,9 @@ func (c Config) SignupEnabled() bool {
 	return c.PublicBaseURL != "" && c.SupabaseURL != "" && c.SupabasePublishableKey != ""
 }
 
+// AsaasEnabled diz se a cobrança pelo Asaas está ligada.
+func (c Config) AsaasEnabled() bool { return c.AsaasAPIKey != "" }
+
 // MetaConnectEnabled diz se a conexão da conta Meta está configurada.
 func (c Config) MetaConnectEnabled() bool {
 	return c.PublicBaseURL != "" && c.MetaAppID != "" && c.MetaAppSecret != "" && c.MetaLoginConfigID != "" && c.MetaTokenKey != ""
@@ -179,6 +188,10 @@ func Load(getenv func(string) string) Config {
 
 		ResendAPIKey:   strings.TrimSpace(getenv("RESEND_API_KEY")),
 		AlertEmailFrom: orDefault(strings.TrimSpace(getenv("ALERT_EMAIL_FROM")), "meu anúncio.io <avisos@meuanuncio.io>"),
+
+		AsaasAPIKey:       strings.TrimSpace(getenv("ASAAS_API_KEY")),
+		AsaasEnv:          orDefault(strings.ToLower(strings.TrimSpace(getenv("ASAAS_ENV"))), "sandbox"),
+		AsaasWebhookToken: strings.TrimSpace(getenv("ASAAS_WEBHOOK_TOKEN")),
 	}
 }
 

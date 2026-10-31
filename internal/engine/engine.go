@@ -125,6 +125,10 @@ type Engine struct {
 	// Anúncios (imagens e vídeos) pedidos depois da aprovação. Sem Storage, a aprovação encerra a conversa.
 	Storage Storage
 
+	// Cobrança pelo Asaas: sem plano liberado, a Mia manda os planos e o link de pagamento antes de
+	// atender. nil = desligada (o cadastro ativa o plano Free, como antes).
+	Billing BillingProvider
+
 	// Relatório diário às 8 h para este número. Vazio = sem relatório.
 	ReportPhone string
 
@@ -272,6 +276,12 @@ func (e *Engine) HandleInbound(ctx context.Context, in whatsapp.Inbound) error {
 	}
 	if err != nil {
 		return err
+	}
+	// Portão do plano (cobrança ligada): sem plano liberado, nada chega à Mia. Atendimento humano passa.
+	if e.Billing != nil && conv.State != store.StateNeedsHuman {
+		if handled, err := e.planGate(ctx, ident, conv, in, text); handled || err != nil {
+			return err
+		}
 	}
 	if e.Humanize {
 		id, err := e.addInbound(ctx, conv.ID, in, text)
@@ -657,6 +667,22 @@ func (e *Engine) requestProposal(ctx context.Context, ident store.Identity, conv
 				return err
 			}
 			return e.send(ctx, conv, fmt.Sprintf(msgCampaignLimit, q.Max, q.Plan))
+		}
+		// Mensalidade em atraso há mais de 3 dias: campanha nova espera o pagamento (as que rodam seguem).
+		blocked, link, err := e.pastDueBlocked(ctx, ident.OrgID)
+		if err != nil {
+			return err
+		}
+		if blocked {
+			noteAction(ctx, "mensalidade em atraso: campanha nova barrada")
+			e.audit(ctx, ident.OrgID, member(ident), "campaign_past_due", nil)
+			if err := e.Store.UpdateConversation(ctx, conv.ID, store.StateCollecting, f); err != nil {
+				return err
+			}
+			if link != "" {
+				return e.send(ctx, conv, fmt.Sprintf(msgPlanPastDueURL, link))
+			}
+			return e.send(ctx, conv, msgPlanPastDue)
 		}
 	}
 	if adjustment != "" {
