@@ -47,7 +47,8 @@ func TestAdminPlansListWithSubscribers(t *testing.T) {
 
 	plans, err := st.AdminPlans(ctx)
 	must(t, err)
-	if len(plans) != 3 || plans[0].Code != "free" || plans[1].Code != "starter" {
+	// 3 da lista + o plano secreto de teste (0058).
+	if len(plans) != 4 || plans[0].Code != "free" || plans[1].Code != "starter" {
 		t.Fatalf("planos = %+v", plans)
 	}
 	sp := plans[1]
