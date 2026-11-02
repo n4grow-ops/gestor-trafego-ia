@@ -207,6 +207,9 @@ func run(log *slog.Logger) error {
 	if cfg.AsaasEnabled() {
 		eng.Billing = asaas.New(cfg.AsaasAPIKey, cfg.AsaasEnv)
 	}
+	if cfg.CheckoutEnabled() {
+		eng.CheckoutBaseURL = cfg.PublicBaseURL + "/pagar"
+	}
 	if err := eng.EnsureWAHealth(ctx); err != nil {
 		log.Error("falha ao agendar a leitura da situação do WhatsApp", "erro", err)
 	}
