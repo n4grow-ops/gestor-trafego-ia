@@ -111,6 +111,20 @@ func (s *Store) Plans(ctx context.Context) ([]Plan, error) {
 	})
 }
 
+// SecretPlans são os planos ocultos e disponíveis: fora da lista, valem só com o código exato no WhatsApp.
+func (s *Store) SecretPlans(ctx context.Context) ([]Plan, error) {
+	rows, err := s.pool.Query(ctx, `SELECT code, name, price_cents, currency, daily_message_limit,
+		max_daily_budget_brl::float8, max_projects, max_campaigns_month, available FROM plans WHERE NOT visible AND available ORDER BY code`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Plan, error) {
+		var p Plan
+		err := r.Scan(&p.Code, &p.Name, &p.PriceCents, &p.Currency, &p.DailyMessageLimit, &p.MaxDailyBudgetBRL, &p.MaxProjects, &p.MaxCampaignsMonth, &p.Available)
+		return p, err
+	})
+}
+
 // Registration é a conclusão do cadastro. Form já normalizado; e-mail e id vêm do Supabase Auth.
 type Registration struct {
 	TokenHash       string

@@ -70,7 +70,7 @@ func (s *Store) BillingState(ctx context.Context, orgID int64) (BillingState, er
 // liberada). Troca de plano zera a forma e o link: a cobrança antiga é trocada na escolha da forma.
 func (s *Store) ChooseBillingPlan(ctx context.Context, orgID int64, planCode string) error {
 	var ok bool
-	if err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM plans WHERE code = $1 AND available AND visible)`, planCode).Scan(&ok); err != nil {
+	if err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM plans WHERE code = $1 AND available)`, planCode).Scan(&ok); err != nil {
 		return err
 	}
 	if !ok {

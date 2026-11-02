@@ -58,7 +58,17 @@ func (e *Engine) planGate(ctx context.Context, ident store.Identity, conv store.
 	if err != nil {
 		return true, err
 	}
-	if p, ok := matchPlan(text, plans); ok {
+	// Planos secretos (ocultos e disponíveis): não aparecem na lista, só valem com o código exato.
+	secret, err := e.Store.SecretPlans(ctx)
+	if err != nil {
+		return true, err
+	}
+	known := append(append([]store.Plan{}, plans...), secret...)
+	p, ok := matchPlan(text, plans)
+	if !ok {
+		p, ok = matchSecretPlan(text, secret)
+	}
+	if ok {
 		if err := e.Store.ChooseBillingPlan(ctx, ident.OrgID, p.Code); err != nil {
 			return true, err
 		}
@@ -74,7 +84,7 @@ func (e *Engine) planGate(ctx context.Context, ident store.Identity, conv store.
 			if err := e.Store.SetBillingDocument(ctx, ident.OrgID, doc); err != nil {
 				return true, err
 			}
-			for _, p := range plans {
+			for _, p := range known {
 				if p.Code == bs.PendingPlan {
 					return true, e.checkout(ctx, ident, conv, bs, p, bs.PendingMethod)
 				}
@@ -84,7 +94,7 @@ func (e *Engine) planGate(ctx context.Context, ident store.Identity, conv store.
 	}
 	if bs.PendingPlan != "" {
 		if method := matchMethod(text); method != "" {
-			for _, p := range plans {
+			for _, p := range known {
 				if p.Code == bs.PendingPlan {
 					return true, e.checkout(ctx, ident, conv, bs, p, method)
 				}
@@ -349,6 +359,17 @@ func matchPlan(text string, plans []store.Plan) (store.Plan, bool) {
 	}
 	for _, p := range plans {
 		if w := normalizeName(p.Name); w != "" && regexp.MustCompile(`\b`+regexp.QuoteMeta(w)+`\b`).MatchString(t) {
+			return p, true
+		}
+	}
+	return store.Plan{}, false
+}
+
+// matchSecretPlan: plano secreto só com o código sozinho na mensagem (sem posição, sem nome).
+func matchSecretPlan(text string, secret []store.Plan) (store.Plan, bool) {
+	t := normalizeName(text)
+	for _, p := range secret {
+		if t != "" && t == strings.ToLower(p.Code) {
 			return p, true
 		}
 	}

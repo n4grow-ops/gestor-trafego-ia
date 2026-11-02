@@ -19,7 +19,8 @@ func TestPlansStaffSeesButCannotEdit(t *testing.T) {
 	if r.code != 200 || r.body["can_edit"] != false {
 		t.Fatalf("staff lista = %d %s", r.code, r.raw)
 	}
-	if plans, _ := r.body["plans"].([]any); len(plans) != 3 {
+	// 3 da lista + o plano secreto de teste (0058), que o painel também mostra.
+	if plans, _ := r.body["plans"].([]any); len(plans) != 4 {
 		t.Fatalf("planos = %v", r.body["plans"])
 	}
 	for name, res := range map[string]resp{

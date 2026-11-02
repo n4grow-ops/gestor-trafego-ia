@@ -321,3 +321,29 @@ func TestBillingNotifyDueSendsPixLink(t *testing.T) {
 		t.Fatalf("aviso = %q", got)
 	}
 }
+
+func TestPlanGateSecretPlanOnlyWithExactCode(t *testing.T) {
+	h, fb := newBillingHarness(t)
+	_, err := h.pool.Exec(ctx, `INSERT INTO plans (code, name, price_cents, currency, billing_interval, daily_message_limit,
+		max_daily_budget_brl, max_projects, max_campaigns_month, available, sort_order, visible)
+		VALUES ('segredo9', 'Teste', 500, 'BRL', 'month', 60, 250, 3, 4, true, 99, false)`)
+	h.must(err)
+	_, err = h.pool.Exec(ctx, `UPDATE members SET cpf = '52998224725'`)
+	h.must(err)
+	h.say("oi")
+	if got := h.wa.last().Text; strings.Contains(got, "Teste") || strings.Contains(got, "4.") {
+		t.Fatalf("plano secreto apareceu na lista: %q", got)
+	}
+	h.say("quero o segredo9 agora")
+	if got := h.wa.last().Text; strings.Contains(got, "*Teste*") {
+		t.Fatal("código numa frase não deveria valer")
+	}
+	h.say("segredo9")
+	if got := h.wa.last().Text; !strings.Contains(got, "*Teste*") || !strings.Contains(got, "R$ 5") {
+		t.Fatalf("escolha = %q", got)
+	}
+	h.say("pix")
+	if len(fb.subs) != 1 || fb.subs[0].Value != 5 || fb.subs[0].BillingType != asaas.BillingPix {
+		t.Fatalf("assinaturas = %+v", fb.subs)
+	}
+}
