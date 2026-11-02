@@ -96,6 +96,28 @@ func (s *Store) SetBillingCheckout(ctx context.Context, orgID int64, method, pro
 	return err
 }
 
+// SetBillingMethod guarda a forma escolhida quando ainda falta o CPF/CNPJ para criar a assinatura.
+func (s *Store) SetBillingMethod(ctx context.Context, orgID int64, method string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE subscriptions SET pending_method = $2, checkout_url = NULL, updated_at = now()
+		WHERE organization_id = $1`, orgID, method)
+	return err
+}
+
+// SetBillingDocument grava o documento mandado no WhatsApp: 14 dígitos = CNPJ da empresa, 11 = CPF do dono.
+func (s *Store) SetBillingDocument(ctx context.Context, orgID int64, doc string) error {
+	var err error
+	switch len(doc) {
+	case 14:
+		_, err = s.pool.Exec(ctx, `UPDATE organizations SET cnpj = $2 WHERE id = $1`, orgID, doc)
+	case 11:
+		_, err = s.pool.Exec(ctx, `UPDATE members SET cpf = $2 WHERE id = (SELECT id FROM members WHERE organization_id = $1
+			ORDER BY role = 'owner' DESC, id LIMIT 1)`, orgID, doc)
+	default:
+		err = fmt.Errorf("%w: documento com %d dígitos", ErrInvalidInput, len(doc))
+	}
+	return err
+}
+
 // SetCheckoutURL grava o link que faltava.
 func (s *Store) SetCheckoutURL(ctx context.Context, orgID int64, url string) error {
 	_, err := s.pool.Exec(ctx, `UPDATE subscriptions SET checkout_url = $2, updated_at = now() WHERE organization_id = $1`, orgID, url)

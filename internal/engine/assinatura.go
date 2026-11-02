@@ -11,6 +11,7 @@ import (
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/billing/asaas"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/mia"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/signup"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp"
 )
@@ -25,6 +26,7 @@ const pastDueGrace = 72 * time.Hour
 type BillingProvider interface {
 	FindCustomer(ctx context.Context, externalRef string) (string, error)
 	CreateCustomer(ctx context.Context, c asaas.Customer) (string, error)
+	SetCustomerDocument(ctx context.Context, customerID, cpfCnpj string) error
 	CreateSubscription(ctx context.Context, s asaas.Subscription) (string, error)
 	FirstPaymentURL(ctx context.Context, subID string) (string, error)
 	DeleteSubscription(ctx context.Context, subID string) error
@@ -63,6 +65,23 @@ func (e *Engine) planGate(ctx context.Context, ident store.Identity, conv store.
 		e.audit(ctx, ident.OrgID, member(ident), "billing_plan_chosen", map[string]any{"plan": p.Code})
 		return true, e.send(ctx, conv, fmt.Sprintf(msgPlanChosen, p.Name, planPrice(p.PriceCents)))
 	}
+	// Forma escolhida, mas faltava o CPF/CNPJ: esta mensagem pode ser o documento.
+	if waitingDocument(bs) && matchMethod(text) == "" {
+		if doc, found := findDocument(text); found {
+			if doc == "" {
+				return true, e.send(ctx, conv, msgPlanBadDoc)
+			}
+			if err := e.Store.SetBillingDocument(ctx, ident.OrgID, doc); err != nil {
+				return true, err
+			}
+			for _, p := range plans {
+				if p.Code == bs.PendingPlan {
+					return true, e.checkout(ctx, ident, conv, bs, p, bs.PendingMethod)
+				}
+			}
+		}
+		return true, e.send(ctx, conv, msgPlanNeedDoc)
+	}
 	if bs.PendingPlan != "" {
 		if method := matchMethod(text); method != "" {
 			for _, p := range plans {
@@ -92,6 +111,12 @@ func (e *Engine) planGate(ctx context.Context, ident store.Identity, conv store.
 // checkout cria (ou reaproveita) o cliente no Asaas, troca a assinatura pendente antiga e manda o link.
 func (e *Engine) checkout(ctx context.Context, ident store.Identity, conv store.Conversation, bs store.BillingState, p store.Plan, method string) error {
 	link, err := e.createCheckout(ctx, ident.OrgID, bs, p, method)
+	if errors.Is(err, errNeedDocument) {
+		if err := e.Store.SetBillingMethod(ctx, ident.OrgID, method); err != nil {
+			return err
+		}
+		return e.send(ctx, conv, msgPlanNeedDoc)
+	}
 	if err != nil {
 		e.Log.Error("falha no Asaas ao gerar a cobrança", "org_id", ident.OrgID, "plano", p.Code, "erro", err)
 		e.audit(ctx, ident.OrgID, "system", "billing_checkout_failed", map[string]any{"plan": p.Code, "method": method, "error": err.Error()})
@@ -107,30 +132,36 @@ func (e *Engine) checkout(ctx context.Context, ident store.Identity, conv store.
 
 func (e *Engine) createCheckout(ctx context.Context, orgID int64, bs store.BillingState, p store.Plan, method string) (string, error) {
 	ref := fmt.Sprintf("org-%d", orgID)
+	c, err := e.Store.BillingCustomer(ctx, orgID)
+	if err != nil {
+		return "", err
+	}
+	// O Asaas recusa a cobrança por Pix sem CPF/CNPJ: pede antes de criar qualquer coisa.
+	if c.CpfCnpj == "" {
+		return "", errNeedDocument
+	}
 	customer := bs.CustomerID
+	created := false
 	if customer == "" {
 		id, err := e.Billing.FindCustomer(ctx, ref)
 		if err != nil {
 			return "", err
 		}
 		if id == "" {
-			c, err := e.Store.BillingCustomer(ctx, orgID)
-			if err != nil {
-				return "", err
-			}
 			if id, err = e.Billing.CreateCustomer(ctx, asaas.Customer{Name: c.Name, CpfCnpj: c.CpfCnpj, Email: c.Email,
 				MobilePhone: localPhone(c.Phone), ExternalReference: ref}); err != nil {
 				return "", err
 			}
+			created = true
 		}
 		if err := e.Store.SetAsaasCustomer(ctx, orgID, id); err != nil {
 			return "", err
 		}
 		customer = id
 	}
-	// Troca de plano ou de forma antes de pagar: a assinatura pendente antiga sai do Asaas.
-	if bs.Status == "pending" && bs.Provider == "asaas" && bs.ProviderRef != "" {
-		if err := e.Billing.DeleteSubscription(ctx, bs.ProviderRef); err != nil {
+	// Cliente que já existia no Asaas pode ter sido criado sem o documento.
+	if !created {
+		if err := e.Billing.SetCustomerDocument(ctx, customer, c.CpfCnpj); err != nil {
 			return "", err
 		}
 	}
@@ -148,6 +179,13 @@ func (e *Engine) createCheckout(ctx context.Context, orgID int64, bs store.Billi
 	// A assinatura já existe no Asaas: grava mesmo sem link, para não criar outra na próxima mensagem.
 	if err := e.Store.SetBillingCheckout(ctx, orgID, method, subID, link); err != nil {
 		return "", err
+	}
+	// Troca de plano ou de forma antes de pagar: a pendente antiga só sai depois que a nova existe, senão
+	// uma falha ao criar deixava o cliente sem nenhuma cobrança válida.
+	if bs.Status == "pending" && bs.Provider == "asaas" && bs.ProviderRef != "" && bs.ProviderRef != subID {
+		if err := e.Billing.DeleteSubscription(ctx, bs.ProviderRef); err != nil {
+			e.Log.Warn("assinatura pendente antiga ficou no Asaas", "org_id", orgID, "assinatura", bs.ProviderRef, "erro", err)
+		}
 	}
 	return link, linkErr
 }
@@ -323,6 +361,32 @@ func matchMethod(text string) string {
 		return "card"
 	}
 	return ""
+}
+
+// errNeedDocument: o dono ainda não tem CPF nem a empresa CNPJ; a Mia pede antes de gerar a cobrança.
+var errNeedDocument = errors.New("engine: cobrança sem CPF/CNPJ")
+
+var docRe = regexp.MustCompile(`\d[\d.\-/ ]{8,}\d`)
+
+// waitingDocument: forma escolhida, nenhuma assinatura criada ainda (faltou o CPF/CNPJ).
+func waitingDocument(bs store.BillingState) bool {
+	return bs.PendingPlan != "" && bs.PendingMethod != "" && bs.CheckoutURL == "" && bs.ProviderRef == ""
+}
+
+// findDocument acha um CPF ou CNPJ na mensagem e devolve só os dígitos. found sem doc = número com cara
+// de documento, mas com dígito verificador errado.
+func findDocument(text string) (doc string, found bool) {
+	for _, m := range docRe.FindAllString(text, -1) {
+		m = strings.TrimSpace(m)
+		d := signup.OnlyDigits(m)
+		switch {
+		case len(d) == 11 && signup.ValidCPF(m), len(d) == 14 && signup.ValidCNPJ(m):
+			return d, true
+		case len(d) == 11 || len(d) == 14:
+			found = true
+		}
+	}
+	return "", found
 }
 
 // localPhone tira o 55 do E.164 (o Asaas quer DDD + número).

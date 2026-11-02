@@ -99,6 +99,11 @@ func (c *Client) CreateCustomer(ctx context.Context, cu Customer) (string, error
 	return out.ID, nil
 }
 
+// SetCustomerDocument grava o CPF ou CNPJ num cliente que já existe (o Asaas exige para cobrar por Pix).
+func (c *Client) SetCustomerDocument(ctx context.Context, customerID, cpfCnpj string) error {
+	return c.do(ctx, http.MethodPost, "/customers/"+url.PathEscape(customerID), map[string]string{"cpfCnpj": cpfCnpj}, nil)
+}
+
 // CreateSubscription cria a assinatura mensal e devolve o id (sub_...).
 func (c *Client) CreateSubscription(ctx context.Context, s Subscription) (string, error) {
 	if s.Cycle == "" {

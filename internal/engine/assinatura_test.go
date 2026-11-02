@@ -21,7 +21,8 @@ type fakeBilling struct {
 	customers []asaas.Customer
 	subs      []asaas.Subscription
 	deleted   []string
-	found     string // cliente já existente no Asaas
+	docs      []string // CPF/CNPJ gravados em cliente que já existia
+	found     string   // cliente já existente no Asaas
 	failSub   error
 }
 
@@ -31,6 +32,12 @@ func (f *fakeBilling) CreateCustomer(_ context.Context, c asaas.Customer) (strin
 	defer f.mu.Unlock()
 	f.customers = append(f.customers, c)
 	return fmt.Sprintf("cus_%d", len(f.customers)), nil
+}
+func (f *fakeBilling) SetCustomerDocument(_ context.Context, id, doc string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.docs = append(f.docs, id+"="+doc)
+	return nil
 }
 func (f *fakeBilling) CreateSubscription(_ context.Context, s asaas.Subscription) (string, error) {
 	f.mu.Lock()
@@ -111,7 +118,15 @@ func TestPlanGateChoosePlanMethodAndLink(t *testing.T) {
 	}
 
 	h.say("pix")
-	if len(fb.customers) != 1 || fb.customers[0].ExternalReference != fmt.Sprintf("org-%d", mustOrg(h)) {
+	if got := h.wa.last().Text; !strings.Contains(got, "*CPF*") || len(fb.subs) != 0 || len(fb.customers) != 0 {
+		t.Fatalf("sem documento: %q, assinaturas %d", got, len(fb.subs))
+	}
+	h.say("529.982.247-24")
+	if got := h.wa.last().Text; !strings.Contains(got, "não parece um CPF") || len(fb.subs) != 0 {
+		t.Fatalf("documento errado: %q", got)
+	}
+	h.say("meu cpf é 529.982.247-25")
+	if len(fb.customers) != 1 || fb.customers[0].CpfCnpj != "52998224725" || fb.customers[0].ExternalReference != fmt.Sprintf("org-%d", mustOrg(h)) {
 		t.Fatalf("clientes = %+v", fb.customers)
 	}
 	if fb.customers[0].MobilePhone != strings.TrimPrefix(phone, "55") {
@@ -162,6 +177,8 @@ func mustOrg(h *harness) int64 {
 func TestPlanGateAsaasErrorWarnsTeam(t *testing.T) {
 	h, fb := newBillingHarness(t)
 	fb.failSub = errors.New("asaas: POST /subscriptions: status 400: invalid_cpfCnpj")
+	_, err := h.pool.Exec(ctx, `UPDATE members SET cpf = '52998224725'`)
+	h.must(err)
 	h.say("3")
 	h.say("pix")
 	if got := h.wa.last().Text; !strings.Contains(got, "sai em instantes") || strings.Contains(got, "cpfCnpj") {
@@ -263,5 +280,32 @@ func TestBillingNotifyJobSendsToOwner(t *testing.T) {
 	h.must(h.eng.HandleJob(ctx, store.Job{Kind: engine.JobBillingNotify, Payload: payload}))
 	if got := h.wa.last().Text; !strings.Contains(got, "venceu") || !strings.Contains(got, "https://asaas/i/x") {
 		t.Fatalf("vencido = %q", got)
+	}
+}
+
+// Troca de forma com falha ao criar a nova: a assinatura antiga e o link continuam valendo.
+func TestPlanGateMethodSwitchFailureKeepsOldCheckout(t *testing.T) {
+	h, fb := newBillingHarness(t)
+	_, err := h.pool.Exec(ctx, `UPDATE members SET cpf = '52998224725'`)
+	h.must(err)
+	h.say("1")
+	h.say("cartão")
+	if len(fb.subs) != 1 || len(fb.docs) != 0 {
+		t.Fatalf("assinaturas %d, documentos %v", len(fb.subs), fb.docs)
+	}
+	fb.failSub = errors.New("asaas: POST /subscriptions: status 400")
+	h.say("quero pix")
+	if len(fb.deleted) != 0 {
+		t.Fatalf("apagou a antiga antes de criar a nova: %v", fb.deleted)
+	}
+	h.say("e agora?")
+	if got := h.wa.last().Text; !strings.Contains(got, "sub_1") {
+		t.Fatalf("link antigo sumiu: %q", got)
+	}
+	// Cliente que já existia no Asaas ganha o documento antes de cada nova cobrança.
+	fb.failSub = nil
+	h.say("pix")
+	if len(fb.docs) != 2 || fb.docs[1] != "cus_1=52998224725" || len(fb.deleted) != 1 || fb.deleted[0] != "sub_1" {
+		t.Fatalf("documentos %v, apagadas %v", fb.docs, fb.deleted)
 	}
 }
