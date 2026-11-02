@@ -92,12 +92,13 @@ func (e *Engine) planGate(ctx context.Context, ident store.Identity, conv store.
 		}
 	}
 	if bs.CheckoutURL != "" {
-		return true, e.send(ctx, conv, fmt.Sprintf(msgPlanStillOpen, bs.CheckoutURL, planNames(plans)))
+		return true, e.send(ctx, conv, fmt.Sprintf(msgPlanStillOpen, e.refreshCheckoutLink(ctx, ident.OrgID, bs), planNames(plans)))
 	}
 	// Assinatura criada sem link (o Asaas ainda não tinha gerado a cobrança): tenta de novo.
 	if bs.Status == "pending" && bs.Provider == "asaas" && bs.ProviderRef != "" && bs.PendingMethod != "" {
 		link, err := e.Billing.FirstPaymentURL(ctx, bs.ProviderRef)
 		if err == nil {
+			link = e.ownCheckoutLink(ctx, ident.OrgID, bs.ProviderRef, "", link)
 			if err := e.Store.SetCheckoutURL(ctx, ident.OrgID, link); err != nil {
 				return true, err
 			}
@@ -176,6 +177,9 @@ func (e *Engine) createCheckout(ctx context.Context, orgID int64, bs store.Billi
 		return "", err
 	}
 	link, linkErr := e.Billing.FirstPaymentURL(ctx, subID)
+	if linkErr == nil {
+		link = e.ownCheckoutLink(ctx, orgID, subID, "", link)
+	}
 	// A assinatura já existe no Asaas: grava mesmo sem link, para não criar outra na próxima mensagem.
 	if err := e.Store.SetBillingCheckout(ctx, orgID, method, subID, link); err != nil {
 		return "", err
@@ -227,11 +231,11 @@ func (e *Engine) billingNotify(ctx context.Context, payload []byte) error {
 		if n.InvoiceURL == "" {
 			return nil
 		}
-		text = fmt.Sprintf(msgPlanDue, n.PlanName, brDate(n.DueDate), n.InvoiceURL)
+		text = fmt.Sprintf(msgPlanDue, n.PlanName, brDate(n.DueDate), e.ownCheckoutLink(ctx, n.OrgID, n.SubRef, n.PaymentID, n.InvoiceURL))
 	case store.BillingNoticeOverdue:
 		text = msgPlanOverdueNL
 		if n.InvoiceURL != "" {
-			text = fmt.Sprintf(msgPlanOverdue, n.InvoiceURL)
+			text = fmt.Sprintf(msgPlanOverdue, e.ownCheckoutLink(ctx, n.OrgID, n.SubRef, n.PaymentID, n.InvoiceURL))
 		}
 	default:
 		return nil

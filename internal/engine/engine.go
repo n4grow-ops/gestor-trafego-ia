@@ -115,6 +115,9 @@ type Engine struct {
 
 	// Cadastro: com URL, quem não concluiu o cadastro recebe o link em vez de falar com a IA.
 	SignupBaseURL string
+	// CheckoutBaseURL (ex.: https://cadastro.meuanuncio.io/pagar): com ele, a Mia manda o checkout próprio
+	// no lugar da página do Asaas. Vazio = link do Asaas, como antes.
+	CheckoutBaseURL string
 	// SignupFlowID: formulário do WhatsApp publicado; com ele (e provedor que manda formulário)
 	// o cadastro é feito sem sair do WhatsApp. TermsVersion é a versão dos termos aceitos ali.
 	SignupFlowID string

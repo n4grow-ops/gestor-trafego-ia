@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/agent/attendant"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/billing/asaas"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/config"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/db"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/httpapi"
@@ -105,9 +106,18 @@ func run(log *slog.Logger) error {
 		routes = append(routes, mc.Register)
 	}
 	// Webhook do Asaas: sem ASAAS_WEBHOOK_TOKEN responde 503 (desligado).
-	routes = append(routes, (&httpapi.AsaasWebhook{Store: st, Token: cfg.AsaasWebhookToken, Log: log}).Register)
+	hook := &httpapi.AsaasWebhook{Store: st, Token: cfg.AsaasWebhookToken, Log: log}
+	if cfg.CheckoutEnabled() {
+		hook.Subscriptions = asaas.New(cfg.AsaasAPIKey, cfg.AsaasEnv)
+	}
+	routes = append(routes, hook.Register)
 	if cfg.AsaasEnabled() && cfg.AsaasWebhookToken == "" {
 		log.Warn("ASAAS_API_KEY sem ASAAS_WEBHOOK_TOKEN: o pagamento não libera ninguém (webhook desligado)")
+	}
+	// Checkout próprio (/pagar/{token}): Pix e cartão na nossa página, em cima da cobrança do Asaas.
+	if cfg.CheckoutEnabled() {
+		routes = append(routes, (&httpapi.Checkout{Store: st, Asaas: asaas.New(cfg.AsaasAPIKey, cfg.AsaasEnv),
+			Origin: cfg.PublicBaseURL, Sandbox: cfg.AsaasEnv != "producao", Limiter: httpapi.NewLimiter(), Log: log}).Register)
 	}
 	adminMode := cfg.AdminMode()
 	if adminMode != "" {

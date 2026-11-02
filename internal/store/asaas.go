@@ -191,6 +191,9 @@ type BillingNotice struct {
 	PlanName   string `json:"plan_name,omitempty"`
 	InvoiceURL string `json:"invoice_url,omitempty"`
 	DueDate    string `json:"due_date,omitempty"` // AAAA-MM-DD
+	// Cobrança (pay_...) e assinatura (sub_...) no Asaas: o checkout próprio monta o link com elas.
+	PaymentID string `json:"payment_id,omitempty"`
+	SubRef    string `json:"sub_ref,omitempty"`
 }
 
 // ApplyAsaasEvent grava o evento e aplica o efeito numa transação só. Evento repetido devolve false sem
@@ -321,7 +324,8 @@ func applyAsaasPayment(ctx context.Context, tx pgx.Tx, event string, p AsaasPaym
 		// Renovação por Pix de quem já paga: a Mia manda o link do mês (o Asaas não avisa, as notificações
 		// dele ficam desligadas). A primeira cobrança já sai com o link no checkout.
 		if (prev == "active" || prev == "past_due") && p.BillingType == "PIX" && p.InvoiceURL != "" && saved == "pending" {
-			return &BillingNotice{OrgID: orgID, Kind: BillingNoticeDue, PlanName: planName, InvoiceURL: p.InvoiceURL, DueDate: p.DueDate}, nil
+			return &BillingNotice{OrgID: orgID, Kind: BillingNoticeDue, PlanName: planName, InvoiceURL: p.InvoiceURL, DueDate: p.DueDate,
+				PaymentID: p.ID, SubRef: p.Subscription}, nil
 		}
 	case "PAYMENT_OVERDUE":
 		// Só quem já pagou vira past_due: a primeira cobrança vencida sem pagamento continua pending
@@ -336,7 +340,8 @@ func applyAsaasPayment(ctx context.Context, tx pgx.Tx, event string, p AsaasPaym
 				return nil, err
 			}
 		}
-		return &BillingNotice{OrgID: orgID, Kind: BillingNoticeOverdue, PlanName: planName, InvoiceURL: p.InvoiceURL}, nil
+		return &BillingNotice{OrgID: orgID, Kind: BillingNoticeOverdue, PlanName: planName, InvoiceURL: p.InvoiceURL,
+			PaymentID: p.ID, SubRef: p.Subscription}, nil
 	}
 	return nil, nil
 }

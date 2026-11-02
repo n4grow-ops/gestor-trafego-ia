@@ -47,6 +47,8 @@ type Config struct {
 	AsaasAPIKey       string
 	AsaasEnv          string
 	AsaasWebhookToken string
+	// CheckoutProprio (CHECKOUT_PROPRIO=true): a Mia manda /pagar/{token} no lugar da página do Asaas.
+	CheckoutProprio bool
 
 	// Cadastro automático de número novo.
 	AutoSignup       bool
@@ -122,6 +124,11 @@ func (c Config) SignupEnabled() bool {
 // AsaasEnabled diz se a cobrança pelo Asaas está ligada.
 func (c Config) AsaasEnabled() bool { return c.AsaasAPIKey != "" }
 
+// CheckoutEnabled diz se a página /pagar está no ar e se a Mia manda o link dela.
+func (c Config) CheckoutEnabled() bool {
+	return c.CheckoutProprio && c.AsaasEnabled() && c.PublicBaseURL != ""
+}
+
 // MetaConnectEnabled diz se a conexão da conta Meta está configurada.
 func (c Config) MetaConnectEnabled() bool {
 	return c.PublicBaseURL != "" && c.MetaAppID != "" && c.MetaAppSecret != "" && c.MetaLoginConfigID != "" && c.MetaTokenKey != ""
@@ -192,6 +199,7 @@ func Load(getenv func(string) string) Config {
 		AsaasAPIKey:       strings.TrimSpace(getenv("ASAAS_API_KEY")),
 		AsaasEnv:          orDefault(strings.ToLower(strings.TrimSpace(getenv("ASAAS_ENV"))), "sandbox"),
 		AsaasWebhookToken: strings.TrimSpace(getenv("ASAAS_WEBHOOK_TOKEN")),
+		CheckoutProprio:   strings.EqualFold(strings.TrimSpace(getenv("CHECKOUT_PROPRIO")), "true"),
 	}
 }
 
