@@ -181,6 +181,7 @@ type AsaasSubscription struct {
 const (
 	BillingNoticePaid    = "paid"
 	BillingNoticeOverdue = "overdue"
+	BillingNoticeDue     = "due" // mensalidade nova por Pix: o Pix não é cobrado sozinho como o cartão
 )
 
 // BillingNotice é o aviso ao dono que o evento gera (enfileirado na mesma transação).
@@ -189,6 +190,7 @@ type BillingNotice struct {
 	Kind       string `json:"kind"`
 	PlanName   string `json:"plan_name,omitempty"`
 	InvoiceURL string `json:"invoice_url,omitempty"`
+	DueDate    string `json:"due_date,omitempty"` // AAAA-MM-DD
 }
 
 // ApplyAsaasEvent grava o evento e aplica o efeito numa transação só. Evento repetido devolve false sem
@@ -283,15 +285,17 @@ func applyAsaasPayment(ctx context.Context, tx pgx.Tx, event string, p AsaasPaym
 	case "PAYMENT_REFUNDED", "PAYMENT_CHARGEBACK_REQUESTED":
 		status = "refunded"
 	}
+	saved := status
 	if p.ID != "" {
-		if _, err := tx.Exec(ctx, `INSERT INTO payments (subscription_id, amount_cents, method, status, provider, provider_ref, paid_at)
+		if err := tx.QueryRow(ctx, `INSERT INTO payments (subscription_id, amount_cents, method, status, provider, provider_ref, paid_at)
 			VALUES ($1, $2, $3, $4, 'asaas', $5, $6)
 			ON CONFLICT (provider, provider_ref) WHERE provider_ref IS NOT NULL DO UPDATE SET
 				amount_cents = excluded.amount_cents, method = excluded.method,
 				-- evento atrasado (CREATED depois do RECEIVED) não volta o pagamento para pendente
 				status = CASE WHEN excluded.status = 'pending' THEN payments.status ELSE excluded.status END,
-				paid_at = coalesce(excluded.paid_at, payments.paid_at)`,
-			subID, int64(math.Round(p.Value*100)), method, status, p.ID, paidAt); err != nil {
+				paid_at = coalesce(excluded.paid_at, payments.paid_at)
+			RETURNING status`,
+			subID, int64(math.Round(p.Value*100)), method, status, p.ID, paidAt).Scan(&saved); err != nil {
 			return nil, fmt.Errorf("store: pagamento asaas: %w", err)
 		}
 	}
@@ -312,6 +316,12 @@ func applyAsaasPayment(ctx context.Context, tx pgx.Tx, event string, p AsaasPaym
 		}
 		if prev != "active" {
 			return &BillingNotice{OrgID: orgID, Kind: BillingNoticePaid, PlanName: planName}, nil
+		}
+	case "PAYMENT_CREATED":
+		// Renovação por Pix de quem já paga: a Mia manda o link do mês (o Asaas não avisa, as notificações
+		// dele ficam desligadas). A primeira cobrança já sai com o link no checkout.
+		if (prev == "active" || prev == "past_due") && p.BillingType == "PIX" && p.InvoiceURL != "" && saved == "pending" {
+			return &BillingNotice{OrgID: orgID, Kind: BillingNoticeDue, PlanName: planName, InvoiceURL: p.InvoiceURL, DueDate: p.DueDate}, nil
 		}
 	case "PAYMENT_OVERDUE":
 		// Só quem já pagou vira past_due: a primeira cobrança vencida sem pagamento continua pending

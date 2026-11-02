@@ -181,6 +181,7 @@ const (
 	msgPlanLinkSoon   ="Estou gerando o seu link de pagamento, ele sai em instantes. Se não chegar, a nossa equipe já foi avisada e vai te ajudar por aqui."
 	msgPlanPaid       = "Pagamento confirmado ✅ Seu plano *%s* está liberado!\n\nPra deixar seus anúncios certeiros, preciso conhecer bem o seu negócio. Pra começar: o que a sua empresa faz? Me conta os principais produtos ou serviços."
 	msgWelcomePlans   = "Cadastro concluído, %s! (e-mail %s; se não foi você, é só avisar aqui.)"
+	msgPlanDue        = "Sua mensalidade do plano *%s* já está disponível, com vencimento em %s. Pague pelo Pix neste link:\n%s"
 	msgPlanOverdue    = "Sua mensalidade do meu anúncio venceu. Pague pelo link pra não travar a criação de campanhas novas:\n%s\n\nAs campanhas que já estão no ar seguem rodando."
 	msgPlanOverdueNL  = "Sua mensalidade do meu anúncio venceu. Me chama aqui que eu te mando o link pra pagar. As campanhas que já estão no ar seguem rodando."
 	msgPlanPastDue    = "Sua mensalidade está em atraso, então não consigo criar campanha nova agora. Assim que o pagamento confirmar, eu libero na hora. As campanhas que já estão no ar continuam rodando."

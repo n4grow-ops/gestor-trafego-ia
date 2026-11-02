@@ -223,6 +223,11 @@ func (e *Engine) billingNotify(ctx context.Context, payload []byte) error {
 	switch n.Kind {
 	case store.BillingNoticePaid:
 		text = fmt.Sprintf(msgPlanPaid, n.PlanName)
+	case store.BillingNoticeDue:
+		if n.InvoiceURL == "" {
+			return nil
+		}
+		text = fmt.Sprintf(msgPlanDue, n.PlanName, brDate(n.DueDate), n.InvoiceURL)
 	case store.BillingNoticeOverdue:
 		text = msgPlanOverdueNL
 		if n.InvoiceURL != "" {
@@ -361,6 +366,14 @@ func matchMethod(text string) string {
 		return "card"
 	}
 	return ""
+}
+
+// brDate troca AAAA-MM-DD por DD/MM; outro formato fica como veio.
+func brDate(d string) string {
+	if t, err := time.Parse("2006-01-02", d); err == nil {
+		return t.Format("02/01")
+	}
+	return d
 }
 
 // errNeedDocument: o dono ainda não tem CPF nem a empresa CNPJ; a Mia pede antes de gerar a cobrança.

@@ -181,3 +181,22 @@ func TestAsaasUnknownEventOnlyRecorded(t *testing.T) {
 		t.Fatal("evento desconhecido não tem efeito")
 	}
 }
+
+func TestAsaasPixRenewalSendsLink(t *testing.T) {
+	e := newAsaasEnv(t, "segredo")
+	// Primeira cobrança criada (ainda pending): o link já foi no checkout, sem aviso.
+	e.post("segredo", payEvent("evt_0", "PAYMENT_CREATED"))
+	e.post("segredo", payEvent("evt_1", "PAYMENT_RECEIVED"))
+	renew := strings.NewReplacer(`"pay_1"`, `"pay_2"`, `"2026-10-31"`, `"2026-11-30"`, `"https://asaas/i/1"`, `"https://asaas/i/2"`)
+	e.post("segredo", renew.Replace(payEvent("evt_2", "PAYMENT_CREATED")))
+	if n := e.count(`SELECT count(*) FROM outbox_jobs WHERE kind = $1 AND payload->>'kind' = 'due'
+		AND payload->>'invoice_url' = 'https://asaas/i/2' AND payload->>'due_date' = '2026-11-30'`, engine.JobBillingNotify); n != 1 {
+		t.Fatalf("aviso da mensalidade = %d", n)
+	}
+	// Cartão renova sozinho: sem aviso.
+	card := strings.NewReplacer(`"pay_1"`, `"pay_3"`, `"PIX"`, `"CREDIT_CARD"`)
+	e.post("segredo", card.Replace(payEvent("evt_3", "PAYMENT_CREATED")))
+	if n := e.count(`SELECT count(*) FROM outbox_jobs WHERE kind = $1 AND payload->>'kind' = 'due'`, engine.JobBillingNotify); n != 1 {
+		t.Fatalf("cartão não deveria avisar: %d", n)
+	}
+}

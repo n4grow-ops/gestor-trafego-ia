@@ -309,3 +309,15 @@ func TestPlanGateMethodSwitchFailureKeepsOldCheckout(t *testing.T) {
 		t.Fatalf("documentos %v, apagadas %v", fb.docs, fb.deleted)
 	}
 }
+
+func TestBillingNotifyDueSendsPixLink(t *testing.T) {
+	h, _ := newBillingHarness(t)
+	h.say("oi")
+	payload, err := json.Marshal(store.BillingNotice{OrgID: mustOrg(h), Kind: store.BillingNoticeDue, PlanName: "Básico",
+		InvoiceURL: "https://asaas/i/2", DueDate: "2026-11-30"})
+	h.must(err)
+	h.must(h.eng.HandleJob(ctx, store.Job{Kind: engine.JobBillingNotify, Payload: payload}))
+	if got := h.wa.last().Text; !strings.Contains(got, "*Básico*") || !strings.Contains(got, "30/11") || !strings.Contains(got, "https://asaas/i/2") {
+		t.Fatalf("aviso = %q", got)
+	}
+}
