@@ -241,7 +241,12 @@ func (e *Engine) billingNotify(ctx context.Context, payload []byte) error {
 		if n.InvoiceURL == "" {
 			return nil
 		}
-		text = fmt.Sprintf(msgPlanDue, n.PlanName, brDate(n.DueDate), e.ownCheckoutLink(ctx, n.OrgID, n.SubRef, n.PaymentID, n.InvoiceURL))
+		// No checkout próprio dá para trocar para cartão; no link do Asaas a cobrança é só Pix.
+		link, how := e.ownCheckoutLink(ctx, n.OrgID, n.SubRef, n.PaymentID, n.InvoiceURL), "Pix ou cartão"
+		if link == n.InvoiceURL {
+			how = "Pix"
+		}
+		text = fmt.Sprintf(msgPlanDue, n.PlanName, brDate(n.DueDate), how, link)
 	case store.BillingNoticeOverdue:
 		text = msgPlanOverdueNL
 		if n.InvoiceURL != "" {
