@@ -280,7 +280,7 @@ func (c *Checkout) pix(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "pending", "image": "data:image/png;base64," + q.EncodedImage,
-		"payload": q.Payload, "expires": q.ExpirationDate})
+		"payload": q.Payload, "due": l.DueDate.Format("2006-01-02")})
 }
 
 var base64Re = regexp.MustCompile(`^[A-Za-z0-9+/]+={0,2}$`)

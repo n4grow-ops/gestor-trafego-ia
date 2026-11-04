@@ -76,8 +76,9 @@
         $("pix-box").setAttribute("aria-busy", "false");
         $("pix-code").value = res.j.payload;
         $("pix-copy").disabled = false;
-        var exp = res.j.expires ? res.j.expires.slice(0, 10).split("-").reverse().join("/") : "";
-        $("pix-exp").textContent = exp ? "Código válido até " + exp + ". Pode ser pago uma vez só." : "";
+        // Vencimento da mensalidade (o QR do Asaas aceita pagamento bem depois; não confundir o cliente).
+        var due = res.j.due ? res.j.due.split("-").reverse().join("/") : "";
+        $("pix-exp").textContent = due ? "Vence em " + due + ". Pode ser pago uma vez só." : "";
       })
       .catch(function () {
         pixLoading = false;
