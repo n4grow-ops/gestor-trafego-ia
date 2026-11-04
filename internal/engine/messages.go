@@ -171,6 +171,7 @@ const (
 
 	// Cobrança (Asaas): só Pix e cartão, assinatura mensal.
 	msgPlanNone       = "Você ainda não tem um plano ativo. Pra liberar a Mia, escolha um dos planos:"
+	msgPlanTrialOver  = "Seu teste grátis terminou. Pra continuar usando a Mia, escolha um dos planos:"
 	msgPlanPick       = "Agora é só escolher o seu plano pra liberar a Mia:"
 	msgPlanReply      = "Responda com o número do plano."
 	msgPlanChosen     = "Ótimo, plano *%s* (%s/mês). Você prefere pagar por *Pix* ou *cartão*?"

@@ -83,6 +83,7 @@ const ERRORS = {
   sessao_invalida: 'Sua sessão expirou. Entre de novo.', nao_encontrado: 'Não encontrado (pode ter sido apagado).',
   cadastro_concluido: 'Esse cliente já concluiu o cadastro.', cadastro_desligado: 'O cadastro pela página está desligado.',
   sem_assinatura: 'Esse cliente não tem assinatura para receber pagamento.', ultimo_admin: 'A equipe precisa de ao menos um administrador.',
+  assinatura_paga: 'Esse cliente já paga a assinatura: teste grátis não se aplica.',
   cliente_real: 'Cliente real (com pagamento ou plano pago) não pode ser zerado. Só contas de teste.',
   voce_mesmo: 'Você não pode tirar a si mesmo da equipe.', muitas_tentativas: 'Muitas tentativas. Espere alguns minutos e peça um código novo.',
   texto_invalido: 'Escreva uma mensagem (até 4.000 caracteres).', dados_invalidos: 'Confira os dados do formulário.',
@@ -124,6 +125,7 @@ const ACTIONS = {
   daily_limit_reached: ['Chegou no limite diário de mensagens', 'warn', 'clock'], media_failed: ['Falha ao processar mídia', 'err', 'alert'],
   llm_failed: ['Falha na IA', 'err', 'alert'],
   login: ['Entrou no painel', 'info', 'out'], logout: ['Saiu do painel', 'info', 'out'],
+  client_trial: ['Liberou teste grátis', 'ok', 'flask'], client_trial_end: ['Encerrou o teste grátis', 'warn', 'flask'],
   client_block: ['Bloqueou o cliente', 'warn', 'lock'], client_unblock: ['Desbloqueou o cliente', 'ok', 'unlock'],
   client_signup_link: ['Reenviou o link de cadastro', 'info', 'link'], client_reset: ['Apagou o cliente', 'err', 'trash'], client_reset_campaigns: ['Zerou campanhas e conversa', 'warn', 'trash'],
   conversation_takeover: ['Assumiu a conversa', 'warn', 'hand'], conversation_release: ['Devolveu a conversa à IA', 'ok', 'bot'],
@@ -384,7 +386,7 @@ views.clientes = async view => {
     </div>`;
   const rows = d.clients.map(c => `<button class="l-row" type="button" data-open-client="${c.org_id}">
       <span class="who"><span class="mini-av ${c.needs_human ? 'hot' : ''}">${esc(initials(c.contact || c.name))}</span><span><b>${esc(c.name)}</b><small>${esc([c.contact, c.segment, c.city].filter(Boolean).join(' · ') || phone(c.phone))}</small></span></span>
-      <span>${c.plan ? `<span class="chip ${c.plan === 'pro' ? 'info' : ''}">${esc(c.plan_name)}</span>` : '<span class="faint small">sem plano</span>'}</span>
+      <span>${c.sub_status === 'trialing' ? '<span class="chip info">teste grátis</span>' : c.sub_status === 'trial_ended' ? '<span class="faint small">teste encerrado</span>' : c.plan ? `<span class="chip ${c.plan === 'pro' ? 'info' : ''}">${esc(c.plan_name)}</span>` : '<span class="faint small">sem plano</span>'}</span>
       <span class="track">${trackDots(c)}<small>${esc(c.stage_label)}${c.status === 'blocked' ? ' <span class="chip err">bloqueado</span>' : ''}${c.needs_human ? ` <span class="chip warn">${c.human_by ? 'com a equipe' : 'pediu humano'}</span>` : ''}</small></span>
       <span class="num ${c.stuck ? 'since' : 'muted small'}">${ago(c.last_activity)}</span>
       <span>${c.meta_connected ? `<span class="meta-ok">${icon('check')}Meta</span>` : '<span class="meta-no">sem Meta</span>'}</span>
@@ -446,6 +448,7 @@ function renderDrawer(tab) {
     <div class="d-foot">
       ${c.registration === 'pending' && state.me.signup_enabled ? `<button class="btn sm" type="button" data-signup="${c.org_id}">${icon('link')}Reenviar cadastro</button>` : ''}
       ${c.conversation_id ? `<button class="btn sm" type="button" data-goto-conv="${c.conversation_id}">${icon('chat')}Abrir conversa</button>` : ''}
+      ${admin && !paidSub(c.subscription) ? `<button class="btn sm" type="button" data-trial-ask>${icon('flask')}${trialOn(c.subscription) ? 'Mudar teste' : 'Liberar teste'}</button>` : ''}
       ${c.status === 'blocked' ? `<button class="btn sm" type="button" data-block="unblock">${icon('unlock')}Desbloquear</button>` : `<button class="btn sm" type="button" data-block="block">${icon('lock')}Bloquear</button>`}
       ${admin ? `<button class="btn sm danger" type="button" data-reset-ask="campanhas" title="Apaga projetos, campanhas e conversa. O cadastro e a conexão Meta ficam.">${icon('trash')}Zerar campanhas</button>
       <button class="btn sm danger" type="button" data-reset-ask="tudo" title="Apaga o cliente inteiro. O número refaz o cadastro do zero.">${icon('trash')}Apagar cliente</button>` : ''}
@@ -468,7 +471,8 @@ function drawerTab(n) {
       <dt>Instagram</dt><dd>${esc(c.instagram || '—')}</dd>
       <dt>Aceites</dt><dd>${consents}</dd></dl>
       <h3 class="sec-title">Plano e limites</h3><dl class="kv">
-      <dt>Assinatura</dt><dd>${sub ? `${esc(sub.plan_name)} · ${brl(sub.price_cents)}/mês <span class="chip ${PLAN_STATUS[sub.status]?.[1] || ''}">${PLAN_STATUS[sub.status]?.[0] || esc(sub.status)}</span>` : 'sem assinatura'}</dd>
+      <dt>Assinatura</dt><dd>${sub ? (sub.status === 'trialing' ? (trialOn(sub) ? `<span class="chip info">teste grátis</span> até ${esc(dateOnly(sub.current_period_end))}` : '<span class="chip">teste grátis encerrado</span>')
+        : `${esc(sub.plan_name)} · ${brl(sub.price_cents)}/mês <span class="chip ${PLAN_STATUS[sub.status]?.[1] || ''}">${PLAN_STATUS[sub.status]?.[0] || esc(sub.status)}</span>`) : 'sem assinatura'}</dd>
       <dt>Teto por dia</dt><dd>${brl(c.max_daily_budget_brl * 100)} de anúncio · ${num(c.daily_message_limit)} mensagens</dd>
       <dt>Últimos 30 dias</dt><dd>${num(c.messages_30d)} mensagens · ${usd(c.cost_usd_30d)} de IA</dd>
       <dt>Origem</dt><dd>${c.signup_source === 'auto' ? 'Cadastro automático pelo WhatsApp' : 'Trazido pela equipe'}${c.referral_source ? ' · ' + esc(c.referral_source) : ''}</dd></dl>
@@ -516,6 +520,18 @@ function closeDrawer() {
   state.drawer = null;
 }
 const resetPath = (c, scope) => '/clients/' + c.org_id + '/reset' + (scope === 'campanhas' ? '?escopo=campanhas' : '');
+// Teste grátis: só para quem não paga; vale até current_period_end.
+const paidSub = s => !!s && (s.status === 'active' || s.status === 'past_due');
+const trialOn = s => !!s && s.status === 'trialing' && !!s.current_period_end && new Date(s.current_period_end) > Date.now();
+function askTrial() {
+  const c = state.drawer, on = trialOn(c.subscription);
+  $('#confirm-slot').innerHTML = `<div class="confirm warn" role="alertdialog" aria-label="Liberar teste grátis">
+    <p><b>Teste grátis para ${esc(c.name)}</b> ${on ? `Hoje vai até ${esc(dateOnly(c.subscription.current_period_end))}. O prazo novo conta a partir de agora.` : 'A Mia atende sem cobrar até o fim do prazo. Depois ela pede para escolher um plano.'}</p>
+    <label class="small">Dias de teste <input class="field num" id="trial-days" type="number" min="1" max="90" value="7" inputmode="numeric" style="width:6rem"></label>
+    <div class="actions">${on ? '<button class="btn sm danger" type="button" data-trial-end>Encerrar teste agora</button>' : ''}<button class="btn sm ghost" type="button" data-reset-no>Cancelar</button><button class="btn sm solid" type="button" data-trial-yes>Liberar</button></div></div>`;
+  $('#trial-days').focus();
+}
+
 async function askReset(btn, scope) {
   const c = state.drawer;
   const prev = await act(btn, () => api('GET', resetPath(c, scope)));
@@ -1037,6 +1053,19 @@ document.addEventListener('click', async e => {
     const c = state.drawer;
     const ok = await act(t, () => api('POST', '/clients/' + c.org_id + '/' + ds.block));
     if (ok) { toast(ds.block === 'block' ? c.name + ' bloqueado: o bot para de responder.' : c.name + ' desbloqueado.', ds.block === 'block' ? 'warn' : 'ok', ds.block === 'block' ? 'lock' : 'unlock'); state.drawer.status = ok.status; renderDrawer(0); if (state.route === 'clientes') rerender(); }
+    return;
+  }
+  if (ds.trialAsk !== undefined) { askTrial(); return; }
+  if (ds.trialYes !== undefined || ds.trialEnd !== undefined) {
+    const c = state.drawer, end = ds.trialEnd !== undefined;
+    const days = end ? 0 : Number($('#trial-days').value);
+    if (!end && !(Number.isInteger(days) && days >= 1 && days <= 90)) { toast('Escolha de 1 a 90 dias.', 'warn', 'alert'); return; }
+    const ok = await act(t, () => api('POST', '/clients/' + c.org_id + '/trial', { days }));
+    if (ok) {
+      c.subscription = Object.assign({}, c.subscription || { plan_name: '', price_cents: 0 }, { status: 'trialing', current_period_end: ok.until });
+      toast(end ? c.name + ': teste encerrado. Na próxima mensagem a Mia pede um plano.' : c.name + ': teste grátis até ' + dateOnly(ok.until) + '.', end ? 'warn' : 'ok', 'flask');
+      renderDrawer(0); if (state.route === 'clientes') rerender();
+    }
     return;
   }
   if (ds.resetAsk !== undefined) { askReset(t, ds.resetAsk); return; }

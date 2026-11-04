@@ -96,6 +96,7 @@ func (a *Admin) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/api/clients/{id}/signup-link", a.only(false, a.resendSignup))
 	mux.HandleFunc("POST /admin/api/clients/{id}/block", a.only(false, a.setBlocked(true)))
 	mux.HandleFunc("POST /admin/api/clients/{id}/unblock", a.only(false, a.setBlocked(false)))
+	mux.HandleFunc("POST /admin/api/clients/{id}/trial", a.only(true, a.grantTrial))
 	mux.HandleFunc("GET /admin/api/clients/{id}/reset", a.only(true, a.resetPreview))
 	mux.HandleFunc("POST /admin/api/clients/{id}/reset", a.only(true, a.reset))
 
@@ -242,6 +243,8 @@ func (a *Admin) storeError(w http.ResponseWriter, err error) bool {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "outra_pessoa"})
 	case errors.Is(err, store.ErrLastAdmin):
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "ultimo_admin"})
+	case errors.Is(err, store.ErrPaidSubscription):
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "assinatura_paga"})
 	case errors.Is(err, store.ErrNoSubscription):
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "sem_assinatura"})
 	case errors.Is(err, store.ErrRealClient):

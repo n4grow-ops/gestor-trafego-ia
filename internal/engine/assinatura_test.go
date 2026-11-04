@@ -347,3 +347,44 @@ func TestPlanGateSecretPlanOnlyWithExactCode(t *testing.T) {
 		t.Fatalf("assinaturas = %+v", fb.subs)
 	}
 }
+
+func TestTrialFromAdminReleasesUntilEnd(t *testing.T) {
+	h, _ := newBillingHarness(t)
+	h.say("oi")
+	if got := h.wa.last().Text; !strings.Contains(got, "escolha um dos planos") {
+		t.Fatalf("sem plano deveria pedir plano: %q", got)
+	}
+	org := mustOrg(h)
+	end, err := h.st.GrantTrial(ctx, org, 7, h.now)
+	h.must(err)
+	if d := end.Sub(h.now); d != 7*24*time.Hour {
+		t.Fatalf("fim do teste = %v", end)
+	}
+	if s := h.subStatus(); s != "trialing" {
+		t.Fatalf("status = %q", s)
+	}
+	h.att.Responses = []string{turnOffer}
+	h.say("quero anunciar pizza")
+	if h.att.Calls() != 1 {
+		t.Fatal("teste em andamento deveria falar com a Mia")
+	}
+	// Encerrado (0 dias): volta a pedir plano, avisando que o teste acabou.
+	_, err = h.st.GrantTrial(ctx, org, 0, h.now)
+	h.must(err)
+	h.say("e agora")
+	if got := h.wa.last().Text; !strings.Contains(got, "teste grátis terminou") {
+		t.Fatalf("teste encerrado = %q", got)
+	}
+	if _, err := h.st.GrantTrial(ctx, org, 91, h.now); !errors.Is(err, store.ErrInvalidInput) {
+		t.Fatalf("91 dias = %v", err)
+	}
+	// Quem já paga não vira teste.
+	_, err = h.pool.Exec(ctx, `UPDATE subscriptions SET status = 'active'`)
+	h.must(err)
+	if _, err := h.st.GrantTrial(ctx, org, 7, h.now); !errors.Is(err, store.ErrPaidSubscription) {
+		t.Fatalf("assinatura paga = %v", err)
+	}
+	if s := h.subStatus(); s != "active" {
+		t.Fatalf("status mudou para %q", s)
+	}
+}

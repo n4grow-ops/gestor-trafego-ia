@@ -31,16 +31,16 @@ type BillingState struct {
 	PeriodEnd     *time.Time
 }
 
-// Released diz se o sistema está liberado: org ilimitada, assinatura ativa/em teste/em atraso (o atraso
-// só barra campanha nova) ou cancelada ainda dentro do período pago.
+// Released diz se o sistema está liberado: org ilimitada, assinatura ativa ou em atraso (o atraso só
+// barra campanha nova), teste grátis ou cancelada ainda dentro do período.
 func (b BillingState) Released(now time.Time) bool {
 	if b.Unlimited {
 		return true
 	}
 	switch b.Status {
-	case "active", "trialing", "past_due":
+	case "active", "past_due":
 		return true
-	case "canceled":
+	case "trialing", "canceled":
 		return b.PeriodEnd != nil && b.PeriodEnd.After(now)
 	}
 	return false
@@ -328,10 +328,10 @@ func applyAsaasPayment(ctx context.Context, tx pgx.Tx, event string, p AsaasPaym
 				PaymentID: p.ID, SubRef: p.Subscription}, nil
 		}
 	case "PAYMENT_OVERDUE":
-		// Só quem já pagou vira past_due: a primeira cobrança vencida sem pagamento continua pending
-		// (past_due libera o sistema).
+		// Só quem já pagou vira past_due: a primeira cobrança vencida sem pagamento continua pending, e o
+		// teste grátis continua teste (past_due libera o sistema sem prazo).
 		if _, err := tx.Exec(ctx, `UPDATE subscriptions SET status = 'past_due', past_due_since = coalesce(past_due_since, now()), updated_at = now()
-			WHERE id = $1 AND status IN ('active', 'trialing', 'past_due')`, subID); err != nil {
+			WHERE id = $1 AND status IN ('active', 'past_due')`, subID); err != nil {
 			return nil, err
 		}
 		// O link da cobrança vencida fica guardado: a Mia reenvia quando barrar campanha nova.

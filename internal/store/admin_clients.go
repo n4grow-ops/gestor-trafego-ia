@@ -53,7 +53,7 @@ const clientBase = `WITH base AS (
 		o.status, o.registration_status, o.created_at,
 		coalesce(nullif(pm.full_name, ''), pm.name, '') AS contact, coalesce(pm.email, '') AS email,
 		coalesce(pw.phone_e164, '') AS phone, coalesce(pw.id, 0) AS identity_id,
-		coalesce(s.plan_code, '') AS plan, coalesce(pl.name, '') AS plan_name, coalesce(s.status, '') AS sub_status,
+		coalesce(s.plan_code, '') AS plan, coalesce(pl.name, '') AS plan_name, CASE WHEN s.status = 'trialing' AND coalesce(s.current_period_end, now()) <= now() THEN 'trial_ended' ELSE coalesce(s.status, '') END AS sub_status,
 		CASE WHEN o.registration_status <> 'complete' THEN 0 ELSE greatest(1, coalesce(ps.rank, 1)) END AS stage,
 		EXISTS (SELECT 1 FROM meta_connections mc WHERE mc.organization_id = o.id AND mc.status = 'active') AS meta,
 		coalesce(cv.id, 0) AS conv_id, coalesce(cv.state, '') AS conv_state, coalesce(cv.human_by, '') AS human_by,

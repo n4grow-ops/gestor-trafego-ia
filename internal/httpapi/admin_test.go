@@ -358,6 +358,19 @@ func TestAdminPermissions(t *testing.T) {
 	if r := e.do("POST", "/api/clients/"+org+"/unblock", staff, nil); r.code != 200 {
 		t.Errorf("staff desbloquear = %d", r.code)
 	}
+	// Teste grátis: só admin libera; campo extra e prazo fora de 1-90 são recusados.
+	if r := e.do("POST", "/api/clients/"+org+"/trial", staff, map[string]int{"days": 7}); r.code != http.StatusForbidden {
+		t.Errorf("staff liberar teste = %d %s", r.code, r.raw)
+	}
+	if r := e.do("POST", "/api/clients/"+org+"/trial", admin, map[string]int{"days": 91}); r.code != http.StatusUnprocessableEntity {
+		t.Errorf("teste de 91 dias = %d %s", r.code, r.raw)
+	}
+	if r := e.do("POST", "/api/clients/"+org+"/trial", admin, map[string]any{"days": 7, "status": "active"}); r.code != http.StatusBadRequest {
+		t.Errorf("campo extra no teste = %d %s", r.code, r.raw)
+	}
+	if r := e.do("POST", "/api/clients/"+org+"/trial", admin, map[string]int{"days": 7}); r.code != 200 || r.body["status"] != "trialing" {
+		t.Errorf("admin liberar teste = %d %s", r.code, r.raw)
+	}
 	// Staff vê só as próprias ações no registro; admin vê todas.
 	mine := e.do("GET", "/api/audit", staff, nil)
 	for _, it := range mine.body["entries"].([]any) {

@@ -163,6 +163,34 @@ func (a *Admin) setBlocked(blocked bool) staffHandler {
 	}
 }
 
+// grantTrial libera teste grátis por N dias (0 encerra o teste em andamento). Só admin: é acesso sem pagar.
+func (a *Admin) grantTrial(w http.ResponseWriter, r *http.Request, m store.TeamMember, _ adminSession) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var b struct {
+		Days int `json:"days"`
+	}
+	if !decodeJSON(w, r, &b) {
+		return
+	}
+	row, err := a.Store.ClientRow(r.Context(), id)
+	if a.storeError(w, err) {
+		return
+	}
+	end, err := a.Store.GrantTrial(r.Context(), id, b.Days, a.now())
+	if a.storeError(w, err) {
+		return
+	}
+	action := "client_trial"
+	if b.Days == 0 {
+		action = "client_trial_end"
+	}
+	a.log(r, m, action, "organization", orgTarget(id), row.Name, map[string]any{"days": b.Days, "until": end})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "trialing", "until": end})
+}
+
 // resetFunc: ?escopo=campanhas apaga só campanhas e conversa (cadastro fica); sem escopo, o cliente inteiro.
 func (a *Admin) resetFunc(r *http.Request) (func(context.Context, int64, bool, store.AdminAction) (store.ResetReport, error), string) {
 	if r.URL.Query().Get("escopo") == "campanhas" {

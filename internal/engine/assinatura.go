@@ -105,7 +105,7 @@ func (e *Engine) planGate(ctx context.Context, ident store.Identity, conv store.
 		return true, e.send(ctx, conv, fmt.Sprintf(msgPlanStillOpen, e.refreshCheckoutLink(ctx, ident.OrgID, bs), planNames(plans)))
 	}
 	// Assinatura criada sem link (o Asaas ainda não tinha gerado a cobrança): tenta de novo.
-	if bs.Status == "pending" && bs.Provider == "asaas" && bs.ProviderRef != "" && bs.PendingMethod != "" {
+	if unpaid(bs) && bs.Provider == "asaas" && bs.ProviderRef != "" && bs.PendingMethod != "" {
 		link, err := e.Billing.FirstPaymentURL(ctx, bs.ProviderRef)
 		if err == nil {
 			link = e.ownCheckoutLink(ctx, ident.OrgID, bs.ProviderRef, "", link)
@@ -116,8 +116,14 @@ func (e *Engine) planGate(ctx context.Context, ident store.Identity, conv store.
 		}
 		e.Log.Warn("link da cobrança ainda indisponível no Asaas", "org_id", ident.OrgID, "erro", err)
 	}
+	if bs.Status == "trialing" {
+		return true, e.send(ctx, conv, planList(msgPlanTrialOver, plans))
+	}
 	return true, e.send(ctx, conv, planList(msgPlanNone, plans))
 }
+
+// unpaid: assinatura que nunca pagou (pendente ou teste grátis); a do Asaas pode ser trocada sem perda.
+func unpaid(bs store.BillingState) bool { return bs.Status == "pending" || bs.Status == "trialing" }
 
 // checkout cria (ou reaproveita) o cliente no Asaas, troca a assinatura pendente antiga e manda o link.
 func (e *Engine) checkout(ctx context.Context, ident store.Identity, conv store.Conversation, bs store.BillingState, p store.Plan, method string) error {
@@ -196,7 +202,7 @@ func (e *Engine) createCheckout(ctx context.Context, orgID int64, bs store.Billi
 	}
 	// Troca de plano ou de forma antes de pagar: a pendente antiga só sai depois que a nova existe, senão
 	// uma falha ao criar deixava o cliente sem nenhuma cobrança válida.
-	if bs.Status == "pending" && bs.Provider == "asaas" && bs.ProviderRef != "" && bs.ProviderRef != subID {
+	if unpaid(bs) && bs.Provider == "asaas" && bs.ProviderRef != "" && bs.ProviderRef != subID {
 		if err := e.Billing.DeleteSubscription(ctx, bs.ProviderRef); err != nil {
 			e.Log.Warn("assinatura pendente antiga ficou no Asaas", "org_id", orgID, "assinatura", bs.ProviderRef, "erro", err)
 		}
