@@ -19,6 +19,11 @@ func TestParsePlaces(t *testing.T) {
 		"[localização enviada pelo WhatsApp: pino -26.761234,-53.173456 (Loja)] 2km": {{Pin: true, Lat: -26.761234, Lng: -53.173456, RadiusKM: 2}},
 		"pino na Rua XV de Novembro 100, Chapecó 4 km":                               {{Pin: true, Address: "Rua XV de Novembro 100, Chapecó", RadiusKM: 4}},
 		"Maravilha e região":                                                         {{Query: "Maravilha"}},
+		// cidade com o nome do estado: uma cidade só, não cidade + estado (a Meta recusa o conflito)
+		"São Paulo, SP":              {{Query: "São Paulo, SP"}},
+		"Rio de Janeiro, RJ + 20 km": {{Query: "Rio de Janeiro, RJ", RadiusKM: 20}},
+		"Santa Catarina, Paraná":     {{Query: "Santa Catarina"}, {Query: "Paraná"}},
+		"Sao Paulo, São Paulo":       {{Query: "Sao Paulo, São Paulo"}},
 	}
 	for in, want := range cases {
 		if got := meta.ParsePlaces(in); !reflect.DeepEqual(got, want) {
@@ -91,5 +96,23 @@ func TestPublishSiteWithoutLinkIsClientSide(t *testing.T) {
 	in.Goal = "site"
 	if _, err := c.Publish(context.Background(), tok, in); err == nil || !strings.Contains(err.Error(), "sem link") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// Caso real (04/11): "São Paulo, SP" virava a cidade e o estado de SP juntos e a Meta recusava o conjunto
+// com "Algumas localizações estão em conflito".
+func TestPublishCityNamedLikeItsState(t *testing.T) {
+	for in, want := range map[string]string{"São Paulo, SP": "cities", "São Paulo; SP": "regions"} {
+		f, c := newFake(t)
+		f.basics()
+		bi := baseInput()
+		bi.LocationQuery, bi.RadiusKM = in, 0
+		if _, err := c.Publish(context.Background(), tok, bi); err != nil {
+			t.Fatalf("%q: %v", in, err)
+		}
+		geo := decode(t, f.one("POST /act_9/adsets").Form.Get("targeting"))["geo_locations"].(map[string]any)
+		if len(geo) != 1 || len(geo[want].([]any)) != 1 {
+			t.Fatalf("%q: geo = %v (esperava só %s)", in, geo, want)
+		}
 	}
 }

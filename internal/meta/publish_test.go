@@ -130,6 +130,10 @@ func (f *fakeGraph) basics() {
 		case q.Get("type") == "adgeolocation" && q.Get("location_types") == `["city"]` && q.Get("q") == "Campinas":
 			// formato real da Meta: o estado homônimo da capital vem com " (state)"
 			return 200, `{"data":[{"key":"CPS","name":"Campinas","type":"city","country_code":"BR","region":"São Paulo (state)","region_id":460}]}`
+		case q.Get("type") == "adgeolocation" && q.Get("location_types") == `["city"]` && q.Get("q") == "São Paulo":
+			return 200, `{"data":[{"key":"SPC","name":"São Paulo","type":"city","country_code":"BR","region":"São Paulo (state)","region_id":460}]}`
+		case q.Get("type") == "adgeolocation" && q.Get("location_types") == `["region"]` && q.Get("q") == "São Paulo":
+			return 200, `{"data":[{"key":"R460","name":"São Paulo (state)","type":"region","country_code":"BR"}]}`
 		case q.Get("type") == "adgeolocation" && q.Get("location_types") == `["region"]` && q.Get("q") == "Santa Catarina":
 			return 200, `{"data":[{"key":"R42","name":"Santa Catarina","type":"region","country_code":"BR"}]}`
 		case q.Get("type") == "adgeolocation":

@@ -61,8 +61,9 @@ func splitCommas(seg string) []string {
 		}
 		// "SC", "Santa Catarina" ou "SC 20 km" logo depois de uma cidade é o estado dela
 		bare := strings.Trim(kmRe.ReplaceAllString(part, ""), edgeTrim)
-		if _, isState := stateName(bare); isState && len(out) > 0 && !strings.Contains(out[len(out)-1], ",") && !isPinText(out[len(out)-1]) {
-			if _, prevState := stateName(strings.Trim(kmRe.ReplaceAllString(out[len(out)-1], ""), edgeTrim)); !prevState {
+		if state, isState := stateName(bare); isState && len(out) > 0 && !strings.Contains(out[len(out)-1], ",") && !isPinText(out[len(out)-1]) {
+			// "São Paulo, SP" e "Rio de Janeiro, RJ": cidade com o nome do próprio estado, não dois estados.
+			if prev, prevState := stateName(strings.Trim(kmRe.ReplaceAllString(out[len(out)-1], ""), edgeTrim)); !prevState || prev == state {
 				out[len(out)-1] += ", " + part
 				continue
 			}

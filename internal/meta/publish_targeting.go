@@ -115,8 +115,10 @@ func (c *Client) geo(ctx context.Context, token, query string, radiusKM int) (ma
 		places = []Place{{Query: strings.TrimSpace(query)}}
 	}
 	var cities, regions, pins []any
+	var cityRegions []string // estado de cada cidade, na mesma ordem
 	var warnings []string
 	seen := map[string]bool{}
+	chosenRegion := map[string]bool{}
 	for _, pl := range places {
 		if pl.Pin {
 			r := pinRadius(pl.RadiusKM)
@@ -142,8 +144,10 @@ func (c *Client) geo(ctx context.Context, token, query string, radiusKM int) (ma
 		seen[g.Key] = true
 		if !isCity {
 			regions = append(regions, map[string]any{"key": g.Key})
+			chosenRegion[normPlace(g.Name)] = true
 			continue
 		}
+		cityRegions = append(cityRegions, g.Region)
 		city := map[string]any{"key": g.Key}
 		own := pl.RadiusKM
 		if own == 0 {
@@ -156,6 +160,19 @@ func (c *Client) geo(ctx context.Context, token, query string, radiusKM int) (ma
 			city["radius"], city["distance_unit"] = r, "kilometer"
 		}
 		cities = append(cities, city)
+	}
+	// Cidade dentro de um estado também escolhido: a Meta recusa ("localizações em conflito"). O estado
+	// inteiro já cobre a cidade, então ela sai.
+	if len(chosenRegion) > 0 {
+		kept := cities[:0]
+		for i, city := range cities {
+			if chosenRegion[normPlace(cityRegions[i])] {
+				warnings = append(warnings, fmt.Sprintf("cidade dentro do estado %s removida: o estado inteiro já está na campanha", cityRegions[i]))
+				continue
+			}
+			kept = append(kept, city)
+		}
+		cities = kept
 	}
 	out := map[string]any{}
 	if len(cities) > 0 {
