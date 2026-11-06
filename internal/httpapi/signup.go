@@ -47,6 +47,8 @@ type Signup struct {
 	Mia          *mia.Cache // texto das boas-vindas; nil = padrão
 	// Billing: cobrança pelo Asaas ligada; a assinatura nasce pending e os planos vão depois das boas-vindas.
 	Billing bool
+	// VSLVideo: vídeo do YouTube da página inicial; vazio = VSLVideoID.
+	VSLVideo string
 }
 
 func (s *Signup) Register(mux *http.ServeMux) {
@@ -74,6 +76,8 @@ func (s *Signup) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/cadastro/{token}", s.limit("ip", 60, s.config))
 	mux.HandleFunc("GET /api/cadastro/{token}/cnpj/{cnpj}", s.limit("ip", 30, s.limit("token", 10, s.cnpj)))
 	mux.HandleFunc("POST /api/cadastro/{token}", s.limit("ip", 20, s.submit))
+	// Estatística da VSL: um ping a cada ~10 s por quem assiste; 90/min por IP sobra para uma casa inteira.
+	mux.HandleFunc("POST /api/vsl", s.limit("vsl", 90, s.vslEvent))
 }
 
 func (s *Signup) page(name string) http.HandlerFunc {
@@ -88,6 +92,12 @@ func (s *Signup) page(name string) http.HandlerFunc {
 	}
 }
 
+// homeCSP: a página inicial só fala com o próprio site, mais o player do YouTube da VSL
+// (script da API do player, iframe sem cookie e a capa do vídeo).
+const homeCSP = "default-src 'self'; script-src 'self' https://www.youtube.com; style-src 'self'; " +
+	"img-src 'self' data: https://i.ytimg.com; font-src 'self'; connect-src 'self'; " +
+	"frame-src https://www.youtube-nocookie.com https://www.youtube.com; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'"
+
 // home é a página inicial do meuanuncio.io, com o botão para começar no WhatsApp.
 func (s *Signup) home(w http.ResponseWriter, r *http.Request) {
 	b, err := web.ReadFile("web/inicio.html")
@@ -99,8 +109,9 @@ func (s *Signup) home(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "+
-		"font-src 'self'; connect-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
+	w.Header().Set("Content-Security-Policy", homeCSP)
+	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+	b = bytes.ReplaceAll(b, []byte("{{VSL_ID}}"), []byte(html.EscapeString(s.videoID())))
 	b = bytes.ReplaceAll(b, []byte("{{WHATSAPP}}"), []byte(html.EscapeString(link)))
 	b = bytes.ReplaceAll(b, []byte("{{WHATSAPP_NUMERO}}"), []byte(html.EscapeString(phoneDisplay(s.BotNumber))))
 	w.Write(b)

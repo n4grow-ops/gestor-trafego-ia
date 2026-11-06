@@ -560,3 +560,38 @@ img, svg { display: block; max-width: 100%; }
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-delay: 0ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; transition-delay: 0ms !important; }
 }
+
+/* ---------- VSL ---------- */
+.vsl { padding-block: clamp(2.5rem, 6vw, 4.5rem) clamp(3rem, 7vw, 5rem); }
+.vsl .wrap { display: grid; justify-items: center; gap: clamp(1.25rem, 3vw, 2rem); }
+.vsl-title { font-size: clamp(1.75rem, 3.6vw, 2.75rem); text-align: center; max-width: 22ch; }
+.vsl-title .accent { color: var(--cyan); }
+.vsl-frame {
+  position: relative; width: min(100%, 60rem); aspect-ratio: 16 / 9; border-radius: var(--radius);
+  overflow: hidden; background: var(--bg-deep);
+  box-shadow: 0 0 0 1px var(--line) inset, 0 40px 90px -40px oklch(0.55 0.22 263 / 0.75);
+}
+.vsl-frame iframe, .vsl-frame > div { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.vsl-cover {
+  position: absolute; inset: 0; display: grid; place-items: center; padding: 0; border: 0; cursor: pointer;
+  background: var(--bg-deep); color: #fff; font: inherit;
+}
+.vsl-cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.82; transition: opacity 0.4s var(--ease), transform 0.8s var(--ease); }
+.vsl-cover::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, oklch(0.145 0.05 266 / 0) 45%, oklch(0.145 0.05 266 / 0.75)); }
+.vsl-play {
+  position: relative; z-index: 1; display: grid; place-items: center;
+  width: clamp(4rem, 9vw, 5.75rem); aspect-ratio: 1; border-radius: 50%;
+  background: var(--blue-btn); box-shadow: 0 0 0 10px oklch(0.575 0.225 263 / 0.25), 0 20px 50px -12px oklch(0.575 0.225 263 / 0.9);
+  transition: transform 0.3s var(--ease), background 0.3s var(--ease);
+}
+.vsl-play svg { width: 42%; height: 42%; margin-left: 8%; }
+.vsl-hint { position: absolute; z-index: 1; left: 0; right: 0; bottom: clamp(0.75rem, 3vw, 1.5rem); text-align: center; font-weight: 600; font-size: clamp(0.875rem, 1.6vw, 1rem); }
+.vsl-cover:hover .vsl-play, .vsl-cover:focus-visible .vsl-play { transform: scale(1.07); background: var(--blue-hover); }
+.vsl-cover:hover img { opacity: 0.95; transform: scale(1.02); }
+.vsl-cover:focus-visible { outline: 3px solid var(--cyan); outline-offset: -3px; }
+.vsl-frame.loading .vsl-play { animation: vsl-pulse 1s var(--ease) infinite alternate; }
+@keyframes vsl-pulse { to { transform: scale(0.92); opacity: 0.7; } }
+.vsl-noscript { position: absolute; inset: auto 0 1rem; text-align: center; z-index: 2; }
+.vsl-cta { display: flex; justify-content: center; }
+@media (max-width: 520px) { .vsl-cta, .vsl-cta .btn { width: 100%; } .vsl-frame { border-radius: var(--radius-sm); } }
+@media (prefers-reduced-motion: reduce) { .vsl-cover img, .vsl-play { transition: none; } .vsl-frame.loading .vsl-play { animation: none; } }

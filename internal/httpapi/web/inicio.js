@@ -134,3 +134,124 @@
     play();
   }
 })();
+
+// ---------- VSL: player do YouTube só no clique + estatística anônima ----------
+// Manda para /api/vsl: abriu a página (view), deu play, faixas de 5% assistidas (tick) e clique
+// para começar no WhatsApp (cta). Sem nome, telefone ou IP: só dois aleatórios (navegador e visita).
+(function () {
+  "use strict";
+  var box = document.querySelector("[data-vsl]");
+  if (!box || !window.fetch) return;
+  var videoId = box.getAttribute("data-vsl");
+  var BUCKETS = 20;
+
+  function uuid() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    var b = new Uint8Array(16);
+    crypto.getRandomValues(b);
+    b[6] = (b[6] & 15) | 64; b[8] = (b[8] & 63) | 128;
+    var h = Array.prototype.map.call(b, function (x) { return (x + 256).toString(16).slice(1); }).join("");
+    return h.slice(0, 8) + "-" + h.slice(8, 12) + "-" + h.slice(12, 16) + "-" + h.slice(16, 20) + "-" + h.slice(20);
+  }
+  var visitor = null;
+  try { visitor = localStorage.getItem("ma_vsl_v"); } catch (e) { /* sem armazenamento: conta como visitante novo */ }
+  if (!visitor || !/^[0-9a-f-]{36}$/.test(visitor)) {
+    visitor = uuid();
+    try { localStorage.setItem("ma_vsl_v", visitor); } catch (e) { /* idem */ }
+  }
+  var session = uuid();
+  var source = "";
+  try {
+    source = new URLSearchParams(location.search).get("utm_source") || "";
+    if (!source && document.referrer) {
+      var host = new URL(document.referrer).hostname;
+      if (host !== location.hostname) source = host;
+    }
+  } catch (e) { /* referrer estranho: fica sem origem */ }
+
+  var mask = 0, maxT = 0, dur = 0, watched = 0, lastT = -1, sentMask = -1, sentMax = -1, sentW = -1;
+  function send(ev) {
+    var body = JSON.stringify({ s: session, v: visitor, e: ev, d: Math.round(dur), t: Math.round(maxT), m: mask, w: Math.round(watched), src: source.slice(0, 60) });
+    try {
+      fetch("/api/vsl", { method: "POST", headers: { "Content-Type": "application/json" }, body: body, keepalive: true, credentials: "omit" })
+        .catch(function () { /* estatística: se falhar, segue */ });
+    } catch (e) { /* idem */ }
+    sentMask = mask; sentMax = Math.round(maxT); sentW = Math.round(watched);
+  }
+  function flush() { if (mask !== sentMask || Math.round(maxT) !== sentMax || Math.round(watched) !== sentW) send("tick"); }
+
+  send("view");
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest && e.target.closest('a[href^="https://wa.me/"]');
+    if (a) send("cta");
+  });
+  document.addEventListener("visibilitychange", function () { if (document.visibilityState === "hidden") flush(); });
+  window.addEventListener("pagehide", flush);
+
+  var player = null, timer = null, played = false, samples = 0;
+  function sample() {
+    if (!player || !player.getCurrentTime) return;
+    var t = player.getCurrentTime() || 0;
+    dur = player.getDuration() || dur;
+    // Só conta o tempo que andou sozinho (pulo pra frente ou pra trás não soma).
+    if (lastT >= 0 && t > lastT && t - lastT <= 2.5) watched += t - lastT;
+    lastT = t;
+    if (dur > 0) {
+      mask |= 1 << Math.min(BUCKETS - 1, Math.floor((t / dur) * BUCKETS));
+      if (t > maxT) maxT = Math.min(t, dur);
+    }
+    if (++samples % 10 === 0) flush();
+  }
+  function onState(e) {
+    var S = window.YT.PlayerState;
+    if (e.data === S.PLAYING) {
+      if (!played) { played = true; dur = player.getDuration() || 0; send("play"); }
+      if (!timer) timer = setInterval(sample, 1000);
+    } else {
+      if (timer) { clearInterval(timer); timer = null; }
+      lastT = -1;
+      if (e.data === S.ENDED) { mask |= 1 << (BUCKETS - 1); maxT = dur; }
+      sample();
+      flush();
+    }
+  }
+  function mount() {
+    var holder = document.createElement("div");
+    box.appendChild(holder);
+    player = new window.YT.Player(holder, {
+      host: "https://www.youtube-nocookie.com",
+      videoId: videoId,
+      playerVars: { autoplay: 1, rel: 0, playsinline: 1, modestbranding: 1 },
+      events: {
+        onReady: function (e) {
+          var cover = box.querySelector(".vsl-cover");
+          if (cover) cover.remove();
+          box.classList.remove("loading");
+          e.target.playVideo();
+        },
+        onStateChange: onState
+      }
+    });
+  }
+  function start() {
+    if (box.classList.contains("loading") || player) return;
+    box.classList.add("loading");
+    if (window.YT && window.YT.Player) { mount(); return; }
+    var prev = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = function () { if (prev) prev(); mount(); };
+    var s = document.createElement("script");
+    s.src = "https://www.youtube.com/iframe_api";
+    s.onerror = function () { location.href = "https://www.youtube.com/watch?v=" + encodeURIComponent(videoId); };
+    document.head.appendChild(s);
+  }
+  var cover = box.querySelector(".vsl-cover");
+  if (cover) cover.addEventListener("click", start);
+  // Capa em HD; se o vídeo não tiver (o YouTube devolve um cinza de 120 px), usa a menor.
+  var img = cover && cover.querySelector("img");
+  if (img) {
+    var low = function () { if (img.src.indexOf("hqdefault") < 0) img.src = "https://i.ytimg.com/vi/" + encodeURIComponent(videoId) + "/hqdefault.jpg"; };
+    img.addEventListener("error", low);
+    img.addEventListener("load", function () { if (img.naturalWidth < 200) low(); });
+    if (img.complete && img.naturalWidth && img.naturalWidth < 200) low();
+  }
+})();

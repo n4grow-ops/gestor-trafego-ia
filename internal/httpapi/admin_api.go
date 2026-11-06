@@ -497,6 +497,25 @@ func (a *Admin) whatsapp(w http.ResponseWriter, r *http.Request, m store.TeamMem
 	writeJSON(w, http.StatusOK, map[string]any{"stats": st, "provider": a.Provider, "bot_number": a.BotNumber, "window_limited": a.WindowLimited})
 }
 
+// vsl: quantos abriram a página inicial, deram play na VSL, até onde assistiram e quantos clicaram
+// para começar. Sem dado pessoal: as sessões são anônimas.
+func (a *Admin) vsl(w http.ResponseWriter, r *http.Request, m store.TeamMember, _ adminSession) {
+	days := 30
+	switch r.URL.Query().Get("days") {
+	case "1":
+		days = 1
+	case "7":
+		days = 7
+	case "90":
+		days = 90
+	}
+	st, err := a.Store.VSLStats(r.Context(), VSLVideoID, days, time.Now())
+	if a.storeError(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, st)
+}
+
 // team: administrador vê a equipe toda; equipe vê só a própria linha (para cuidar do próprio
 // WhatsApp e dos avisos).
 func (a *Admin) team(w http.ResponseWriter, r *http.Request, m store.TeamMember, _ adminSession) {
