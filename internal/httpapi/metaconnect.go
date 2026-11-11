@@ -84,10 +84,12 @@ func (m *MetaConnect) limit(perMinute int, next http.HandlerFunc) http.HandlerFu
 
 func (m *MetaConnect) start(w http.ResponseWriter, r *http.Request) {
 	raw := r.PathValue("token")
-	if _, err := m.Store.MetaLink(r.Context(), signup.HashToken(raw)); err != nil {
+	link, err := m.Store.MetaLink(r.Context(), signup.HashToken(raw))
+	if err != nil {
 		m.fail(w, r, err, http.StatusGone, titleLinkGone, msgLinkGone, "")
 		return
 	}
+	m.markOpened(r.Context(), link.ID)
 	nonce, err := randomHex(16)
 	if err != nil {
 		m.fail(w, r, err, http.StatusInternalServerError, "Algo deu errado", msgTryLater, "")
@@ -317,4 +319,17 @@ func randomHex(n int) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+// markOpened marca a primeira abertura do link e agenda a conferência: se o login não voltar do
+// Facebook (cliente ainda não é testador), a Mia pede o link do perfil. Falha aqui não segura a página.
+func (m *MetaConnect) markOpened(ctx context.Context, linkID int64) {
+	first, err := m.Store.MarkMetaLinkOpened(ctx, linkID)
+	if err == nil && first {
+		err = m.Store.Enqueue(ctx, store.JobSpec{Kind: engine.JobMetaLinkFollowup,
+			Payload: engine.MetaLinkFollowupJob{LinkID: linkID}, Delay: engine.MetaLinkFollowupDelay})
+	}
+	if err != nil {
+		m.Log.Warn("abertura do link de conexão não registrada", "link_id", linkID, "erro", err)
+	}
 }

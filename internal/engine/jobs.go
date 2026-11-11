@@ -105,6 +105,8 @@ func (e *Engine) HandleJob(ctx context.Context, job store.Job) error {
 		return e.billingNotify(ctx, job.Payload)
 	case JobTesterResolve:
 		return e.testerResolve(ctx, job.Payload)
+	case JobMetaLinkFollowup:
+		return e.metaLinkFollowup(ctx, job.Payload)
 	case JobCreativesPreview:
 		var p PreviewJob
 		if err := json.Unmarshal(job.Payload, &p); err != nil {

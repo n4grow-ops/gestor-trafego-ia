@@ -31,7 +31,7 @@ const (
 	msgProjectAmbiguous       = "Achei mais de um projeto parecido: %s. Qual deles?"
 	msgNoProjects             = "Você ainda não tem projetos. É só me contar o que quer anunciar."
 
-	msgMetaLink               = "Pra eu publicar seus anúncios, conecta sua conta de anúncios do Facebook/Instagram por aqui:\n\n%s\n\nVocê entra com o seu Facebook e escolhe a conta e a Página. Leva 1 minuto e o link vale por 24 horas.\n\nSe aparecer que o app está indisponível, me manda o link do seu perfil do Facebook que eu peço pra te liberar."
+	msgMetaLink               = "Pra eu publicar seus anúncios, conecta sua conta de anúncios do Facebook/Instagram por aqui:\n\n%s\n\nVocê entra com o seu Facebook e escolhe a conta e a Página. Leva 1 minuto e o link vale por 24 horas.\n\n⚠️ *Importante:* Se aparecer que o app está indisponível, me manda o link do seu perfil do Facebook que eu peço pra te liberar. Pra pegar o link: abre o seu perfil no Facebook → toca nos *três pontinhos* → *Copiar link do perfil* e cola aqui."
 	msgStillMissing           = "Pra eu pedir a proposta ao especialista, ainda preciso saber: %s. Me conta?"
 	msgWhatToAdvertise        = "Me conta o que você quer anunciar agora que eu já monto tudo pra você 🙂"
 	msgMetaRelink             = "Pra trocar ou incluir outra conta de anúncios, toca no link e entra de novo com o seu Facebook:\n\n%s\n\nSe aparecer \"Continuar como…\", toca em *Editar acesso* e marca as contas de anúncios e Páginas que quer liberar. Depois é só escolher qual eu uso. O link vale por 24 horas, e até você escolher a conta atual continua valendo."
@@ -155,6 +155,7 @@ const (
 	msgDailyReport = "📊 meuanuncio.io — resumo das últimas 24 h\n\n👤 Contatos novos: %d\n✅ Cadastros concluídos: %d\n⏳ Cadastros pendentes (com link): %d\n💬 Mensagens recebidas: %d\n📝 Propostas geradas: %d\n👍 Propostas aprovadas: %d\n🖼️ Anúncios recebidos: %d\n💸 Custo de IA: US$ %s"
 
 	// Testador do app da Meta (enquanto o app está em desenvolvimento).
+	msgMetaAskProfile        = "Vi que você abriu o link pra conectar a conta, mas a conexão não chegou aqui 🤔\n\nSe o Facebook mostrou que o app está indisponível ou deu erro, é porque preciso te liberar primeiro. Me manda o *link do seu perfil do Facebook*: abre o seu perfil → toca nos *três pontinhos* → *Copiar link do perfil* e cola aqui. Assim que liberarem, te mando o link de novo."
 	msgTesterReceived        = "Recebi! Já pedi pra equipe te liberar como testador, te aviso aqui 🙂"
 	msgTesterAlready         = "Esse perfil eu já recebi e já pedi pra equipe te liberar 🙂 Assim que liberarem, te aviso aqui."
 	msgTesterAddressBar      = "Não consegui abrir esse link 😅 Abre o seu perfil do Facebook no navegador e me manda o endereço que aparece lá em cima, na barra de endereço (tipo facebook.com/seu.nome)?"

@@ -281,3 +281,30 @@ func (s *Store) MetaDeletionDone(ctx context.Context, code string) (bool, error)
 	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM meta_connections WHERE deletion_code = $1 AND status IN ('revoked', 'replaced'))`, code).Scan(&ok)
 	return ok, err
 }
+
+// MarkMetaLinkOpened marca a primeira abertura do link; first=true só na primeira vez.
+func (s *Store) MarkMetaLinkOpened(ctx context.Context, linkID int64) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `UPDATE meta_connect_links SET opened_at = now() WHERE id = $1 AND opened_at IS NULL`, linkID)
+	return tag.RowsAffected() == 1, err
+}
+
+// MetaLinkFollowup é o link aberto que não voltou do Facebook, com a conversa do cliente.
+type MetaLinkFollowup struct {
+	IdentityID     int64
+	ConversationID int64
+}
+
+// ClaimMetaLinkFollowup reserva o aviso de "link aberto sem conexão" (uma vez por link). ErrNotFound:
+// link usado, vencido, já avisado, ou o login voltou do Facebook (aí não é problema de testador).
+func (s *Store) ClaimMetaLinkFollowup(ctx context.Context, linkID int64) (MetaLinkFollowup, error) {
+	var f MetaLinkFollowup
+	err := s.pool.QueryRow(ctx, `UPDATE meta_connect_links l SET followup_at = now()
+		WHERE l.id = $1 AND l.used_at IS NULL AND l.followup_at IS NULL AND l.expires_at > now()
+		  AND NOT EXISTS (SELECT 1 FROM meta_connections c WHERE c.link_id = l.id)
+		RETURNING l.identity_id, coalesce((SELECT c.id FROM conversations c WHERE c.identity_id = l.identity_id ORDER BY c.id DESC LIMIT 1), 0)`,
+		linkID).Scan(&f.IdentityID, &f.ConversationID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return f, ErrNotFound
+	}
+	return f, err
+}
