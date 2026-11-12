@@ -23,6 +23,7 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/mail"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/meta"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/mia"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/notify"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/secretbox"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/signup"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/storage"
@@ -89,6 +90,8 @@ func run(log *slog.Logger) error {
 		TTSModel: cfg.TTSModel,
 		TTSVoice: cfg.TTSVoice,
 	}
+	// Notificações por webhook (aba Notificações do painel): Pushcut, MacroDroid e webhook genérico.
+	eng.Notify = &notify.Deliverer{Store: st, Sender: &notify.Sender{}, Log: log}
 	// Mia configurada no painel: relida do banco a cada 30 s; sem configuração, o padrão do código.
 	eng.Mia = &mia.Cache{TTL: 30 * time.Second, Load: miaLoader(st),
 		OnError: func(err error) { log.Error("configuração da Mia indisponível; segue a última boa", "erro", err) }}

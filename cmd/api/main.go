@@ -105,6 +105,9 @@ func run(log *slog.Logger) error {
 		}
 		routes = append(routes, mc.Register)
 	}
+	// Venda de fora (POST /api/hooks/venda): vira o evento venda.nova da aba Notificações. Sem token
+	// gerado no painel, responde 401.
+	routes = append(routes, (&httpapi.SaleHook{Store: st, Limiter: httpapi.NewLimiter(), Log: log}).Register)
 	// Webhook do Asaas: sem ASAAS_WEBHOOK_TOKEN responde 503 (desligado).
 	hook := &httpapi.AsaasWebhook{Store: st, Token: cfg.AsaasWebhookToken, Log: log}
 	if cfg.CheckoutEnabled() {

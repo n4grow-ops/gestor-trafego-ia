@@ -21,6 +21,12 @@ import (
 // HandleJob executa um job do outbox. Erro devolvido = o outbox tenta de novo.
 func (e *Engine) HandleJob(ctx context.Context, job store.Job) error {
 	switch job.Kind {
+	case store.NotifyJobKind:
+		// Notificação por webhook (aba Notificações): sem entregador configurado, descarta.
+		if e.Notify == nil {
+			return nil
+		}
+		return e.Notify.Deliver(ctx, job)
 	case JobPropose:
 		var p ProposeJob
 		if err := json.Unmarshal(job.Payload, &p); err != nil {

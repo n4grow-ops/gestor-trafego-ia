@@ -15,6 +15,7 @@
 <script src="static/planos.js" defer></script>
 <script src="static/testadores.js" defer></script>
 <script src="static/vsl.js" defer></script>
+<script src="static/notificacoes.js" defer></script>
 </head>
 <body class="booting">
 <svg class="sprite" aria-hidden="true" focusable="false">
@@ -56,6 +57,7 @@
     <symbol id="i-history" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></symbol>
     <symbol id="i-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.2V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.8a2 2 0 0 0-1.1-1.8l-1.8-.9a2 2 0 0 1-1.1-1.8V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></symbol>
     <symbol id="i-tag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><path d="M7.5 7.5h.01"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></symbol>
     <symbol id="i-flask" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M10 3v6.5L4.6 18.4A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.4-2.6L14 9.5V3"/><path d="M7.5 15h9"/></symbol>
     <symbol id="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></symbol>
     <symbol id="i-ext" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
@@ -104,6 +106,7 @@
       <a href="#/testadores" data-route="testadores"><svg class="ico" aria-hidden="true"><use href="#i-flask"/></svg><span class="nav-t">Testadores</span><span class="count hot num" id="nav-testers" hidden></span></a>
       <a href="#/faturamento" data-route="faturamento" data-admin><svg class="ico" aria-hidden="true"><use href="#i-money"/></svg><span class="nav-t">Faturamento</span></a>
       <a href="#/planos" data-route="planos"><svg class="ico" aria-hidden="true"><use href="#i-tag"/></svg><span class="nav-t">Planos</span></a>
+      <a href="#/notificacoes" data-route="notificacoes" data-admin><svg class="ico" aria-hidden="true"><use href="#i-bell"/></svg><span class="nav-t">Notificações</span></a>
       <a href="#/mia" data-route="mia" data-admin><svg class="ico" aria-hidden="true"><use href="#i-bot"/></svg><span class="nav-t">Mia</span></a>
       <div class="nav-group"><span class="nav-t">Operação</span></div>
       <a href="#/fila" data-route="fila"><svg class="ico" aria-hidden="true"><use href="#i-alert"/></svg><span class="nav-t">Fila de tarefas</span></a>

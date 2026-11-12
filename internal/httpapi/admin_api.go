@@ -484,6 +484,11 @@ func (a *Admin) recordPayment(w http.ResponseWriter, r *http.Request, m store.Te
 	if a.storeError(w, err) {
 		return
 	}
+	if b.Status == "paid" {
+		if err := a.emitManualSale(r.Context(), b.OrgID, b.AmountCents, b.Method); err != nil {
+			a.Log.Warn("painel: notificação da venda manual não enfileirada", "erro", err)
+		}
+	}
 	a.log(r, m, "payment_record", "organization", orgTarget(b.OrgID), row.Name,
 		map[string]any{"payment_id": id, "amount_cents": b.AmountCents, "method": b.Method, "status": b.Status, "date": b.Date})
 	writeJSON(w, http.StatusCreated, map[string]int64{"id": id})

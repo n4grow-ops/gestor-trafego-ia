@@ -245,6 +245,19 @@ func (s *Store) CompleteRegistration(ctx context.Context, r Registration) (Regis
 	if _, err := tx.Exec(ctx, `UPDATE signup_links SET used_at = now() WHERE id = $1`, linkID); err != nil {
 		return RegistrationResult{}, err
 	}
+	// Aba Notificações: cadastro concluído (só enfileira; entrega no worker).
+	data, err := orgNotifyData(ctx, tx, res.OrgID)
+	if err != nil {
+		return RegistrationResult{}, err
+	}
+	var planName string
+	if err := tx.QueryRow(ctx, `SELECT name FROM plans WHERE code = $1`, r.PlanCode).Scan(&planName); err != nil {
+		return RegistrationResult{}, err
+	}
+	data["produto"], data["origem"] = planName, "cadastro"
+	if err := emitNotify(ctx, tx, "cadastro.novo", data); err != nil {
+		return RegistrationResult{}, err
+	}
 	// Conversa: vai conhecer o negócio (onboarding) antes de falar de anúncio; conversa em andamento fica como está.
 	var convID int64
 	var chatID string

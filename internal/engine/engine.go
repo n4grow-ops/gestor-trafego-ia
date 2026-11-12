@@ -22,6 +22,7 @@ import (
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/llm"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/meta"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/mia"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/notify"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/secretbox"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/whatsapp"
@@ -99,6 +100,11 @@ type Engine struct {
 	OperatorPhone string
 	Now           func() time.Time
 	Log           *slog.Logger
+
+	// Notify entrega as notificações por webhook (job notify.deliver). nil = descarta.
+	Notify interface {
+		Deliver(ctx context.Context, job store.Job) error
+	}
 
 	// Cadastro automático de número novo, com limites de custo.
 	AutoSignup       bool
@@ -243,6 +249,7 @@ func (e *Engine) HandleInbound(ctx context.Context, in whatsapp.Inbound) error {
 			return err
 		}
 	}
+	e.notifyInbound(ctx, ident, in, newClient)
 	// Limite diário antes de qualquer custo (transcrição ou IA): avisa uma vez e depois silencia.
 	received, err := e.Store.CountInboundSince(ctx, ident.OrgID, startOfDay(e.now()))
 	if err != nil {
@@ -809,6 +816,33 @@ func (e *Engine) recordUsage(ctx context.Context, orgID int64, agent string, u l
 	}
 	if err := e.Store.RecordUsage(ctx, orgID, agent, u); err != nil {
 		e.Log.Error("falha ao registrar uso", "agente", agent, "erro", err)
+	}
+}
+
+// notifyInbound avisa os destinos da aba Notificações: cliente novo (primeiro contato) e mensagem do
+// cliente. Só enfileira; falha aqui não segura a resposta.
+func (e *Engine) notifyInbound(ctx context.Context, ident store.Identity, in whatsapp.Inbound, newClient bool) {
+	msg := strings.TrimSpace(in.Text)
+	if msg == "" {
+		msg = map[whatsapp.Kind]string{whatsapp.KindImage: "[foto]", whatsapp.KindVideo: "[vídeo]"}[in.Kind]
+		if msg == "" {
+			msg = "[" + string(in.Kind) + "]"
+		}
+	}
+	nome := ident.MemberName
+	if nome == "" || nome == "Cliente" {
+		nome = ident.OrgName
+	}
+	data := map[string]string{"nome": nome, "empresa": ident.OrgName, "whatsapp": in.Phone,
+		"mensagem": notify.MessageSnippet(msg), "origem": "whatsapp"}
+	events := []string{notify.EventMessage}
+	if newClient {
+		events = append(events, notify.EventNewClient)
+	}
+	for _, ev := range events {
+		if err := e.Store.EmitNotify(ctx, ev, data); err != nil {
+			e.Log.Warn("notificação não enfileirada", "evento", ev, "erro", err)
+		}
 	}
 }
 

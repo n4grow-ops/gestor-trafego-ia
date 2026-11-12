@@ -288,8 +288,14 @@ func applyAsaasPayment(ctx context.Context, tx pgx.Tx, event string, p AsaasPaym
 	case "PAYMENT_REFUNDED", "PAYMENT_CHARGEBACK_REQUESTED":
 		status = "refunded"
 	}
-	saved := status
+	saved, prevPay := status, ""
 	if p.ID != "" {
+		// Situação anterior do pagamento: a venda só avisa na primeira vez que ele vira pago
+		// (o cartão manda CONFIRMED e depois RECEIVED).
+		if err := tx.QueryRow(ctx, `SELECT status FROM payments WHERE provider = 'asaas' AND provider_ref = $1`, p.ID).
+			Scan(&prevPay); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return nil, err
+		}
 		if err := tx.QueryRow(ctx, `INSERT INTO payments (subscription_id, amount_cents, method, status, provider, provider_ref, paid_at)
 			VALUES ($1, $2, $3, $4, 'asaas', $5, $6)
 			ON CONFLICT (provider, provider_ref) WHERE provider_ref IS NOT NULL DO UPDATE SET
@@ -300,6 +306,16 @@ func applyAsaasPayment(ctx context.Context, tx pgx.Tx, event string, p AsaasPaym
 			RETURNING status`,
 			subID, int64(math.Round(p.Value*100)), method, status, p.ID, paidAt).Scan(&saved); err != nil {
 			return nil, fmt.Errorf("store: pagamento asaas: %w", err)
+		}
+	}
+	if status == "paid" && prevPay != "paid" {
+		data, err := orgNotifyData(ctx, tx, orgID)
+		if err != nil {
+			return nil, err
+		}
+		data["valor"], data["produto"], data["origem"] = FormatBRL(int64(math.Round(p.Value*100))), planName, "asaas · "+method
+		if err := emitNotify(ctx, tx, "venda.nova", data); err != nil {
+			return nil, err
 		}
 	}
 	switch event {

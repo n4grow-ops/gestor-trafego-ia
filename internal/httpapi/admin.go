@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/mia"
+	"github.com/n4grow-ops/gestor-trafego-ia/internal/notify"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/signup"
 	"github.com/n4grow-ops/gestor-trafego-ia/internal/store"
 )
@@ -57,6 +58,10 @@ type Admin struct {
 	// testerResends: último "Reenviar aviso" de cada pedido (no máximo um a cada 2 min).
 	testerResends resendGuard
 
+	// NotifySender entrega as notificações da aba Notificações (teste e validação da URL); nil = padrão
+	// (só https e rede pública).
+	NotifySender *notify.Sender
+
 	Limiter *Limiter
 	Log     *slog.Logger
 	Now     func() time.Time
@@ -80,6 +85,7 @@ func (a *Admin) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /admin/static/planos.js", a.asset("web/admin/planos.js", "text/javascript; charset=utf-8"))
 	mux.HandleFunc("GET /admin/static/testadores.js", a.asset("web/admin/testadores.js", "text/javascript; charset=utf-8"))
 	mux.HandleFunc("GET /admin/static/vsl.js", a.asset("web/admin/vsl.js", "text/javascript; charset=utf-8"))
+	mux.HandleFunc("GET /admin/static/notificacoes.js", a.asset("web/admin/notificacoes.js", "text/javascript; charset=utf-8"))
 	mux.HandleFunc("GET /admin/static/marca.png", a.asset("web/admin/marca.png", "image/png"))
 	mux.HandleFunc("GET /admin/static/icone.png", a.asset("web/admin/icone.png", "image/png"))
 	mux.HandleFunc("GET /admin/static/figtree.woff2", a.asset("web/figtree.woff2", "font/woff2"))
@@ -131,6 +137,7 @@ func (a *Admin) Register(mux *http.ServeMux) {
 	a.registerPlans(mux)
 	a.registerTesters(mux)
 	a.registerTeamAlerts(mux)
+	a.registerNotify(mux)
 }
 
 // adminCSP: nada de script ou estilo inline, nada de terceiros; a API é a mesma origem.
