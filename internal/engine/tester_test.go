@@ -389,7 +389,8 @@ func TestTesterAddedSendsInviteAndLink(t *testing.T) {
 	ft.markAdded(id, h.now)
 	enqueueAdded(h, id)
 	last := h.wa.last().Text
-	if !strings.Contains(h.sentText(), "Te adicionei como testador! ✅") || !strings.Contains(h.sentText(), "https://developers.facebook.com/requests") ||
+	if !strings.Contains(h.sentText(), "Te adicionei como testador! ✅") || !strings.Contains(h.sentText(), "Notificações* → toca no convite") ||
+		strings.Contains(h.sentText(), "developers.facebook.com/requests") ||
 		!strings.Contains(last, metaBase+"/") {
 		t.Fatalf("cliente = %q", h.sentText())
 	}
