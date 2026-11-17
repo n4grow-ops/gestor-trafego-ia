@@ -58,6 +58,7 @@ func (s *Signup) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /termos", s.page("web/termos.html"))
 	mux.HandleFunc("GET /privacidade", s.page("web/privacidade.html"))
 	mux.HandleFunc("GET /static/cadastro.css", s.asset("web/cadastro.css", "text/css; charset=utf-8"))
+	mux.HandleFunc("GET /static/meta.js", s.asset("web/meta.js", "text/javascript; charset=utf-8")) // filtro da escolha de conta (/meta)
 	mux.HandleFunc("GET /static/logo.png", s.asset("web/logo.png", "image/png"))
 	mux.HandleFunc("GET /static/icon.png", s.asset("web/icon.png", "image/png"))
 	mux.HandleFunc("GET /static/favicon.png", s.asset("web/favicon.png", "image/png"))

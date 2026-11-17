@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -53,8 +54,83 @@ var metaPage = template.Must(template.ParseFS(web, "web/meta.html"))
 
 type metaView struct {
 	State, Title, Message, Retry, LoginURL, Token, Nonce, WhatsApp string
-	AdAccounts                                                     []meta.AdAccount
-	Pages                                                          []meta.Page
+	AdAccounts                                                     []accountOption
+	Pages                                                          []pageOption
+}
+
+// accountOption é uma conta de anúncios na tela de escolha: ID, portfólio e situação ajudam a achar a certa
+// quando o cliente tem várias com nomes parecidos.
+type accountOption struct {
+	ID, Name, Number, Business, Currency, StatusText string
+	Active, Checked                                  bool
+	Search                                           string // texto em minúsculas que o filtro compara
+}
+
+type pageOption struct {
+	ID, Name, Instagram string
+	Checked             bool
+	Search              string
+}
+
+// accountOptions ordena as contas (ativas primeiro, depois pelo nome) e só deixa uma marcada quando é a única:
+// com várias, o cliente escolhe de propósito em vez de levar a primeira da lista.
+func accountOptions(accs []meta.AdAccount) []accountOption {
+	out := make([]accountOption, len(accs))
+	for i, a := range accs {
+		num := strings.TrimPrefix(a.ID, "act_")
+		o := accountOption{ID: a.ID, Name: a.Name, Number: num, Business: a.BusinessName, Currency: a.Currency, Active: a.Status == 1}
+		if a.Name == "" {
+			o.Name = "Conta " + num
+		}
+		if !o.Active {
+			o.StatusText = metaAccountStatus(a.Status)
+		}
+		o.Search = strings.ToLower(strings.Join([]string{o.Name, num, a.BusinessName, a.Currency}, " "))
+		out[i] = o
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Active != out[j].Active {
+			return out[i].Active
+		}
+		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
+	})
+	if len(out) == 1 {
+		out[0].Checked = true
+	}
+	return out
+}
+
+func pageOptions(pages []meta.Page) []pageOption {
+	out := make([]pageOption, len(pages))
+	for i, p := range pages {
+		out[i] = pageOption{ID: p.ID, Name: p.Name, Instagram: p.InstagramUsername,
+			Search: strings.ToLower(p.Name + " " + p.InstagramUsername + " " + p.ID)}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name) })
+	if len(out) == 1 {
+		out[0].Checked = true
+	}
+	return out
+}
+
+// metaAccountStatus é a situação da conta na tela de escolha (account_status da Marketing API).
+func metaAccountStatus(status int) string {
+	switch status {
+	case 2:
+		return "Desativada"
+	case 3:
+		return "Pagamento pendente"
+	case 7:
+		return "Em análise"
+	case 8:
+		return "Acerto de pagamento"
+	case 9:
+		return "Em carência"
+	case 100, 101:
+		return "Fechada"
+	default:
+		return "Com restrição"
+	}
 }
 
 const (
@@ -160,7 +236,8 @@ func (m *MetaConnect) callback(w http.ResponseWriter, r *http.Request) {
 		m.complete(w, r, link, connID, assets.AdAccounts[0], assets.Pages[0])
 		return
 	}
-	m.render(w, http.StatusOK, metaView{State: "choose", Token: raw, Nonce: nonce, AdAccounts: assets.AdAccounts, Pages: assets.Pages})
+	m.render(w, http.StatusOK, metaView{State: "choose", Token: raw, Nonce: nonce,
+		AdAccounts: accountOptions(assets.AdAccounts), Pages: pageOptions(assets.Pages)})
 }
 
 func (m *MetaConnect) choose(w http.ResponseWriter, r *http.Request) {
@@ -197,8 +274,10 @@ func (m *MetaConnect) choose(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if acc == nil || page == nil {
-		m.fail(w, r, errors.New("escolha fora da lista"), http.StatusBadRequest, "Escolha inválida",
-			"Volta e escolhe uma conta e uma Página da lista.", m.BaseURL+"/m/"+raw)
+		// Volta para a mesma lista (o login continua valendo) em vez de mandar refazer o Facebook.
+		m.render(w, http.StatusBadRequest, metaView{State: "choose", Token: raw, Nonce: r.PostFormValue("nonce"),
+			Message:    "Escolha uma conta de anúncios e uma Página da lista.",
+			AdAccounts: accountOptions(cands.AdAccounts), Pages: pageOptions(cands.Pages)})
 		return
 	}
 	m.complete(w, r, link, connID, *acc, *page)
@@ -298,7 +377,7 @@ func (m *MetaConnect) render(w http.ResponseWriter, status int, v metaView) {
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'none'; style-src 'self'; img-src 'self' data:; "+
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "+
 		"frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 	w.WriteHeader(status)
 	if err := metaPage.Execute(w, v); err != nil {

@@ -7,7 +7,7 @@
 <title>Conectar conta de anúncios · meuanuncio.io</title>
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=2">
 <link rel="icon" type="image/png" href="/static/favicon.png?v=2">
-<link rel="stylesheet" href="/static/cadastro.css?v=3">
+<link rel="stylesheet" href="/static/cadastro.css?v=4">
 </head>
 <body>
 <main class="shell">
@@ -24,17 +24,44 @@
     <p class="muted">A gente só cria e acompanha anúncios que você aprovar no WhatsApp. Dá para remover o acesso a qualquer momento nas configurações do Facebook.</p>
   {{else if eq .State "choose"}}
     <h1>Escolha a conta e a Página</h1>
-    <form method="post" action="/meta/escolha">
+    <p class="muted">Confira o nome e o número da conta: é nela que os anúncios vão rodar e ser cobrados.</p>
+    {{if .Message}}<p class="pick-error" role="alert">{{.Message}}</p>{{end}}
+    <form method="post" action="/meta/escolha" class="pick-form">
       <input type="hidden" name="token" value="{{.Token}}">
       <input type="hidden" name="nonce" value="{{.Nonce}}">
-      <fieldset class="field"><legend>Conta de anúncios</legend>
-        {{range $i, $a := .AdAccounts}}<label class="check"><input type="radio" name="ad_account" value="{{$a.ID}}"{{if eq $i 0}} checked{{end}}> <span>{{$a.Name}} ({{$a.Currency}})</span></label>{{end}}
+      <fieldset class="field pick" data-pick>
+        <legend>Conta de anúncios <span class="pick-count">{{len .AdAccounts}}</span></legend>
+        {{if ge (len .AdAccounts) 5}}<input type="search" class="pick-search" data-filter placeholder="Buscar por nome, número ou empresa" aria-label="Buscar conta de anúncios" autocomplete="off" hidden>{{end}}
+        <div class="pick-list">
+        {{range .AdAccounts}}<label class="pick-opt{{if not .Active}} off{{end}}" data-search="{{.Search}}">
+          <input type="radio" name="ad_account" value="{{.ID}}" required{{if .Checked}} checked{{end}}>
+          <span class="pick-body">
+            <span class="pick-name">{{.Name}}</span>
+            <span class="pick-meta">Nº {{.Number}}{{if .Business}} · {{.Business}}{{end}} · {{.Currency}}</span>
+          </span>
+          {{if .Active}}<span class="tag tag-ok">Ativa</span>{{else}}<span class="tag tag-warn">{{.StatusText}}</span>{{end}}
+        </label>
+        {{end}}</div>
+        <p class="pick-empty muted" data-empty hidden>Nenhuma conta com esse nome ou número.</p>
       </fieldset>
-      <fieldset class="field"><legend>Página</legend>
-        {{range $i, $p := .Pages}}<label class="check"><input type="radio" name="page" value="{{$p.ID}}"{{if eq $i 0}} checked{{end}}> <span>{{$p.Name}}{{if $p.InstagramUsername}} · @{{$p.InstagramUsername}}{{end}}</span></label>{{end}}
+      <fieldset class="field pick" data-pick>
+        <legend>Página <span class="pick-count">{{len .Pages}}</span></legend>
+        {{if ge (len .Pages) 5}}<input type="search" class="pick-search" data-filter placeholder="Buscar Página ou @Instagram" aria-label="Buscar Página" autocomplete="off" hidden>{{end}}
+        <div class="pick-list">
+        {{range .Pages}}<label class="pick-opt" data-search="{{.Search}}">
+          <input type="radio" name="page" value="{{.ID}}" required{{if .Checked}} checked{{end}}>
+          <span class="pick-body">
+            <span class="pick-name">{{.Name}}</span>
+            <span class="pick-meta">{{if .Instagram}}@{{.Instagram}}{{else}}Sem Instagram ligado{{end}}</span>
+          </span>
+        </label>
+        {{end}}</div>
+        <p class="pick-empty muted" data-empty hidden>Nenhuma Página com esse nome.</p>
       </fieldset>
+      <p class="muted pick-help">Não achou a conta? Volte no WhatsApp, abra o link de novo e, no Facebook, toque em <b>Editar acesso</b> para marcar a conta que falta.</p>
       <button class="btn" type="submit">Conectar</button>
     </form>
+    <script src="/static/meta.js?v=1" defer></script>
   {{else if eq .State "done"}}
     <h1>Pronto, conta conectada ✅</h1>
     <p class="muted">Pode voltar pro WhatsApp: já te mandei o resumo por lá.</p>

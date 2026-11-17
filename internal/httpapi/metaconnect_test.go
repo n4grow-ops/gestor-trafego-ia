@@ -101,7 +101,7 @@ func (e metaEnv) start(t *testing.T) string {
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "Conectar com Facebook") {
 		t.Fatalf("página: %d %s", rec.Code, rec.Body.String())
 	}
-	if csp := rec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'none'") || rec.Header().Get("Cache-Control") != "no-store" {
+	if csp := rec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'self';") || rec.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("cabeçalhos: %q %q", csp, rec.Header().Get("Cache-Control"))
 	}
 	for _, c := range rec.Result().Cookies() {
@@ -182,9 +182,19 @@ func TestMetaSeveralAccountsAskForChoice(t *testing.T) {
 	if _, ok, _ := e.st.ActiveMeta(context.Background(), e.ident.OrgID); ok {
 		t.Fatal("conectou antes da escolha")
 	}
+	if body := rec.Body.String(); strings.Contains(body, `value="act_1" required checked`) || strings.Contains(body, `value="act_2" required checked`) {
+		t.Fatal("com várias contas nenhuma pode vir marcada")
+	}
+	if !strings.Contains(rec.Body.String(), `value="P1" required checked`) {
+		t.Fatal("Página única deve vir marcada")
+	}
 	bad := url.Values{"token": {e.token}, "nonce": {nonce}, "ad_account": {"act_999"}, "page": {"P1"}}.Encode()
-	if rec := e.req("POST", "/meta/escolha", bad, nonce); rec.Code != 400 {
-		t.Fatalf("conta fora da lista: %d", rec.Code)
+	if rec := e.req("POST", "/meta/escolha", bad, nonce); rec.Code != 400 || !strings.Contains(rec.Body.String(), "Loja 2") ||
+		!strings.Contains(rec.Body.String(), "Escolha uma conta de anúncios") {
+		t.Fatalf("conta fora da lista volta para a escolha: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := e.req("POST", "/meta/escolha", url.Values{"token": {e.token}, "nonce": {nonce}, "page": {"P1"}}.Encode(), nonce); rec.Code != 400 {
+		t.Fatalf("sem conta escolhida: %d", rec.Code)
 	}
 	good := url.Values{"token": {e.token}, "nonce": {nonce}, "ad_account": {"act_2"}, "page": {"P1"}}.Encode()
 	if rec := e.req("POST", "/meta/escolha", good, ""); rec.Code != 400 {
@@ -306,5 +316,51 @@ func TestMetaDeletionAfterDeauthorizeShowsStatus(t *testing.T) {
 	path = path[:strings.IndexAny(path, `"`)]
 	if st := e.req("GET", path, "", ""); st.Code != 200 || !strings.Contains(st.Body.String(), "Dados excluídos") {
 		t.Fatalf("status da exclusão: %d", st.Code)
+	}
+}
+
+func TestMetaChoiceListHelpsFindAccount(t *testing.T) {
+	accs := []meta.AdAccount{
+		{ID: "act_30", Name: "Zeta Antiga", Currency: "BRL", Status: 2, BusinessName: "Portfólio Z"},
+		{ID: "act_10", Name: "beta loja", Currency: "BRL", Status: 1, BusinessName: "Clínica Sorriso"},
+		{ID: "act_20", Name: "Alfa", Currency: "USD", Status: 3},
+		{ID: "act_40", Name: "", Currency: "BRL", Status: 1},
+	}
+	e := newMetaEnv(t, meta.Assets{UserID: "U1", AdAccounts: accs,
+		Pages: []meta.Page{pageA, {ID: "P2", Name: "Outra"}, {ID: "P3", Name: "C"}, {ID: "P4", Name: "D"}, {ID: "P5", Name: "E"}}})
+	nonce := e.start(t)
+	rec := e.callback(nonce, "c1")
+	body := rec.Body.String()
+	if rec.Code != 200 {
+		t.Fatalf("escolha: %d %s", rec.Code, body)
+	}
+	// Ativas primeiro (ordem alfabética), depois as com problema.
+	order := []string{`value="act_10"`, `value="act_40"`, `value="act_20"`, `value="act_30"`}
+	last := -1
+	for _, v := range order {
+		i := strings.Index(body, v)
+		if i < 0 || i < last {
+			t.Fatalf("ordem errada em %s: %s", v, body)
+		}
+		last = i
+	}
+	for _, want := range []string{"Nº 10 · Clínica Sorriso · BRL", "Conta 40", "Pagamento pendente", "Desativada",
+		`data-search="beta loja 10 clínica sorriso brl"`, `class="pick-search"`, "/static/meta.js", "@loja", "Sem Instagram ligado"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("faltou %q: %s", want, body)
+		}
+	}
+	if strings.Contains(body, " checked") {
+		t.Fatal("várias opções: nada vem marcado")
+	}
+	if csp := rec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'self'") {
+		t.Fatalf("CSP = %q", csp)
+	}
+	good := url.Values{"token": {e.token}, "nonce": {nonce}, "ad_account": {"act_10"}, "page": {"P2"}}.Encode()
+	if rec := e.req("POST", "/meta/escolha", good, nonce); rec.Code != 200 {
+		t.Fatalf("escolha válida: %d", rec.Code)
+	}
+	if c, _, _ := e.st.ActiveMeta(context.Background(), e.ident.OrgID); c.AdAccountID != "act_10" {
+		t.Fatalf("conectada = %+v", c)
 	}
 }

@@ -370,3 +370,42 @@ input:focus, select:focus {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-delay: 0ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
+
+/* ---------- escolha da conta de anúncios e da Página (/meta) ---------- */
+.pick legend { display: flex; align-items: center; gap: 0.5rem; }
+.pick-count {
+  font: 600 0.75rem/1 var(--font-body); color: var(--muted);
+  background: var(--surface-2); border-radius: 999px; padding: 0.3rem 0.55rem;
+}
+.pick-search { margin-bottom: 0.75rem; }
+.pick-list { display: grid; gap: 0.5rem; max-height: 22rem; overflow-y: auto; overscroll-behavior: contain; padding-right: 0.125rem; }
+.pick-opt {
+  display: flex; align-items: center; gap: 0.75rem; margin: 0; cursor: pointer;
+  font-weight: 400; font-size: 0.9375rem;
+  background: var(--bg-deep); border: 1px solid var(--line-soft); border-radius: var(--radius-sm);
+  padding: 0.75rem 0.875rem; min-height: 3.25rem;
+  transition: border-color 0.2s var(--ease), background-color 0.2s var(--ease);
+}
+.pick-opt[hidden] { display: none; }
+.pick-opt:hover { border-color: var(--line); }
+.pick-opt:has(input:checked) { border-color: var(--accent-text); background: var(--surface-2); }
+.pick-opt input {
+  appearance: none; -webkit-appearance: none; flex: none; margin: 0; padding: 0;
+  width: 1.25rem; height: 1.25rem; min-height: 0; border-radius: 50%;
+  border: 2px solid var(--line); background: var(--bg-deep); position: relative; cursor: pointer;
+}
+.pick-opt input:checked { border-color: var(--accent-text); background: radial-gradient(circle, var(--accent-text) 0 40%, transparent 45%); }
+.pick-body { display: grid; gap: 0.125rem; min-width: 0; flex: 1; }
+.pick-name { font-weight: 600; overflow-wrap: anywhere; }
+.pick-meta { font-size: 0.8125rem; color: var(--muted); overflow-wrap: anywhere; }
+.pick-opt.off .pick-name { color: var(--muted); }
+.tag { flex: none; font-size: 0.75rem; font-weight: 600; border-radius: 999px; padding: 0.25rem 0.55rem; white-space: nowrap; }
+.tag.tag-ok { color: oklch(0.86 0.13 155); background: oklch(0.86 0.13 155 / 0.12); }
+.tag.tag-warn { color: oklch(0.86 0.12 75); background: oklch(0.86 0.12 75 / 0.13); }
+.pick-empty { font-size: 0.875rem; margin: 0.5rem 0 0; }
+.pick-error { color: var(--err); font-weight: 600; margin-top: 0.75rem; }
+.pick-help { font-size: 0.875rem; margin: 1.25rem 0; }
+@media (max-width: 420px) {
+  .pick-opt { flex-wrap: wrap; }
+  .pick-opt .tag { margin-left: 1.875rem; }
+}

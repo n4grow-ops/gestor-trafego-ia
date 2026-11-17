@@ -45,6 +45,7 @@ type AdAccount struct {
 	Currency      string `json:"currency"`
 	Timezone      string `json:"timezone"`
 	BusinessID    string `json:"business_id"`
+	BusinessName  string `json:"business_name,omitempty"` // Portfólio empresarial: ajuda a achar a conta certa na escolha
 	Status        int    `json:"status"`
 	DisableReason int    `json:"disable_reason"`
 	// WhatsAppNumbers são os números das contas de WhatsApp Business do negócio da conta. Só vêm com a
@@ -112,17 +113,18 @@ func (c *Client) Assets(ctx context.Context, token string) (Assets, error) {
 			Timezone      string `json:"timezone_name"`
 			DisableReason int    `json:"disable_reason"`
 			Business      struct {
-				ID string `json:"id"`
+				ID   string `json:"id"`
+				Name string `json:"name"`
 			} `json:"business"`
 		} `json:"data"`
 	}
 	if err := c.get(ctx, "/me/adaccounts", c.auth(token, url.Values{"limit": {"100"},
-		"fields": {"id,name,account_status,currency,timezone_name,disable_reason,business"}}), &accounts); err != nil {
+		"fields": {"id,name,account_status,currency,timezone_name,disable_reason,business{id,name}"}}), &accounts); err != nil {
 		return a, err
 	}
 	for _, x := range accounts.Data {
 		a.AdAccounts = append(a.AdAccounts, AdAccount{ID: x.ID, Name: x.Name, Currency: x.Currency, Timezone: x.Timezone,
-			BusinessID: x.Business.ID, Status: x.Status, DisableReason: x.DisableReason})
+			BusinessID: x.Business.ID, BusinessName: x.Business.Name, Status: x.Status, DisableReason: x.DisableReason})
 	}
 	var pages struct {
 		Data []struct {
